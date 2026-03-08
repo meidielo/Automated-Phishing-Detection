@@ -10,6 +10,7 @@ from typing import Optional
 
 from src.models import EmailObject, PipelineResult, Verdict, AnalyzerResult
 from src.config import PipelineConfig
+from src.scoring.blocklist_allowlist import BlocklistAllowlistChecker, ListCheckResult
 
 
 logger = logging.getLogger(__name__)
@@ -25,12 +26,13 @@ class PhishingPipeline:
     3. Decision (sequential): Compute weighted score and verdict
     """
 
-    def __init__(self, config: PipelineConfig):
+    def __init__(self, config: PipelineConfig, db_session_factory=None):
         """
         Initialize pipeline with configuration.
 
         Args:
             config: PipelineConfig instance with all API keys and parameters.
+            db_session_factory: Optional async session factory for blocklist/allowlist.
         """
         self.config = config
         self.logger = logging.getLogger(__name__)
@@ -51,6 +53,9 @@ class PhishingPipeline:
         # Lazy-loaded analyzer instances
         self._analyzers = {}
         self._extractors = {}
+
+        # Blocklist/allowlist checker
+        self.list_checker = BlocklistAllowlistChecker(db_session_factory)
 
     @classmethod
     def from_config(cls, config: PipelineConfig) -> "PhishingPipeline":
@@ -102,6 +107,27 @@ class PhishingPipeline:
                 f"Phase 1: Extracting IOCs from email {email.email_id}"
             )
             iocs, extracted_urls = await self._phase_extraction(email)
+
+            # Phase 1.5: Blocklist/Allowlist check (fast-path)
+            list_result = await self.list_checker.check(email, [])
+            if list_result.override_verdict is not None:
+                self.logger.info(
+                    f"Blocklist/allowlist override for {email.email_id}: "
+                    f"{list_result.override_verdict.value} — {list_result.override_reason}"
+                )
+                elapsed_seconds = (datetime.utcnow() - start_time).total_seconds()
+                override_score = 1.0 if list_result.override_verdict == Verdict.CONFIRMED_PHISHING else 0.0
+                return PipelineResult(
+                    email_id=email.email_id,
+                    verdict=list_result.override_verdict,
+                    overall_score=override_score,
+                    overall_confidence=1.0,
+                    analyzer_results={},
+                    extracted_urls=extracted_urls,
+                    iocs=iocs,
+                    reasoning=list_result.override_reason,
+                    timestamp=datetime.utcnow(),
+                )
 
             # Phase 2: Analysis (concurrent)
             self.logger.info(
