@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Status — Phishing Detection</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f6fa;
+            color: #2c3e50;
+        }
+
+        .navbar {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 0 20px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .navbar h1 { font-size: 22px; margin-right: auto; }
+        .nav-links { display: flex; gap: 20px; list-style: none; }
+        .nav-links a {
+            color: white; text-decoration: none;
+            font-size: 14px; padding: 8px 12px;
+            border-radius: 4px; transition: background 0.3s;
+        }
+        .nav-links a:hover { background: rgba(255,255,255,0.2); }
+        .nav-links a.active { background: rgba(255,255,255,0.3); border-bottom: 2px solid white; }
+
+        .container { max-width: 1100px; margin: 0 auto; padding: 30px 20px; }
+
+        .page-header { margin-bottom: 28px; }
+        .page-header h2 { font-size: 26px; margin-bottom: 6px; }
+        .page-header p { color: #666; font-size: 14px; }
+
+        .section { background: white; border-radius: 8px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.07); margin-bottom: 24px; }
+
+        .section-title {
+            font-size: 16px; font-weight: 700; color: #2c3e50;
+            margin-bottom: 18px;
+            display: flex; align-items: center; gap: 10px;
+        }
+
+        .section-title::before {
+            content: '';
+            display: inline-block;
+            width: 4px; height: 16px;
+            background: #667eea; border-radius: 2px;
+        }
+
+        .key-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 12px;
+        }
+
+        .key-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            border-left: 3px solid transparent;
+        }
+
+        .key-item.ok    { border-left-color: #28a745; }
+        .key-item.miss  { border-left-color: #dee2e6; }
+
+        .dot {
+            width: 10px; height: 10px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+        .dot.green  { background: #28a745; }
+        .dot.grey   { background: #adb5bd; }
+        .dot.red    { background: #dc3545; }
+        .dot.yellow { background: #ffc107; }
+
+        .key-name  { font-weight: 600; font-size: 14px; flex: 1; }
+        .key-badge {
+            font-size: 11px; font-weight: 600;
+            padding: 2px 8px; border-radius: 10px;
+        }
+        .key-badge.configured   { background: #d4edda; color: #155724; }
+        .key-badge.missing      { background: #f0f0f0; color: #888; }
+
+        .config-table { width: 100%; border-collapse: collapse; }
+        .config-table tr { border-bottom: 1px solid #f0f0f0; }
+        .config-table td { padding: 10px 8px; font-size: 14px; }
+        .config-table td:first-child { color: #666; width: 55%; }
+        .config-table td:last-child  { font-weight: 600; }
+
+        .pill {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .pill.green  { background: #d4edda; color: #155724; }
+        .pill.yellow { background: #fff3cd; color: #856404; }
+        .pill.red    { background: #f8d7da; color: #721c24; }
+        .pill.grey   { background: #e9ecef; color: #6c757d; }
+
+        .summary-bar {
+            display: flex; gap: 20px; flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+
+        .summary-item { text-align: center; }
+        .summary-item .big { font-size: 28px; font-weight: bold; }
+        .summary-item .lbl { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.4px; margin-top: 2px; }
+
+        .refresh-row { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+        .btn { padding: 8px 16px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
+        .btn:hover { background: #764ba2; }
+        .btn:disabled { opacity: 0.6; cursor: default; }
+        .ts { color: #999; font-size: 12px; }
+
+        #errMsg { color: #dc3545; font-size: 14px; padding: 12px; background: #f8d7da; border-radius: 6px; display: none; }
+
+        @media (max-width: 600px) {
+            .key-grid { grid-template-columns: 1fr; }
+            .navbar { flex-direction: column; height: auto; padding: 10px; }
+            .navbar h1 { margin-bottom: 8px; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="navbar">
+    <h1>🔍 Phishing Detection Dashboard</h1>
+    <ul class="nav-links">
+        <li><a href="/">Analyze</a></li>
+        <li><a href="/dashboard">Dashboard</a></li>
+        <li><a href="/monitor">Monitor</a></li>
+        <li><a href="/status" class="active">API Status</a></li>
+    </ul>
+</div>
+
+<div class="container">
+
+    <div class="page-header">
+        <h2>System &amp; API Status</h2>
+        <p>Live overview of configured API keys, pipeline health, and IMAP monitor state</p>
+    </div>
+
+    <div class="refresh-row">
+        <button class="btn" id="btnRefresh" onclick="loadStatus()">↻ Refresh</button>
+        <span class="ts" id="tsLabel">Loading…</span>
+    </div>
+
+    <div id="errMsg"></div>
+
+    <!-- Overall health summary -->
+    <div class="section">
+        <div class="section-title">Overall Health</div>
+        <div class="summary-bar" id="summaryBar">
+            <div class="summary-item">
+                <div class="big" id="sumConfigured">–</div>
+                <div class="lbl">Keys configured</div>
+            </div>
+            <div class="summary-item">
+                <div class="big" id="sumMissing">–</div>
+                <div class="lbl">Keys missing</div>
+            </div>
+            <div class="summary-item">
+                <div class="big" id="sumPipeline">–</div>
+                <div class="lbl">Pipeline</div>
+            </div>
+            <div class="summary-item">
+                <div class="big" id="sumMonitor">–</div>
+                <div class="lbl">IMAP monitor</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- API Keys -->
+    <div class="section">
+        <div class="section-title">API Keys</div>
+        <div class="key-grid" id="keyGrid">
+            <p style="color:#999">Loading…</p>
+        </div>
+    </div>
+
+    <!-- Pipeline config -->
+    <div class="section">
+        <div class="section-title">Pipeline Configuration</div>
+        <table class="config-table" id="pipelineTable">
+            <tr><td colspan="2" style="color:#999">Loading…</td></tr>
+        </table>
+    </div>
+
+    <!-- IMAP / Monitor -->
+    <div class="section">
+        <div class="section-title">IMAP Monitor</div>
+        <table class="config-table" id="imapTable">
+            <tr><td colspan="2" style="color:#999">Loading…</td></tr>
+        </table>
+    </div>
+
+</div>
+
+<script>
+async function loadStatus() {
+    const btn = document.getElementById('btnRefresh');
+    btn.disabled = true;
+    btn.textContent = '↻ Loading…';
+
+    try {
+        const [sysResp, monResp, cfgResp] = await Promise.all([
+            fetch('/api/system-status'),
+            fetch('/api/monitor/stats'),
+            fetch('/api/config'),
+        ]);
+
+        if (!sysResp.ok) throw new Error(`/api/system-status returned ${sysResp.status}`);
+
+        const sys     = await sysResp.json();
+        const monitor = monResp.ok ? await monResp.json() : {};
+        const cfg     = cfgResp.ok ? await cfgResp.json() : {};
+
+        document.getElementById('errMsg').style.display = 'none';
+
+        renderKeys(sys.api_keys || {});
+        renderPipeline(cfg, sys);
+        renderImap(sys.imap || {}, monitor);
+        renderSummary(sys.api_keys || {}, monitor);
+
+        document.getElementById('tsLabel').textContent = 'Updated ' + new Date().toLocaleTimeString();
+
+    } catch (e) {
+        const el = document.getElementById('errMsg');
+        el.textContent = 'Could not load status: ' + e.message;
+        el.style.display = 'block';
+        document.getElementById('tsLabel').textContent = 'Failed';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '↻ Refresh';
+    }
+}
+
+function renderKeys(keys) {
+    const labels = {
+        virustotal:           'VirusTotal',
+        urlscan:              'URLScan.io',
+        abuseipdb:            'AbuseIPDB',
+        google_safebrowsing:  'Google Safe Browsing',
+        hybrid_analysis:      'Hybrid Analysis (Sandbox)',
+        anyrun:               'ANY.RUN (Sandbox)',
+        joesandbox:           'Joe Sandbox',
+        anthropic:            'Anthropic (LLM)',
+        openai:               'OpenAI (LLM)',
+    };
+
+    let html = '';
+    for (const [k, label] of Object.entries(labels)) {
+        const ok = keys[k] === true;
+        html += `
+        <div class="key-item ${ok ? 'ok' : 'miss'}">
+            <div class="dot ${ok ? 'green' : 'grey'}"></div>
+            <div class="key-name">${label}</div>
+            <span class="key-badge ${ok ? 'configured' : 'missing'}">${ok ? 'Configured' : 'Not set'}</span>
+        </div>`;
+    }
+
+    document.getElementById('keyGrid').innerHTML = html;
+}
+
+function renderPipeline(cfg, sys) {
+    const rows = [
+        ['Max concurrent analyzers', cfg.max_concurrent_analyzers ?? '–'],
+        ['Pipeline timeout (s)',      cfg.pipeline_timeout ?? '–'],
+        ['URL detonation timeout (s)', cfg.url_detonation_timeout ?? '–'],
+        ['LLM provider',              sys.llm_provider ?? '–'],
+        ['Sandbox provider',          sys.sandbox_provider ?? '–'],
+    ];
+
+    document.getElementById('pipelineTable').innerHTML =
+        rows.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('');
+}
+
+function renderImap(imap, monitor) {
+    const configured = imap.configured === true;
+    const running    = monitor.running === true;
+
+    let statusHtml;
+    if (!configured) {
+        statusHtml = '<span class="pill grey">Not configured</span>';
+    } else if (running) {
+        statusHtml = '<span class="pill green">Running</span>';
+    } else {
+        statusHtml = '<span class="pill red">Stopped</span>';
+    }
+
+    const stats = monitor.stats || {};
+    const rows = [
+        ['Status',                statusHtml],
+        ['IMAP host',             imap.host  || '–'],
+        ['IMAP user',             imap.user  || '–'],
+        ['Inbox folder',          imap.folder || '–'],
+        ['Quarantine folder',     imap.quarantine_folder || '–'],
+        ['Poll interval (s)',     imap.poll_interval ?? '–'],
+        ['Emails processed',      stats.emails_processed ?? '–'],
+        ['Phishing detected',     stats.phishing_detected ?? '–'],
+        ['Quarantined',           stats.quarantined ?? '–'],
+        ['Errors',                stats.errors ?? '–'],
+        ['Started at',            stats.started_at ? new Date(stats.started_at).toLocaleString() : '–'],
+        ['Last poll',             stats.last_poll ? new Date(stats.last_poll).toLocaleString() : '–'],
+    ];
+
+    document.getElementById('imapTable').innerHTML =
+        rows.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('');
+}
+
+function renderSummary(keys, monitor) {
+    const vals = Object.values(keys);
+    const conf = vals.filter(Boolean).length;
+    const miss = vals.length - conf;
+
+    document.getElementById('sumConfigured').textContent = conf;
+    document.getElementById('sumMissing').textContent    = miss;
+
+    document.getElementById('sumPipeline').innerHTML =
+        '<span class="pill green">Ready</span>';
+
+    const imapCfg = monitor.imap_configured;
+    const running  = monitor.running;
+    let monHtml;
+    if (!imapCfg) monHtml = '<span class="pill grey">Off</span>';
+    else if (running) monHtml = '<span class="pill green">Active</span>';
+    else monHtml = '<span class="pill red">Stopped</span>';
+
+    document.getElementById('sumMonitor').innerHTML = monHtml;
+}
+
+loadStatus();
+</script>
+</body>
+</html>

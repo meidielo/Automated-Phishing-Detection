@@ -147,6 +147,112 @@ class TestIMAPFetcherFetch:
         fetcher.stop()
         assert fetcher._running is False
 
+    @patch("src.ingestion.imap_fetcher.imaplib.IMAP4_SSL")
+    def test_uid_tracked_after_fetch(self, mock_imap_cls):
+        """email_id → UID mapping is stored after a successful fetch."""
+        raw_email = (
+            b"From: test@example.com\r\nTo: u@example.com\r\n"
+            b"Subject: UID Track\r\nDate: Mon, 01 Jan 2024 12:00:00 +0000\r\n\r\nBody\r\n"
+        )
+        mock_conn = MagicMock()
+        mock_conn.login.return_value = ("OK", [])
+        mock_conn.select.return_value = ("OK", [])
+        mock_conn.noop.return_value = ("OK", [])
+        mock_conn.uid.return_value = ("OK", [(b"42 (RFC822 {123}", raw_email), b")"])
+        mock_imap_cls.return_value = mock_conn
+
+        config = IMAPConfig(host="imap.test.com", user="u", password="p")
+        fetcher = IMAPFetcher(config)
+        fetcher.connect()
+        email_obj = fetcher.fetch_email_by_uid("42")
+
+        assert email_obj is not None
+        assert fetcher.get_uid_for_email(email_obj.email_id) == "42"
+
+    def test_get_uid_for_email_unknown_returns_none(self):
+        config = IMAPConfig()
+        fetcher = IMAPFetcher(config)
+        assert fetcher.get_uid_for_email("nonexistent-id") is None
+
+
+class TestIMAPFetcherMove:
+
+    def _connected_fetcher(self, mock_imap_cls):
+        mock_conn = MagicMock()
+        mock_conn.login.return_value = ("OK", [])
+        mock_conn.select.return_value = ("OK", [])
+        mock_conn.noop.return_value = ("OK", [])
+        mock_imap_cls.return_value = mock_conn
+        config = IMAPConfig(host="imap.test.com", user="u", password="p")
+        fetcher = IMAPFetcher(config)
+        fetcher.connect()
+        return fetcher, mock_conn
+
+    @patch("src.ingestion.imap_fetcher.imaplib.IMAP4_SSL")
+    def test_move_uses_imap_move_when_supported(self, mock_imap_cls):
+        fetcher, mock_conn = self._connected_fetcher(mock_imap_cls)
+        mock_conn.uid.return_value = ("OK", [b"1"])
+
+        result = fetcher.move_to_folder("42", "Quarantine")
+
+        assert result is True
+        mock_conn.uid.assert_called_once_with("move", "42", "Quarantine")
+
+    @patch("src.ingestion.imap_fetcher.imaplib.IMAP4_SSL")
+    def test_move_falls_back_to_copy_delete(self, mock_imap_cls):
+        fetcher, mock_conn = self._connected_fetcher(mock_imap_cls)
+        # MOVE fails, COPY succeeds
+        mock_conn.uid.side_effect = [
+            ("NO", [b""]),           # MOVE fails
+            ("OK", [b"1"]),          # COPY succeeds
+            ("OK", [b"1"]),          # STORE \Deleted
+        ]
+
+        result = fetcher.move_to_folder("42", "Quarantine")
+
+        assert result is True
+        mock_conn.expunge.assert_called_once()
+
+    @patch("src.ingestion.imap_fetcher.imaplib.IMAP4_SSL")
+    def test_move_returns_false_when_copy_fails(self, mock_imap_cls):
+        fetcher, mock_conn = self._connected_fetcher(mock_imap_cls)
+        mock_conn.uid.side_effect = [
+            ("NO", [b""]),   # MOVE fails
+            ("NO", [b""]),   # COPY also fails
+        ]
+
+        result = fetcher.move_to_folder("42", "Quarantine")
+
+        assert result is False
+
+    @patch("src.ingestion.imap_fetcher.imaplib.IMAP4_SSL")
+    def test_move_returns_false_on_exception(self, mock_imap_cls):
+        fetcher, mock_conn = self._connected_fetcher(mock_imap_cls)
+        mock_conn.uid.side_effect = Exception("connection reset")
+
+        result = fetcher.move_to_folder("42", "Quarantine")
+
+        assert result is False
+
+    @patch("src.ingestion.imap_fetcher.imaplib.IMAP4_SSL")
+    def test_ensure_folder_exists_calls_create(self, mock_imap_cls):
+        fetcher, mock_conn = self._connected_fetcher(mock_imap_cls)
+        mock_conn.create.return_value = ("OK", [b"created"])
+
+        result = fetcher.ensure_folder_exists("Quarantine")
+
+        assert result is True
+        mock_conn.create.assert_called_once_with("Quarantine")
+
+    @patch("src.ingestion.imap_fetcher.imaplib.IMAP4_SSL")
+    def test_ensure_folder_exists_tolerates_already_exists(self, mock_imap_cls):
+        fetcher, mock_conn = self._connected_fetcher(mock_imap_cls)
+        mock_conn.create.side_effect = Exception("[ALREADYEXISTS]")
+
+        # Should not raise — folder already exists is fine
+        result = fetcher.ensure_folder_exists("Quarantine")
+        assert result is True
+
 
 # ── Manual Upload Handler Tests ────────────────────────────────────
 

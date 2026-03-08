@@ -209,6 +209,9 @@ class TestEmailMonitor:
         )
         fetcher.fetch_all_new = MagicMock(return_value=[])
         fetcher.disconnect = MagicMock()
+        fetcher.get_uid_for_email = MagicMock(return_value="42")
+        fetcher.ensure_folder_exists = MagicMock(return_value=True)
+        fetcher.move_to_folder = MagicMock(return_value=True)
 
         alerts = MagicMock(spec=AlertDispatcher)
         alerts.dispatch = AsyncMock()
@@ -284,6 +287,7 @@ class TestEmailMonitor:
 
         assert monitor.stats["emails_processed"] == 2
         assert monitor.stats["phishing_detected"] == 2
+        assert monitor.stats["quarantined"] == 2
         assert monitor.stats["errors"] == 0
 
     @pytest.mark.asyncio
@@ -336,11 +340,101 @@ class TestEmailMonitor:
                 user="user@test.com",
                 password="pass",
                 poll_interval_seconds=30,
+                quarantine_folder="Junk",
             ),
         )
         monitor = EmailMonitor.from_config(config)
         assert monitor.poll_interval == 30
         assert monitor.fetcher.config.host == "imap.test.com"
+        assert monitor.quarantine_folder == "Junk"
+
+    @pytest.mark.asyncio
+    async def test_quarantine_called_on_phishing(self):
+        monitor, pipeline, fetcher, alerts, _ = self._make_monitor()
+        monitor.quarantine_folder = "Quarantine"
+        email = _make_email()
+        fetcher.fetch_all_new = MagicMock(return_value=[email])
+        pipeline.analyze = AsyncMock(
+            return_value=_make_result(verdict=Verdict.CONFIRMED_PHISHING)
+        )
+
+        await monitor.run(max_iterations=1)
+
+        fetcher.get_uid_for_email.assert_called_once_with(email.email_id)
+        fetcher.ensure_folder_exists.assert_called_once_with("Quarantine")
+        fetcher.move_to_folder.assert_called_once_with("42", "Quarantine")
+        assert monitor.stats["quarantined"] == 1
+
+    @pytest.mark.asyncio
+    async def test_quarantine_not_called_on_clean(self):
+        monitor, pipeline, fetcher, _, _ = self._make_monitor()
+        email = _make_email()
+        fetcher.fetch_all_new = MagicMock(return_value=[email])
+        pipeline.analyze = AsyncMock(
+            return_value=_make_result(verdict=Verdict.CLEAN)
+        )
+
+        await monitor.run(max_iterations=1)
+
+        fetcher.move_to_folder.assert_not_called()
+        assert monitor.stats["quarantined"] == 0
+
+    @pytest.mark.asyncio
+    async def test_quarantine_stat_not_incremented_when_move_fails(self):
+        monitor, pipeline, fetcher, _, _ = self._make_monitor()
+        fetcher.move_to_folder = MagicMock(return_value=False)
+        email = _make_email()
+        fetcher.fetch_all_new = MagicMock(return_value=[email])
+        pipeline.analyze = AsyncMock(
+            return_value=_make_result(verdict=Verdict.CONFIRMED_PHISHING)
+        )
+
+        await monitor.run(max_iterations=1)
+
+        assert monitor.stats["quarantined"] == 0
+
+    @pytest.mark.asyncio
+    async def test_recent_results_populated(self):
+        monitor, pipeline, fetcher, _, _ = self._make_monitor()
+        email = _make_email(email_id="e1", subject="Hello", from_address="a@b.com")
+        fetcher.fetch_all_new = MagicMock(return_value=[email])
+        pipeline.analyze = AsyncMock(
+            return_value=_make_result(email_id="e1", verdict=Verdict.CLEAN)
+        )
+
+        await monitor.run(max_iterations=1)
+
+        assert len(monitor._recent_results) == 1
+        rec = monitor._recent_results[0]
+        assert rec["email_id"] == "e1"
+        assert rec["verdict"] == "CLEAN"
+        assert rec["subject"] == "Hello"
+        assert rec["quarantined"] is False
+
+    @pytest.mark.asyncio
+    async def test_recent_results_capped_at_max(self):
+        monitor, pipeline, fetcher, _, _ = self._make_monitor()
+        monitor._MAX_RECENT = 5
+
+        emails = [_make_email(email_id=f"e{i}") for i in range(8)]
+        fetcher.fetch_all_new = MagicMock(return_value=emails)
+
+        await monitor.run(max_iterations=1)
+
+        assert len(monitor._recent_results) == 5
+
+    @pytest.mark.asyncio
+    async def test_recent_results_quarantined_flag_set(self):
+        monitor, pipeline, fetcher, _, _ = self._make_monitor()
+        email = _make_email()
+        fetcher.fetch_all_new = MagicMock(return_value=[email])
+        pipeline.analyze = AsyncMock(
+            return_value=_make_result(verdict=Verdict.CONFIRMED_PHISHING)
+        )
+
+        await monitor.run(max_iterations=1)
+
+        assert monitor._recent_results[0]["quarantined"] is True
 
 
 class TestAlertVerdicts:

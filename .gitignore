@@ -50,6 +50,12 @@ brand_references/generated_hashes/
 *.db
 *.sqlite3
 
+# ===== Runtime Data =====
+data/results.jsonl
+data/alerts.jsonl
+data/feedback.db
+data/sender_profiles.db
+
 # ===== Docker =====
 docker-compose.override.yml
 

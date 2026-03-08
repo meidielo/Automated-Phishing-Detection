@@ -226,6 +226,40 @@ class PhishingDetectionApp:
                 "pipeline": "ready",
             }
 
+        @app.get("/api/system-status")
+        async def system_status():
+            """Return which API keys are configured and system info (no key values)."""
+            a = self.config.api
+            return {
+                "api_keys": {
+                    "virustotal":          bool(a.virustotal_key),
+                    "urlscan":             bool(a.urlscan_key),
+                    "abuseipdb":           bool(a.abuseipdb_key),
+                    "google_safebrowsing": bool(a.google_safebrowsing_key),
+                    "hybrid_analysis":     bool(a.hybrid_analysis_key),
+                    "anyrun":              bool(a.anyrun_key),
+                    "joesandbox":          bool(a.joesandbox_key),
+                    "anthropic":           bool(a.anthropic_key),
+                    "openai":              bool(a.openai_key),
+                },
+                "llm_provider":     a.llm_provider,
+                "sandbox_provider": a.sandbox_provider,
+                "imap": {
+                    "configured":         bool(self.config.imap.user and self.config.imap.password),
+                    "host":               self.config.imap.host if self.config.imap.user else None,
+                    "user":               self.config.imap.user or None,
+                    "folder":             self.config.imap.folder,
+                    "quarantine_folder":  self.config.imap.quarantine_folder,
+                    "poll_interval":      self.config.imap.poll_interval_seconds,
+                },
+            }
+
+        @app.get("/status", response_class=HTMLResponse)
+        async def status_page():
+            """Serve the API/system status page."""
+            status_path = Path("./templates/status.html")
+            return HTMLResponse(content=status_path.read_text(encoding="utf-8"))
+
         @app.get("/api/config")
         async def get_config():
             """Get pipeline configuration (sanitized)."""

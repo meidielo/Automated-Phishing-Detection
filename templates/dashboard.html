@@ -5,11 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Phishing Detection Dashboard</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -24,20 +20,12 @@
             height: 60px;
             display: flex;
             align-items: center;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         }
 
-        .navbar h1 {
-            font-size: 22px;
-            margin: 0;
-            margin-right: auto;
-        }
+        .navbar h1 { font-size: 22px; margin-right: auto; }
 
-        .nav-links {
-            display: flex;
-            gap: 20px;
-            list-style: none;
-        }
+        .nav-links { display: flex; gap: 20px; list-style: none; }
 
         .nav-links a {
             color: white;
@@ -48,635 +36,502 @@
             transition: background 0.3s;
         }
 
-        .nav-links a:hover {
-            background-color: rgba(255, 255, 255, 0.2);
-        }
+        .nav-links a:hover { background-color: rgba(255,255,255,0.2); }
+        .nav-links a.active { background-color: rgba(255,255,255,0.3); border-bottom: 2px solid white; }
 
-        .nav-links a.active {
-            background-color: rgba(255, 255, 255, 0.3);
-            border-bottom: 2px solid white;
-        }
+        .container { max-width: 1400px; margin: 0 auto; padding: 30px 20px; }
 
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 30px 20px;
-        }
+        .header-section { margin-bottom: 30px; display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+        .header-section h2 { font-size: 28px; margin-bottom: 6px; }
+        .header-section p { color: #666; font-size: 14px; }
 
-        .header-section {
-            margin-bottom: 30px;
-        }
-
-        .header-section h2 {
-            font-size: 28px;
-            margin-bottom: 10px;
-            color: #2c3e50;
-        }
-
-        .header-section p {
-            color: #666;
-            font-size: 14px;
-        }
+        .last-updated { color: #999; font-size: 12px; }
 
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
             gap: 20px;
             margin-bottom: 30px;
         }
 
         .stat-card {
             background: white;
-            padding: 25px;
+            padding: 22px;
             border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
             border-left: 4px solid #667eea;
         }
 
-        .stat-card h3 {
-            color: #666;
-            font-size: 13px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-bottom: 15px;
-        }
+        .stat-card h3 { color: #666; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
+        .stat-card .number { font-size: 32px; font-weight: bold; color: #2c3e50; }
+        .stat-card .subtext { color: #999; font-size: 12px; margin-top: 8px; }
 
-        .stat-card .number {
-            font-size: 32px;
-            font-weight: bold;
-            color: #2c3e50;
-        }
-
-        .stat-card .subtext {
-            color: #999;
-            font-size: 12px;
-            margin-top: 10px;
-        }
-
-        .stat-card.clean {
-            border-left-color: #28a745;
-        }
-
-        .stat-card.clean .number {
-            color: #28a745;
-        }
-
-        .stat-card.suspicious {
-            border-left-color: #ffc107;
-        }
-
-        .stat-card.suspicious .number {
-            color: #ffc107;
-        }
-
-        .stat-card.likely-phishing {
-            border-left-color: #fd7e14;
-        }
-
-        .stat-card.likely-phishing .number {
-            color: #fd7e14;
-        }
-
-        .stat-card.confirmed-phishing {
-            border-left-color: #dc3545;
-        }
-
-        .stat-card.confirmed-phishing .number {
-            color: #dc3545;
-        }
+        .stat-card.clean   { border-left-color: #28a745; }
+        .stat-card.clean .number { color: #28a745; }
+        .stat-card.suspicious { border-left-color: #ffc107; }
+        .stat-card.suspicious .number { color: #ffc107; }
+        .stat-card.likely  { border-left-color: #fd7e14; }
+        .stat-card.likely .number { color: #fd7e14; }
+        .stat-card.phishing { border-left-color: #dc3545; }
+        .stat-card.phishing .number { color: #dc3545; }
+        .stat-card.total   { border-left-color: #667eea; }
 
         .card {
             background: white;
             border-radius: 8px;
             padding: 25px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            margin-bottom: 24px;
         }
 
-        .card h2 {
-            font-size: 20px;
-            margin-bottom: 20px;
+        .card-header { display: flex; align-items: center; margin-bottom: 20px; }
+
+        .card-header h2 {
+            font-size: 18px;
             color: #2c3e50;
             display: flex;
             align-items: center;
+            gap: 10px;
         }
 
-        .card h2::before {
+        .card-header h2::before {
             content: '';
             display: inline-block;
             width: 4px;
-            height: 20px;
-            background-color: #667eea;
-            margin-right: 12px;
+            height: 18px;
+            background: #667eea;
             border-radius: 2px;
         }
 
-        .table-container {
-            overflow-x: auto;
+        .card-header .ml-auto { margin-left: auto; }
+
+        .charts-row {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 24px;
+            margin-bottom: 24px;
         }
 
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 15px;
+        .chart-container { position: relative; height: 280px; }
+
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px;
         }
 
-        table thead {
-            background-color: #f8f9fa;
-            border-bottom: 2px solid #e9ecef;
-        }
+        .status-item { padding: 14px; background: #f8f9fa; border-radius: 6px; }
+        .status-item .label { font-size: 12px; color: #666; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 6px; }
+        .status-item .value { font-weight: 600; font-size: 15px; }
 
-        table th {
-            padding: 12px;
-            text-align: left;
-            font-weight: 600;
-            color: #2c3e50;
-            font-size: 13px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
+        .dot {
+            display: inline-block;
+            width: 10px; height: 10px;
+            border-radius: 50%;
+            margin-right: 6px;
         }
+        .dot.green  { background: #28a745; }
+        .dot.red    { background: #dc3545; }
+        .dot.yellow { background: #ffc107; }
+        .dot.grey   { background: #adb5bd; }
 
-        table td {
-            padding: 12px;
-            border-bottom: 1px solid #e9ecef;
-        }
-
-        table tbody tr:hover {
-            background-color: #f8f9fa;
-        }
+        table { width: 100%; border-collapse: collapse; }
+        thead { background: #f8f9fa; border-bottom: 2px solid #e9ecef; }
+        th { padding: 11px 12px; text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 0.4px; color: #555; }
+        td { padding: 11px 12px; border-bottom: 1px solid #f0f0f0; font-size: 13px; }
+        tbody tr:hover { background: #fafbfc; }
 
         .verdict-badge {
             display: inline-block;
-            padding: 6px 12px;
+            padding: 3px 10px;
             border-radius: 4px;
             font-weight: 600;
-            font-size: 12px;
-        }
-
-        .verdict-badge.clean {
-            background-color: #d4edda;
-            color: #155724;
-        }
-
-        .verdict-badge.suspicious {
-            background-color: #fff3cd;
-            color: #856404;
-        }
-
-        .verdict-badge.likely-phishing {
-            background-color: #ffe5d0;
-            color: #d75400;
-        }
-
-        .verdict-badge.confirmed-phishing {
-            background-color: #f8d7da;
-            color: #721c24;
-        }
-
-        .score-bar {
-            width: 100%;
-            height: 24px;
-            background-color: #e9ecef;
-            border-radius: 3px;
-            overflow: hidden;
-            position: relative;
-        }
-
-        .score-bar-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-            display: flex;
-            align-items: center;
-            justify-content: flex-end;
-            padding-right: 8px;
-            color: white;
-            font-weight: bold;
             font-size: 11px;
-            transition: width 0.3s ease;
+            text-transform: uppercase;
         }
+        .verdict-badge.clean               { background: #d4edda; color: #155724; }
+        .verdict-badge.suspicious          { background: #fff3cd; color: #856404; }
+        .verdict-badge.likely_phishing     { background: #ffe5d0; color: #d75400; }
+        .verdict-badge.confirmed_phishing  { background: #f8d7da; color: #721c24; }
 
-        .chart-container {
-            position: relative;
-            height: 300px;
-            margin-top: 20px;
-        }
+        .score-bar { width: 100%; height: 8px; background: #e9ecef; border-radius: 4px; overflow: hidden; margin-top: 3px; }
+        .score-fill { height: 100%; border-radius: 4px; }
 
-        .action-button {
-            padding: 8px 16px;
-            background-color: #667eea;
+        .empty-state { text-align: center; padding: 40px; color: #aaa; }
+        .empty-state p { margin-top: 8px; font-size: 14px; }
+
+        .btn-refresh {
+            padding: 7px 14px;
+            background: #667eea;
             color: white;
             border: none;
             border-radius: 4px;
             cursor: pointer;
             font-size: 13px;
-            transition: background 0.3s;
+            transition: background 0.2s;
+        }
+        .btn-refresh:hover { background: #764ba2; }
+        .btn-refresh:disabled { opacity: 0.6; cursor: default; }
+
+        .trend-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+
+        @media (max-width: 900px) {
+            .charts-row { grid-template-columns: 1fr; }
         }
 
-        .action-button:hover {
-            background-color: #764ba2;
-        }
-
-        .action-button.secondary {
-            background-color: #6c757d;
-        }
-
-        .action-button.secondary:hover {
-            background-color: #5a6268;
-        }
-
-        .action-button.danger {
-            background-color: #dc3545;
-        }
-
-        .action-button.danger:hover {
-            background-color: #c82333;
-        }
-
-        .empty-state {
-            text-align: center;
-            padding: 40px 20px;
-            color: #999;
-        }
-
-        .empty-state svg {
-            width: 64px;
-            height: 64px;
-            margin-bottom: 20px;
-            opacity: 0.3;
-        }
-
-        .empty-state h3 {
-            color: #666;
-            margin-bottom: 10px;
-        }
-
-        .filter-bar {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 20px;
-            flex-wrap: wrap;
-        }
-
-        .filter-bar input,
-        .filter-bar select {
-            padding: 8px 12px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 14px;
-        }
-
-        .filter-bar input::placeholder {
-            color: #999;
-        }
-
-        .status-indicator {
-            display: inline-block;
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            margin-right: 8px;
-        }
-
-        .status-indicator.online {
-            background-color: #28a745;
-        }
-
-        .status-indicator.offline {
-            background-color: #dc3545;
-        }
-
-        .timestamp {
-            color: #999;
-            font-size: 12px;
-        }
-
-        .refresh-button {
-            margin-left: auto;
-            padding: 8px 16px;
-            background-color: #667eea;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-        }
-
-        .refresh-button:hover {
-            background-color: #764ba2;
-        }
-
-        .refresh-button.loading {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-
-        @media (max-width: 768px) {
-            .navbar {
-                flex-direction: column;
-                height: auto;
-                padding: 10px;
-            }
-
-            .navbar h1 {
-                margin-bottom: 10px;
-            }
-
-            .nav-links {
-                width: 100%;
-                gap: 0;
-            }
-
-            .nav-links a {
-                flex: 1;
-                text-align: center;
-            }
-
-            .stats-grid {
-                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-                gap: 10px;
-            }
-
-            .stat-card {
-                padding: 15px;
-            }
-
-            .stat-card .number {
-                font-size: 24px;
-            }
-
-            .container {
-                padding: 15px;
-            }
-
-            .card {
-                padding: 15px;
-            }
-
-            table {
-                font-size: 12px;
-            }
-
-            table th,
-            table td {
-                padding: 8px;
-            }
-
-            .filter-bar {
-                flex-direction: column;
-            }
-
-            .filter-bar input,
-            .filter-bar select {
-                width: 100%;
-            }
+        @media (max-width: 600px) {
+            .navbar { flex-direction: column; height: auto; padding: 10px; }
+            .navbar h1 { margin-bottom: 8px; }
+            .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+            .stat-card .number { font-size: 24px; }
+            .container { padding: 15px; }
         }
     </style>
 </head>
 <body>
-    <!-- Navigation Bar -->
-    <div class="navbar">
-        <h1>🔍 Phishing Detection Dashboard</h1>
-        <ul class="nav-links">
-            <li><a href="#" class="active">Dashboard</a></li>
-            <li><a href="/dashboard/stats">Statistics</a></li>
-            <li><a href="#">Settings</a></li>
-        </ul>
-    </div>
 
-    <!-- Main Content -->
-    <div class="container">
-        <!-- Header -->
-        <div class="header-section">
+<div class="navbar">
+    <h1>🔍 Phishing Detection Dashboard</h1>
+    <ul class="nav-links">
+        <li><a href="/">Analyze</a></li>
+        <li><a href="/dashboard" class="active">Dashboard</a></li>
+        <li><a href="/monitor">Monitor</a></li>
+        <li><a href="/status">API Status</a></li>
+    </ul>
+</div>
+
+<div class="container">
+
+    <div class="header-section">
+        <div>
             <h2>Email Analysis Overview</h2>
             <p>Real-time monitoring and threat intelligence for email security</p>
         </div>
-
-        <!-- Statistics Cards -->
-        <div class="stats-grid">
-            <div class="stat-card clean">
-                <h3>Clean Emails</h3>
-                <div class="number">0</div>
-                <div class="subtext">No threat detected</div>
-            </div>
-            <div class="stat-card suspicious">
-                <h3>Suspicious Emails</h3>
-                <div class="number">0</div>
-                <div class="subtext">Further review needed</div>
-            </div>
-            <div class="stat-card likely-phishing">
-                <h3>Likely Phishing</h3>
-                <div class="number">0</div>
-                <div class="subtext">High confidence threat</div>
-            </div>
-            <div class="stat-card confirmed-phishing">
-                <h3>Confirmed Phishing</h3>
-                <div class="number">0</div>
-                <div class="subtext">Definite malicious intent</div>
-            </div>
+        <div>
+            <div class="last-updated" id="lastUpdated">Loading…</div>
+            <button class="btn-refresh" id="btnRefresh" onclick="loadAll()">↻ Refresh</button>
         </div>
+    </div>
 
-        <!-- System Status -->
-        <div class="card">
-            <h2>System Status</h2>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-top: 15px;">
-                <div>
-                    <div><span class="status-indicator online"></span> <strong>Orchestrator</strong></div>
-                    <div class="subtext">Ready</div>
-                </div>
-                <div>
-                    <div><span class="status-indicator online"></span> <strong>Analyzers</strong></div>
-                    <div class="subtext">8/8 Active</div>
-                </div>
-                <div>
-                    <div><span class="status-indicator online"></span> <strong>API Services</strong></div>
-                    <div class="subtext">Connected</div>
-                </div>
-                <div>
-                    <div><strong>Last Updated</strong></div>
-                    <div class="timestamp">{{ current_time }}</div>
-                </div>
-            </div>
+    <!-- Stats cards -->
+    <div class="stats-grid">
+        <div class="stat-card total">
+            <h3>Total Analyzed</h3>
+            <div class="number" id="statTotal">–</div>
+            <div class="subtext">All time</div>
         </div>
-
-        <!-- Pending Review Queue -->
-        <div class="card">
-            <div style="display: flex; align-items: center; margin-bottom: 20px;">
-                <h2 style="margin: 0;">Pending Review Queue</h2>
-                <button class="refresh-button">↻ Refresh</button>
-            </div>
-
-            {% if pending_reviews %}
-            <div class="table-container">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Email ID</th>
-                            <th>Verdict</th>
-                            <th>Phishing Score</th>
-                            <th>Timestamp</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for review in pending_reviews %}
-                        <tr>
-                            <td>
-                                <code style="background: #f8f9fa; padding: 4px 8px; border-radius: 3px;">
-                                    {{ review.email_id|truncate(30) }}
-                                </code>
-                            </td>
-                            <td>
-                                <span class="verdict-badge {{ review.verdict|lower|replace('_', '-') }}">
-                                    {{ review.verdict }}
-                                </span>
-                            </td>
-                            <td>
-                                <div class="score-bar" style="max-width: 150px;">
-                                    <div class="score-bar-fill" style="width: {{ review.score * 100 }}%">
-                                        {{ "%.2f"|format(review.score) }}
-                                    </div>
-                                </div>
-                            </td>
-                            <td>
-                                <span class="timestamp">{{ review.timestamp }}</span>
-                            </td>
-                            <td>
-                                <a href="/dashboard/email/{{ review.email_id }}" class="action-button">View</a>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% else %}
-            <div class="empty-state">
-                <h3>No pending reviews</h3>
-                <p>All emails have been analyzed and categorized.</p>
-            </div>
-            {% endif %}
+        <div class="stat-card clean">
+            <h3>Clean</h3>
+            <div class="number" id="statClean">–</div>
+            <div class="subtext">No threat detected</div>
         </div>
-
-        <!-- Recent Verdicts -->
-        <div class="card">
-            <h2>Verdict Distribution (Last 24h)</h2>
-            <div class="chart-container">
-                <canvas id="verdictChart"></canvas>
-            </div>
-            <p style="color: #999; font-size: 12px; margin-top: 10px;">
-                Chart updates automatically every 60 seconds
-            </p>
+        <div class="stat-card suspicious">
+            <h3>Suspicious</h3>
+            <div class="number" id="statSuspicious">–</div>
+            <div class="subtext">Further review needed</div>
         </div>
+        <div class="stat-card likely">
+            <h3>Likely Phishing</h3>
+            <div class="number" id="statLikely">–</div>
+            <div class="subtext">High confidence threat</div>
+        </div>
+        <div class="stat-card phishing">
+            <h3>Confirmed Phishing</h3>
+            <div class="number" id="statPhishing">–</div>
+            <div class="subtext">Definite malicious intent</div>
+        </div>
+    </div>
 
-        <!-- Detection Trends -->
-        <div class="card">
-            <h2>Detection Trends</h2>
-            <div class="chart-container">
-                <canvas id="trendsChart"></canvas>
+    <!-- Charts row -->
+    <div class="charts-row">
+        <div class="card" style="margin-bottom:0">
+            <div class="card-header"><h2>Verdict Distribution</h2></div>
+            <div class="chart-container"><canvas id="verdictChart"></canvas></div>
+        </div>
+        <div class="card" style="margin-bottom:0">
+            <div class="card-header"><h2>Detection Trends (Last 14 Days)</h2></div>
+            <div class="chart-container"><canvas id="trendsChart"></canvas></div>
+        </div>
+    </div>
+
+    <div style="margin-bottom:24px"></div>
+
+    <!-- System Status -->
+    <div class="card">
+        <div class="card-header"><h2>System Status</h2></div>
+        <div class="status-grid" id="statusGrid">
+            <div class="status-item">
+                <div class="label">Orchestrator</div>
+                <div class="value"><span class="dot green"></span>Ready</div>
+            </div>
+            <div class="status-item">
+                <div class="label">IMAP Monitor</div>
+                <div class="value" id="statusImap"><span class="dot grey"></span>Checking…</div>
+            </div>
+            <div class="status-item">
+                <div class="label">Emails (last 24 h)</div>
+                <div class="value" id="statusLast24h">–</div>
+            </div>
+            <div class="status-item">
+                <div class="label">Quarantined (all time)</div>
+                <div class="value" id="statusQuarantined">–</div>
+            </div>
+            <div class="status-item">
+                <div class="label">Errors</div>
+                <div class="value" id="statusErrors">–</div>
+            </div>
+            <div class="status-item">
+                <div class="label">Last Updated</div>
+                <div class="value" id="statusTime">–</div>
             </div>
         </div>
     </div>
 
-    <!-- Chart.js for visualizations -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
-    <script>
-        // Verdict distribution chart
-        const verdictCtx = document.getElementById('verdictChart');
-        if (verdictCtx) {
-            new Chart(verdictCtx, {
-                type: 'doughnut',
-                data: {
-                    labels: ['Clean', 'Suspicious', 'Likely Phishing', 'Confirmed Phishing'],
-                    datasets: [{
-                        data: [0, 0, 0, 0],
-                        backgroundColor: [
-                            '#28a745',
-                            '#ffc107',
-                            '#fd7e14',
-                            '#dc3545'
-                        ],
-                        borderColor: 'white',
-                        borderWidth: 2
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            position: 'bottom',
-                            labels: {
-                                font: { size: 14 },
-                                padding: 20
-                            }
-                        }
-                    }
-                }
-            });
-        }
+    <!-- Recent Activity -->
+    <div class="card">
+        <div class="card-header">
+            <h2>Recent Activity</h2>
+            <select id="filterVerdict" class="ml-auto"
+                style="padding:6px 10px;border:1px solid #ddd;border-radius:4px;font-size:13px;"
+                onchange="renderTable()">
+                <option value="">All verdicts</option>
+                <option value="clean">Clean</option>
+                <option value="suspicious">Suspicious</option>
+                <option value="likely_phishing">Likely Phishing</option>
+                <option value="confirmed_phishing">Confirmed Phishing</option>
+            </select>
+        </div>
+        <div id="tableArea">
+            <div class="empty-state"><p>Loading…</p></div>
+        </div>
+    </div>
 
-        // Trends chart
-        const trendsCtx = document.getElementById('trendsChart');
-        if (trendsCtx) {
-            new Chart(trendsCtx, {
-                type: 'line',
-                data: {
-                    labels: ['00:00', '04:00', '08:00', '12:00', '16:00', '20:00', '24:00'],
-                    datasets: [
-                        {
-                            label: 'Phishing Detected',
-                            data: [0, 0, 0, 0, 0, 0, 0],
-                            borderColor: '#dc3545',
-                            backgroundColor: 'rgba(220, 53, 69, 0.1)',
-                            tension: 0.3,
-                            fill: true
-                        },
-                        {
-                            label: 'Clean',
-                            data: [0, 0, 0, 0, 0, 0, 0],
-                            borderColor: '#28a745',
-                            backgroundColor: 'rgba(40, 167, 69, 0.1)',
-                            tension: 0.3,
-                            fill: true
-                        }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            labels: {
-                                font: { size: 12 },
-                                padding: 15
-                            }
-                        }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            title: { display: true, text: 'Count' }
-                        }
-                    }
-                }
-            });
-        }
+</div>
 
-        // Auto-refresh functionality
-        const refreshButton = document.querySelector('.refresh-button');
-        if (refreshButton) {
-            refreshButton.addEventListener('click', function() {
-                this.classList.add('loading');
-                this.disabled = true;
-                location.reload();
-            });
-        }
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
+<script>
+let allEntries = [];
+let verdictChart = null;
+let trendsChart = null;
 
-        // Auto-update every 60 seconds
-        setInterval(() => {
-            fetch('/dashboard/api/stats')
-                .then(r => r.json())
-                .catch(e => console.error('Update failed:', e));
-        }, 60000);
-    </script>
+// ─── helpers ────────────────────────────────────────────────────────────────
+function verdictClass(v) {
+    return (v || '').toLowerCase().replace(/\s+/g,'_');
+}
+
+function scoreColor(s) {
+    if (s >= 0.8) return '#dc3545';
+    if (s >= 0.6) return '#fd7e14';
+    if (s >= 0.3) return '#ffc107';
+    return '#28a745';
+}
+
+function fmtTime(ts) {
+    if (!ts) return '–';
+    try { return new Date(ts).toLocaleString(); } catch { return ts; }
+}
+
+function countByVerdict(entries) {
+    const c = { clean: 0, suspicious: 0, likely_phishing: 0, confirmed_phishing: 0 };
+    for (const e of entries) {
+        const k = verdictClass(e.verdict);
+        if (k in c) c[k]++;
+    }
+    return c;
+}
+
+// ─── charts ─────────────────────────────────────────────────────────────────
+function initCharts() {
+    const vCtx = document.getElementById('verdictChart');
+    verdictChart = new Chart(vCtx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Clean', 'Suspicious', 'Likely Phishing', 'Confirmed Phishing'],
+            datasets: [{
+                data: [0, 0, 0, 0],
+                backgroundColor: ['#28a745','#ffc107','#fd7e14','#dc3545'],
+                borderColor: 'white',
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { position: 'bottom', labels: { font: { size: 13 }, padding: 16 } } }
+        }
+    });
+
+    const tCtx = document.getElementById('trendsChart');
+    trendsChart = new Chart(tCtx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [
+                { label: 'Phishing/Likely', data: [], borderColor: '#dc3545', backgroundColor: 'rgba(220,53,69,0.08)', tension: 0.3, fill: true },
+                { label: 'Suspicious',      data: [], borderColor: '#ffc107', backgroundColor: 'rgba(255,193,7,0.08)',  tension: 0.3, fill: true },
+                { label: 'Clean',           data: [], borderColor: '#28a745', backgroundColor: 'rgba(40,167,69,0.08)', tension: 0.3, fill: true }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { labels: { font: { size: 12 }, padding: 14 } } },
+            scales: { y: { beginAtZero: true, title: { display: true, text: 'Emails' }, ticks: { stepSize: 1 } } }
+        }
+    });
+}
+
+function updateCharts(entries) {
+    const counts = countByVerdict(entries);
+    verdictChart.data.datasets[0].data = [
+        counts.clean, counts.suspicious, counts.likely_phishing, counts.confirmed_phishing
+    ];
+    verdictChart.update();
+
+    // Build 14-day buckets
+    const today = new Date();
+    const days = [];
+    for (let i = 13; i >= 0; i--) {
+        const d = new Date(today);
+        d.setDate(d.getDate() - i);
+        days.push(d.toISOString().slice(0, 10));
+    }
+    const buckets = {};
+    for (const d of days) buckets[d] = { phishing: 0, suspicious: 0, clean: 0 };
+
+    for (const e of entries) {
+        const ts = e.timestamp || e.ts || '';
+        const day = ts.slice(0, 10);
+        if (!(day in buckets)) continue;
+        const k = verdictClass(e.verdict);
+        if (k === 'clean') buckets[day].clean++;
+        else if (k === 'suspicious') buckets[day].suspicious++;
+        else buckets[day].phishing++;
+    }
+
+    trendsChart.data.labels = days.map(d => d.slice(5)); // MM-DD
+    trendsChart.data.datasets[0].data = days.map(d => buckets[d].phishing);
+    trendsChart.data.datasets[1].data = days.map(d => buckets[d].suspicious);
+    trendsChart.data.datasets[2].data = days.map(d => buckets[d].clean);
+    trendsChart.update();
+}
+
+// ─── table ───────────────────────────────────────────────────────────────────
+function renderTable() {
+    const filter = document.getElementById('filterVerdict').value;
+    let rows = allEntries;
+    if (filter) rows = rows.filter(e => verdictClass(e.verdict) === filter);
+    rows = rows.slice(0, 100);
+
+    const area = document.getElementById('tableArea');
+    if (rows.length === 0) {
+        area.innerHTML = '<div class="empty-state"><p>No entries match the selected filter.</p></div>';
+        return;
+    }
+
+    let html = `<div style="overflow-x:auto">
+    <table>
+      <thead><tr>
+        <th>Email ID</th>
+        <th>Verdict</th>
+        <th>Score</th>
+        <th>Confidence</th>
+        <th>Timestamp</th>
+      </tr></thead><tbody>`;
+
+    for (const e of rows) {
+        const vc = verdictClass(e.verdict);
+        const score = typeof e.overall_score === 'number' ? e.overall_score : (typeof e.score === 'number' ? e.score : null);
+        const conf  = typeof e.overall_confidence === 'number' ? e.overall_confidence : null;
+        const scoreBar = score !== null
+            ? `<div class="score-bar"><div class="score-fill" style="width:${Math.round(score*100)}%;background:${scoreColor(score)}"></div></div><span style="font-size:11px;color:#666">${score.toFixed(2)}</span>`
+            : '–';
+        const confStr = conf !== null ? conf.toFixed(2) : '–';
+        html += `<tr>
+            <td style="font-family:monospace;font-size:12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${e.email_id || ''}">${(e.email_id || '–').slice(0,30)}</td>
+            <td><span class="verdict-badge ${vc}">${(e.verdict || '–').replace(/_/g,' ')}</span></td>
+            <td style="min-width:120px">${scoreBar}</td>
+            <td>${confStr}</td>
+            <td style="color:#999;font-size:12px">${fmtTime(e.timestamp || e.ts)}</td>
+        </tr>`;
+    }
+
+    html += '</tbody></table></div>';
+    area.innerHTML = html;
+}
+
+// ─── status section ──────────────────────────────────────────────────────────
+function updateStatus(monitorData, entries) {
+    // IMAP monitor
+    if (!monitorData.imap_configured) {
+        document.getElementById('statusImap').innerHTML = '<span class="dot grey"></span>Not configured';
+    } else if (monitorData.running) {
+        document.getElementById('statusImap').innerHTML = '<span class="dot green"></span>Running';
+    } else {
+        document.getElementById('statusImap').innerHTML = '<span class="dot red"></span>Stopped';
+    }
+
+    // Last 24h count from log entries
+    const cutoff = new Date(Date.now() - 24*60*60*1000).toISOString();
+    const last24 = entries.filter(e => (e.timestamp || e.ts || '') >= cutoff).length;
+    document.getElementById('statusLast24h').textContent = last24;
+
+    // Stats from monitor
+    const stats = monitorData.stats || {};
+    document.getElementById('statusQuarantined').textContent =
+        stats.quarantined !== undefined ? stats.quarantined : '–';
+    document.getElementById('statusErrors').textContent =
+        stats.errors !== undefined ? stats.errors : '–';
+    document.getElementById('statusTime').textContent = fmtTime(new Date().toISOString());
+}
+
+// ─── main load ───────────────────────────────────────────────────────────────
+async function loadAll() {
+    const btn = document.getElementById('btnRefresh');
+    btn.disabled = true;
+    btn.textContent = '↻ Loading…';
+
+    try {
+        const [logResp, monitorResp] = await Promise.all([
+            fetch('/api/monitor/log?limit=2000'),
+            fetch('/api/monitor/stats')
+        ]);
+
+        const logData     = logResp.ok     ? await logResp.json()     : { entries: [] };
+        const monitorData = monitorResp.ok ? await monitorResp.json() : {};
+
+        allEntries = (logData.entries || []).sort((a, b) => {
+            const ta = a.timestamp || a.ts || '';
+            const tb = b.timestamp || b.ts || '';
+            return tb.localeCompare(ta);
+        });
+
+        // Stat cards
+        const counts = countByVerdict(allEntries);
+        document.getElementById('statTotal').textContent     = allEntries.length;
+        document.getElementById('statClean').textContent     = counts.clean;
+        document.getElementById('statSuspicious').textContent= counts.suspicious;
+        document.getElementById('statLikely').textContent    = counts.likely_phishing;
+        document.getElementById('statPhishing').textContent  = counts.confirmed_phishing;
+
+        updateCharts(allEntries);
+        renderTable();
+        updateStatus(monitorData, allEntries);
+
+        const now = new Date().toLocaleTimeString();
+        document.getElementById('lastUpdated').textContent = `Updated ${now}`;
+
+    } catch (err) {
+        console.error('Dashboard load failed:', err);
+        document.getElementById('lastUpdated').textContent = 'Load failed — ' + err.message;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '↻ Refresh';
+    }
+}
+
+// ─── init ────────────────────────────────────────────────────────────────────
+initCharts();
+loadAll();
+setInterval(loadAll, 30000);
+</script>
 </body>
 </html>
