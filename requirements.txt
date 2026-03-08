@@ -30,6 +30,7 @@ numpy>=1.25
 # API framework
 fastapi>=0.104
 uvicorn>=0.24
+python-multipart>=0.0.9
 pydantic>=2.5
 
 # Storage
