@@ -15,7 +15,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi.responses import HTMLResponse
 from uvicorn import run
 
 from src.config import PipelineConfig
@@ -145,27 +146,75 @@ class PhishingDetectionApp:
             version="1.0.0",
         )
 
-        # Analysis API endpoints
-        @app.post("/api/analyze")
-        async def analyze_email(email: dict):
-            """
-            Analyze email from JSON payload.
+        @app.get("/", response_class=HTMLResponse)
+        async def index():
+            """Serve the main upload/analyze page."""
+            index_path = Path("./templates/index.html")
+            return HTMLResponse(content=index_path.read_text(encoding="utf-8"))
 
-            Expects JSON with email details (headers, body, attachments, etc.)
+        @app.post("/api/analyze/upload")
+        async def analyze_upload(file: UploadFile = File(...)):
+            """
+            Analyze an uploaded .eml file.
 
             Returns:
-                Analysis result with verdict and IOC breakdown.
+                Analysis result with verdict, scores, and IOCs.
             """
             try:
-                # Convert dict to EmailObject
-                # Note: This is a simplified conversion; full implementation
-                # would parse all email fields properly
-                logger.info(f"Received analysis request")
-                return {"error": "Full implementation required"}
+                raw = await file.read()
+                if not raw:
+                    raise HTTPException(status_code=400, detail="Empty file uploaded")
 
+                from src.extractors.eml_parser import EMLParser
+                parser = EMLParser()
+                email = parser.parse_bytes(raw)
+                if email is None:
+                    raise HTTPException(status_code=422, detail="Could not parse email file")
+
+                logger.info(f"Analyzing uploaded email: {email.email_id}")
+                result = await self.pipeline.analyze(email)
+
+                # Serialize to JSON-friendly dict
+                def _safe(v):
+                    if hasattr(v, 'value'):
+                        return v.value
+                    if hasattr(v, 'isoformat'):
+                        return v.isoformat()
+                    return v
+
+                analyzer_results = {}
+                for name, ar in (result.analyzer_results or {}).items():
+                    analyzer_results[name] = {
+                        "risk_score": ar.risk_score,
+                        "confidence": ar.confidence,
+                        "details": str(ar.details) if ar.details else None,
+                    }
+
+                iocs = result.iocs or {}
+                headers_raw = iocs.get("headers", {})
+                headers_out = {}
+                if hasattr(headers_raw, '__dict__'):
+                    headers_out = {k: _safe(v) for k, v in vars(headers_raw).items()}
+                elif isinstance(headers_raw, dict):
+                    headers_out = {k: _safe(v) for k, v in headers_raw.items()}
+
+                return {
+                    "email_id": result.email_id,
+                    "verdict": result.verdict.value,
+                    "overall_score": result.overall_score,
+                    "overall_confidence": result.overall_confidence,
+                    "timestamp": result.timestamp.isoformat(),
+                    "analyzer_results": analyzer_results,
+                    "extracted_urls": result.extracted_urls or [],
+                    "reasoning": result.reasoning if isinstance(result.reasoning, list) else [str(result.reasoning)],
+                    "iocs": {"headers": headers_out},
+                }
+
+            except HTTPException:
+                raise
             except Exception as e:
-                logger.error(f"Analysis failed: {e}")
-                raise HTTPException(status_code=400, detail=str(e))
+                logger.error(f"Upload analysis failed: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
 
         @app.get("/api/health")
         async def health_check():

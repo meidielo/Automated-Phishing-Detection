@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Phishing Detection</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      min-height: 100vh;
+    }
+
+    /* ── Nav ── */
+    nav {
+      background: #1a1d27;
+      border-bottom: 1px solid #2d3148;
+      padding: 0 32px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      gap: 24px;
+    }
+    nav .logo {
+      font-size: 17px;
+      font-weight: 700;
+      color: #a78bfa;
+      text-decoration: none;
+      margin-right: auto;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    nav a {
+      color: #94a3b8;
+      text-decoration: none;
+      font-size: 14px;
+      padding: 6px 12px;
+      border-radius: 6px;
+      transition: background .2s, color .2s;
+    }
+    nav a:hover, nav a.active { background: #2d3148; color: #e2e8f0; }
+
+    /* ── Layout ── */
+    .page { max-width: 900px; margin: 0 auto; padding: 48px 24px; }
+
+    .hero { text-align: center; margin-bottom: 48px; }
+    .hero h1 { font-size: 36px; font-weight: 800; color: #f1f5f9; margin-bottom: 12px; }
+    .hero p { color: #64748b; font-size: 16px; }
+
+    /* ── Drop Zone ── */
+    #drop-zone {
+      border: 2px dashed #2d3148;
+      border-radius: 16px;
+      padding: 56px 32px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .2s, background .2s;
+      background: #1a1d27;
+      margin-bottom: 24px;
+    }
+    #drop-zone:hover, #drop-zone.drag-over {
+      border-color: #7c3aed;
+      background: #1e1b33;
+    }
+    #drop-zone svg { width: 52px; height: 52px; color: #4c4f6b; margin-bottom: 16px; }
+    #drop-zone h2 { font-size: 18px; color: #94a3b8; margin-bottom: 8px; }
+    #drop-zone p { font-size: 13px; color: #4c4f6b; }
+    #drop-zone.has-file { border-color: #7c3aed; background: #1e1b33; }
+    #drop-zone.has-file svg { color: #7c3aed; }
+    #drop-zone.has-file h2 { color: #a78bfa; }
+    #file-input { display: none; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 28px;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: opacity .2s, transform .1s;
+    }
+    .btn:active { transform: scale(.98); }
+    .btn:disabled { opacity: .4; cursor: not-allowed; }
+    .btn-primary { background: #7c3aed; color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: #6d28d9; }
+    .btn-ghost { background: #2d3148; color: #94a3b8; }
+    .btn-ghost:hover { background: #363b55; color: #e2e8f0; }
+
+    .controls {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+      margin-bottom: 40px;
+    }
+
+    /* ── Spinner ── */
+    .spinner {
+      width: 18px; height: 18px;
+      border: 2px solid rgba(255,255,255,.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      display: none;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Results ── */
+    #results { display: none; }
+
+    .verdict-banner {
+      border-radius: 12px;
+      padding: 28px 32px;
+      margin-bottom: 28px;
+      display: flex;
+      align-items: center;
+      gap: 24px;
+    }
+    .verdict-banner .icon { font-size: 40px; }
+    .verdict-banner .label { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; opacity: .7; }
+    .verdict-banner .verdict-text { font-size: 28px; font-weight: 800; }
+    .verdict-banner .score-text { font-size: 14px; opacity: .8; margin-top: 4px; }
+    .verdict-banner.CLEAN             { background: linear-gradient(135deg,#052e16,#14532d); border: 1px solid #166534; }
+    .verdict-banner.SUSPICIOUS        { background: linear-gradient(135deg,#1c1400,#451a03); border: 1px solid #78350f; }
+    .verdict-banner.LIKELY_PHISHING   { background: linear-gradient(135deg,#200800,#431407); border: 1px solid #9a3412; }
+    .verdict-banner.CONFIRMED_PHISHING{ background: linear-gradient(135deg,#1f0000,#450a0a); border: 1px solid #991b1b; }
+
+    .verdict-color-CLEAN              { color: #4ade80; }
+    .verdict-color-SUSPICIOUS         { color: #fbbf24; }
+    .verdict-color-LIKELY_PHISHING    { color: #fb923c; }
+    .verdict-color-CONFIRMED_PHISHING { color: #f87171; }
+
+    /* ── Score Bar ── */
+    .score-section { margin-bottom: 28px; }
+    .score-section h3 { font-size: 15px; font-weight: 600; color: #94a3b8; margin-bottom: 12px; text-transform: uppercase; letter-spacing: .5px; }
+    .score-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+    .score-row .name { width: 180px; font-size: 13px; color: #94a3b8; flex-shrink: 0; }
+    .score-row .bar-wrap { flex: 1; background: #1e2130; border-radius: 4px; height: 18px; overflow: hidden; }
+    .score-row .bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #7c3aed, #a78bfa);
+      border-radius: 4px;
+      transition: width .6s ease;
+    }
+    .score-row .val { width: 40px; text-align: right; font-size: 13px; color: #64748b; }
+
+    /* ── Card grid ── */
+    .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 28px; }
+    @media(max-width:640px) { .cards { grid-template-columns: 1fr; } }
+
+    .card {
+      background: #1a1d27;
+      border: 1px solid #2d3148;
+      border-radius: 12px;
+      padding: 20px;
+    }
+    .card h3 { font-size: 13px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 14px; }
+    .kv { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; font-size: 13px; gap: 8px; }
+    .kv .k { color: #64748b; flex-shrink: 0; }
+    .kv .v { color: #cbd5e1; text-align: right; word-break: break-all; }
+    .kv .v.green  { color: #4ade80; }
+    .kv .v.red    { color: #f87171; }
+    .kv .v.yellow { color: #fbbf24; }
+
+    /* ── URLs list ── */
+    .url-list { list-style: none; }
+    .url-list li {
+      font-size: 12px;
+      color: #7c3aed;
+      background: #1e1b33;
+      border: 1px solid #2d2852;
+      border-radius: 6px;
+      padding: 6px 10px;
+      margin-bottom: 6px;
+      word-break: break-all;
+    }
+
+    /* ── Reasoning ── */
+    .reasoning-list { list-style: none; }
+    .reasoning-list li {
+      font-size: 13px;
+      color: #94a3b8;
+      padding: 6px 0;
+      border-bottom: 1px solid #1e2130;
+      display: flex;
+      gap: 8px;
+    }
+    .reasoning-list li::before { content: '→'; color: #4c4f6b; flex-shrink: 0; }
+
+    /* ── Error ── */
+    #error-box {
+      display: none;
+      background: #1f0000;
+      border: 1px solid #991b1b;
+      border-radius: 10px;
+      padding: 20px 24px;
+      color: #fca5a5;
+      font-size: 14px;
+      margin-bottom: 24px;
+    }
+
+    .full-width { grid-column: 1 / -1; }
+  </style>
+</head>
+<body>
+
+<nav>
+  <a class="logo" href="/">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+    PhishDetect
+  </a>
+  <a href="/" class="active">Analyze</a>
+  <a href="/dashboard">Dashboard</a>
+  <a href="/api/health">API Status</a>
+</nav>
+
+<div class="page">
+  <div class="hero">
+    <h1>Email Phishing Detector</h1>
+    <p>Upload an .eml file to analyze it for phishing indicators, malicious URLs, and threats.</p>
+  </div>
+
+  <!-- Upload Zone -->
+  <div id="drop-zone" onclick="document.getElementById('file-input').click()">
+    <input type="file" id="file-input" accept=".eml,.msg" />
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <path d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5"/>
+    </svg>
+    <h2 id="drop-label">Drop your .eml file here, or click to browse</h2>
+    <p>Supports .eml and .msg formats</p>
+  </div>
+
+  <div class="controls">
+    <button class="btn btn-primary" id="analyze-btn" onclick="analyzeEmail()" disabled>
+      <span class="spinner" id="spinner"></span>
+      <span id="btn-text">Analyze Email</span>
+    </button>
+    <button class="btn btn-ghost" id="clear-btn" onclick="clearAll()" style="display:none">Clear</button>
+  </div>
+
+  <!-- Error -->
+  <div id="error-box"></div>
+
+  <!-- Results -->
+  <div id="results">
+
+    <!-- Verdict Banner -->
+    <div id="verdict-banner" class="verdict-banner">
+      <div class="icon" id="verdict-icon"></div>
+      <div>
+        <div class="label">Verdict</div>
+        <div class="verdict-text" id="verdict-text"></div>
+        <div class="score-text" id="score-text"></div>
+      </div>
+    </div>
+
+    <!-- Analyzer Scores -->
+    <div class="score-section">
+      <h3>Analyzer Scores</h3>
+      <div id="score-bars"></div>
+    </div>
+
+    <!-- Info Cards -->
+    <div class="cards">
+      <div class="card">
+        <h3>Email Metadata</h3>
+        <div id="meta-content"></div>
+      </div>
+      <div class="card">
+        <h3>Authentication</h3>
+        <div id="auth-content"></div>
+      </div>
+      <div class="card full-width">
+        <h3>Reasoning</h3>
+        <ul class="reasoning-list" id="reasoning-list"></ul>
+      </div>
+      <div class="card full-width" id="urls-card" style="display:none">
+        <h3>Extracted URLs (<span id="url-count">0</span>)</h3>
+        <ul class="url-list" id="url-list"></ul>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  let selectedFile = null;
+
+  const dropZone   = document.getElementById('drop-zone');
+  const fileInput  = document.getElementById('file-input');
+  const analyzeBtn = document.getElementById('analyze-btn');
+  const clearBtn   = document.getElementById('clear-btn');
+  const dropLabel  = document.getElementById('drop-label');
+
+  // ── File selection ──────────────────────────────────────────────────
+  fileInput.addEventListener('change', e => setFile(e.target.files[0]));
+
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    const f = e.dataTransfer.files[0];
+    if (f) setFile(f);
+  });
+
+  function setFile(f) {
+    if (!f) return;
+    selectedFile = f;
+    dropLabel.textContent = f.name;
+    dropZone.classList.add('has-file');
+    analyzeBtn.disabled = false;
+    clearBtn.style.display = '';
+    hideResults();
+  }
+
+  function clearAll() {
+    selectedFile = null;
+    fileInput.value = '';
+    dropLabel.textContent = 'Drop your .eml file here, or click to browse';
+    dropZone.classList.remove('has-file');
+    analyzeBtn.disabled = true;
+    clearBtn.style.display = 'none';
+    hideResults();
+  }
+
+  function hideResults() {
+    document.getElementById('results').style.display = 'none';
+    document.getElementById('error-box').style.display = 'none';
+  }
+
+  // ── Analysis ────────────────────────────────────────────────────────
+  async function analyzeEmail() {
+    if (!selectedFile) return;
+
+    const spinner  = document.getElementById('spinner');
+    const btnText  = document.getElementById('btn-text');
+    spinner.style.display = 'block';
+    btnText.textContent = 'Analyzing…';
+    analyzeBtn.disabled = true;
+    hideResults();
+
+    const form = new FormData();
+    form.append('file', selectedFile);
+
+    try {
+      const res  = await fetch('/api/analyze/upload', { method: 'POST', body: form });
+      const data = await res.json();
+
+      if (!res.ok) {
+        showError(data.detail || data.error || `Server error ${res.status}`);
+      } else {
+        showResults(data);
+      }
+    } catch (err) {
+      showError(`Network error: ${err.message}`);
+    } finally {
+      spinner.style.display = 'none';
+      btnText.textContent = 'Analyze Email';
+      analyzeBtn.disabled = false;
+    }
+  }
+
+  // ── Render results ──────────────────────────────────────────────────
+  const ICONS = {
+    CLEAN: '✅',
+    SUSPICIOUS: '⚠️',
+    LIKELY_PHISHING: '🚨',
+    CONFIRMED_PHISHING: '☠️',
+  };
+
+  const LABELS = {
+    CLEAN: 'Clean',
+    SUSPICIOUS: 'Suspicious',
+    LIKELY_PHISHING: 'Likely Phishing',
+    CONFIRMED_PHISHING: 'Confirmed Phishing',
+  };
+
+  function showResults(data) {
+    const verdict = data.verdict || 'SUSPICIOUS';
+    const score   = data.overall_score ?? 0;
+    const conf    = data.overall_confidence ?? 0;
+
+    // Banner
+    const banner = document.getElementById('verdict-banner');
+    banner.className = `verdict-banner ${verdict}`;
+    document.getElementById('verdict-icon').textContent = ICONS[verdict] || '❓';
+    document.getElementById('verdict-text').innerHTML =
+      `<span class="verdict-color-${verdict}">${LABELS[verdict] || verdict}</span>`;
+    document.getElementById('score-text').textContent =
+      `Score: ${(score * 100).toFixed(1)}%  ·  Confidence: ${(conf * 100).toFixed(0)}%`;
+
+    // Analyzer score bars
+    const barsEl = document.getElementById('score-bars');
+    barsEl.innerHTML = '';
+    const results = data.analyzer_results || {};
+    const entries = Object.entries(results);
+    if (entries.length === 0) {
+      barsEl.innerHTML = '<p style="color:#4c4f6b;font-size:13px">No analyzer data returned.</p>';
+    }
+    entries.forEach(([name, r]) => {
+      const pct = Math.round((r.risk_score ?? 0) * 100);
+      const label = name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      barsEl.innerHTML += `
+        <div class="score-row">
+          <div class="name">${label}</div>
+          <div class="bar-wrap"><div class="bar-fill" style="width:${pct}%"></div></div>
+          <div class="val">${pct}%</div>
+        </div>`;
+    });
+
+    // Metadata card
+    const iocs = data.iocs || {};
+    const hdrs = iocs.headers || {};
+    document.getElementById('meta-content').innerHTML = kv([
+      ['Email ID',    data.email_id || '—'],
+      ['From',        hdrs.from_address || '—'],
+      ['Subject',     hdrs.subject || '—'],
+      ['Timestamp',   data.timestamp ? data.timestamp.replace('T',' ').split('.')[0] : '—'],
+      ['URLs Found',  (data.extracted_urls || []).length],
+    ]);
+
+    // Auth card
+    const spf   = hdrs.spf_result   || '—';
+    const dkim  = hdrs.dkim_result  || '—';
+    const dmarc = hdrs.dmarc_result || '—';
+    document.getElementById('auth-content').innerHTML = kv([
+      ['SPF',   spf,   authColor(spf)],
+      ['DKIM',  dkim,  authColor(dkim)],
+      ['DMARC', dmarc, authColor(dmarc)],
+      ['Reply-To Mismatch', hdrs.reply_to_mismatch ? 'Yes' : 'No', hdrs.reply_to_mismatch ? 'red' : 'green'],
+      ['Display Name Spoof', hdrs.display_name_spoofing ? 'Yes' : 'No', hdrs.display_name_spoofing ? 'red' : 'green'],
+    ]);
+
+    // Reasoning
+    const rl = document.getElementById('reasoning-list');
+    const reasons = Array.isArray(data.reasoning) ? data.reasoning : (data.reasoning ? [data.reasoning] : []);
+    rl.innerHTML = reasons.length
+      ? reasons.map(r => `<li>${escHtml(r)}</li>`).join('')
+      : '<li style="color:#4c4f6b">No reasoning provided.</li>';
+
+    // URLs
+    const urls = data.extracted_urls || [];
+    if (urls.length) {
+      document.getElementById('urls-card').style.display = '';
+      document.getElementById('url-count').textContent = urls.length;
+      document.getElementById('url-list').innerHTML = urls
+        .slice(0, 30)
+        .map(u => `<li>${escHtml(u)}</li>`).join('');
+    } else {
+      document.getElementById('urls-card').style.display = 'none';
+    }
+
+    document.getElementById('results').style.display = 'block';
+    document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function kv(rows) {
+    return rows.map(([k, v, cls]) =>
+      `<div class="kv"><span class="k">${escHtml(k)}</span><span class="v ${cls||''}">${escHtml(String(v))}</span></div>`
+    ).join('');
+  }
+
+  function authColor(val) {
+    const v = (val || '').toLowerCase();
+    if (v.includes('pass')) return 'green';
+    if (v.includes('fail') || v.includes('none')) return 'red';
+    return 'yellow';
+  }
+
+  function showError(msg) {
+    const el = document.getElementById('error-box');
+    el.textContent = `Error: ${msg}`;
+    el.style.display = 'block';
+  }
+
+  function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+</script>
+</body>
+</html>
