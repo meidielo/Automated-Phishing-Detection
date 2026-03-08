@@ -1,0 +1,119 @@
+From: John Smith <john.smith@trusted-company.com>
+To: team@trusted-company.com
+Cc: manager@trusted-company.com
+Subject: Q2 2026 Project Updates and Timeline
+Date: Wed, 08 Mar 2026 10:30:00 +0000
+Message-ID: <legitimate_001_20260308@trusted-company.com>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="boundary_legitimate_001"
+Received: from mail.trusted-company.com ([192.0.2.1]) by mx.trusted-company.com with SMTP id xyz789abc123
+Received: from smtp.trusted-company.com by mail.trusted-company.com with SMTP
+
+--boundary_legitimate_001
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+Hi Team,
+
+As discussed in our meeting yesterday, here's an update on our Q2 2026 projects:
+
+PROJECT STATUS UPDATES:
+=====================
+
+1. Platform Migration
+   - Status: On track
+   - Deadline: April 30, 2026
+   - Owner: Sarah Johnson
+   - Next milestone: Database migration (March 15)
+
+2. Mobile App v2.0
+   - Status: Code review in progress
+   - Deadline: May 15, 2026
+   - Owner: Mike Chen
+   - Next milestone: Beta testing (March 20)
+
+3. Security Audit
+   - Status: Initial assessment complete
+   - Deadline: June 30, 2026
+   - Owner: Security Team
+   - Next milestone: Remediation plan (March 25)
+
+UPCOMING MEETINGS:
+=================
+- Weekly sync: Every Friday at 2 PM (Conference Room B)
+- Steering committee: March 15 at 3 PM (Virtual)
+- All-hands: March 22 at 1 PM (Auditorium)
+
+Please review the attached timeline and let me know if you have any questions or concerns.
+
+Best regards,
+John Smith
+Project Manager
+Trusted Company Inc.
+
+--boundary_legitimate_001
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+<html>
+<head>
+<title>Q2 2026 Project Updates</title>
+</head>
+<body style="font-family: Arial, sans-serif; background-color: #ffffff;">
+<div style="max-width: 800px; margin: 0 auto; padding: 20px;">
+
+  <h1 style="color: #333333;">Q2 2026 Project Updates and Timeline</h1>
+
+  <p>Hi Team,</p>
+
+  <p>As discussed in our meeting yesterday, here's an update on our Q2 2026 projects:</p>
+
+  <h2 style="color: #666666; border-bottom: 1px solid #cccccc; padding-bottom: 10px;">PROJECT STATUS UPDATES</h2>
+
+  <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+    <tr style="background-color: #f5f5f5;">
+      <th style="border: 1px solid #ddd; padding: 10px; text-align: left;">Project</th>
+      <th style="border: 1px solid #ddd; padding: 10px; text-align: left;">Status</th>
+      <th style="border: 1px solid #ddd; padding: 10px; text-align: left;">Deadline</th>
+    </tr>
+    <tr>
+      <td style="border: 1px solid #ddd; padding: 10px;">Platform Migration</td>
+      <td style="border: 1px solid #ddd; padding: 10px;">On track</td>
+      <td style="border: 1px solid #ddd; padding: 10px;">April 30, 2026</td>
+    </tr>
+    <tr style="background-color: #f9f9f9;">
+      <td style="border: 1px solid #ddd; padding: 10px;">Mobile App v2.0</td>
+      <td style="border: 1px solid #ddd; padding: 10px;">Code review</td>
+      <td style="border: 1px solid #ddd; padding: 10px;">May 15, 2026</td>
+    </tr>
+    <tr>
+      <td style="border: 1px solid #ddd; padding: 10px;">Security Audit</td>
+      <td style="border: 1px solid #ddd; padding: 10px;">Initial assessment</td>
+      <td style="border: 1px solid #ddd; padding: 10px;">June 30, 2026</td>
+    </tr>
+  </table>
+
+  <h2 style="color: #666666; border-bottom: 1px solid #cccccc; padding-bottom: 10px;">UPCOMING MEETINGS</h2>
+
+  <ul style="line-height: 1.8;">
+    <li>Weekly sync: Every Friday at 2 PM (Conference Room B)</li>
+    <li>Steering committee: March 15 at 3 PM (Virtual)</li>
+    <li>All-hands: March 22 at 1 PM (Auditorium)</li>
+  </ul>
+
+  <p>Please review the attached timeline and let me know if you have any questions or concerns.</p>
+
+  <hr style="border: none; border-top: 1px solid #cccccc; margin: 30px 0;">
+
+  <p style="color: #666666; font-size: 12px;">
+    <strong>John Smith</strong><br>
+    Project Manager<br>
+    Trusted Company Inc.<br>
+    john.smith@trusted-company.com<br>
+    (555) 123-4567
+  </p>
+</div>
+</body>
+</html>
+
+--boundary_legitimate_001--

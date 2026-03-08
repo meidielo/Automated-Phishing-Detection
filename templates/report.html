@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phishing Analysis Report - {{ email_id }}</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f6fa;
+            color: #2c3e50;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            margin: 5px 0;
+            opacity: 0.9;
+        }
+
+        .verdict-badge {
+            display: inline-block;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-weight: bold;
+            font-size: 18px;
+            margin-top: 15px;
+            background-color: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: 2px solid rgba(255, 255, 255, 0.5);
+        }
+
+        .verdict-badge.clean {
+            background-color: #28a745;
+            border-color: #218838;
+        }
+
+        .verdict-badge.suspicious {
+            background-color: #ffc107;
+            border-color: #e0a800;
+            color: #333;
+        }
+
+        .verdict-badge.likely-phishing {
+            background-color: #fd7e14;
+            border-color: #dc6311;
+        }
+
+        .verdict-badge.confirmed-phishing {
+            background-color: #dc3545;
+            border-color: #c82333;
+        }
+
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            border-left: 4px solid #667eea;
+        }
+
+        .card h2 {
+            color: #2c3e50;
+            font-size: 20px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+        }
+
+        .card h2::before {
+            content: '';
+            display: inline-block;
+            width: 4px;
+            height: 20px;
+            background-color: #667eea;
+            margin-right: 12px;
+            border-radius: 2px;
+        }
+
+        .score-section {
+            margin-bottom: 25px;
+        }
+
+        .score-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+
+        .score-bar-container {
+            background-color: #e9ecef;
+            border-radius: 4px;
+            overflow: hidden;
+            height: 28px;
+            position: relative;
+        }
+
+        .score-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding-right: 10px;
+            color: white;
+            font-weight: bold;
+            font-size: 12px;
+            transition: width 0.3s ease;
+        }
+
+        .analyzer-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .analyzer-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            border-left: 3px solid #667eea;
+        }
+
+        .analyzer-card h4 {
+            margin-bottom: 10px;
+            color: #2c3e50;
+            font-size: 14px;
+        }
+
+        .analyzer-metrics {
+            display: flex;
+            justify-content: space-between;
+            font-size: 13px;
+            color: #666;
+        }
+
+        .metric {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .metric-label {
+            font-size: 11px;
+            color: #999;
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+
+        .metric-value {
+            font-weight: bold;
+            color: #2c3e50;
+        }
+
+        .url-list {
+            list-style: none;
+        }
+
+        .url-item {
+            background: #f8f9fa;
+            padding: 12px;
+            margin-bottom: 12px;
+            border-radius: 6px;
+            border-left: 3px solid #667eea;
+            word-break: break-all;
+        }
+
+        .url-item strong {
+            display: block;
+            margin-bottom: 5px;
+            color: #2c3e50;
+            font-size: 12px;
+        }
+
+        .url-item code {
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            color: #666;
+            background-color: #fff;
+            padding: 4px;
+            border-radius: 3px;
+        }
+
+        .source-badge {
+            display: inline-block;
+            padding: 3px 8px;
+            background-color: #e7f3ff;
+            color: #0066cc;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: 600;
+            margin-top: 8px;
+        }
+
+        .qr-section {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 15px;
+        }
+
+        .qr-item {
+            text-align: center;
+        }
+
+        .qr-image {
+            max-width: 200px;
+            height: auto;
+            border: 2px solid #e9ecef;
+            padding: 10px;
+            border-radius: 6px;
+            margin-bottom: 10px;
+        }
+
+        .qr-data {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            word-break: break-all;
+        }
+
+        .header-check {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+            margin-top: 15px;
+        }
+
+        .header-item {
+            padding: 12px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            text-align: center;
+        }
+
+        .header-item .label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+        }
+
+        .header-item .result {
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        .result.pass {
+            color: #28a745;
+        }
+
+        .result.fail {
+            color: #dc3545;
+        }
+
+        .result.unknown {
+            color: #999;
+        }
+
+        .reasoning-box {
+            background: #f0f7ff;
+            border-left: 4px solid #0066cc;
+            padding: 15px;
+            border-radius: 4px;
+            line-height: 1.8;
+        }
+
+        .metadata {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            font-size: 14px;
+        }
+
+        .metadata-item strong {
+            display: block;
+            color: #666;
+            font-size: 12px;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+        }
+
+        .raw-headers {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            line-height: 1.4;
+        }
+
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: #999;
+            font-size: 12px;
+            margin-top: 30px;
+        }
+
+        @media print {
+            body {
+                background: white;
+            }
+
+            .card {
+                page-break-inside: avoid;
+                box-shadow: none;
+                border: 1px solid #ddd;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+
+            .card {
+                padding: 15px;
+            }
+
+            .header {
+                padding: 20px;
+            }
+
+            .header h1 {
+                font-size: 22px;
+            }
+
+            .metadata {
+                grid-template-columns: 1fr;
+            }
+
+            .analyzer-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>Phishing Detection Analysis Report</h1>
+            <p><strong>Email ID:</strong> {{ email_id }}</p>
+            <p><strong>Analysis Time:</strong> {{ timestamp }}</p>
+            <div class="verdict-badge {{ verdict|lower|replace('_', '-') }}">
+                Verdict: {{ verdict }}
+            </div>
+        </div>
+
+        <!-- Score Breakdown -->
+        <div class="card">
+            <h2>Risk Score Assessment</h2>
+
+            <div class="score-section">
+                <div class="score-label">
+                    <span>Overall Phishing Score</span>
+                    <span style="color: #667eea; font-weight: bold;">{{ "%.3f"|format(overall_score) }}</span>
+                </div>
+                <div class="score-bar-container">
+                    <div class="score-bar-fill" style="width: {{ overall_score * 100 }}%">
+                        {{ "%.1f"|format(overall_score * 100) }}%
+                    </div>
+                </div>
+            </div>
+
+            <div class="score-section">
+                <div class="score-label">
+                    <span>Analysis Confidence</span>
+                    <span style="color: #667eea; font-weight: bold;">{{ "%.3f"|format(overall_confidence) }}</span>
+                </div>
+                <div class="score-bar-container">
+                    <div class="score-bar-fill" style="width: {{ overall_confidence * 100 }}%">
+                        {{ "%.1f"|format(overall_confidence * 100) }}%
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Email Authentication Headers -->
+        <div class="card">
+            <h2>Email Authentication</h2>
+
+            <div class="header-check">
+                <div class="header-item">
+                    <div class="label">SPF</div>
+                    <div class="result {% if header_details.spf == True %}pass{% elif header_details.spf == False %}fail{% else %}unknown{% endif %}">
+                        {% if header_details.spf == True %}PASS{% elif header_details.spf == False %}FAIL{% else %}UNKNOWN{% endif %}
+                    </div>
+                </div>
+
+                <div class="header-item">
+                    <div class="label">DKIM</div>
+                    <div class="result {% if header_details.dkim == True %}pass{% elif header_details.dkim == False %}fail{% else %}unknown{% endif %}">
+                        {% if header_details.dkim == True %}PASS{% elif header_details.dkim == False %}FAIL{% else %}UNKNOWN{% endif %}
+                    </div>
+                </div>
+
+                <div class="header-item">
+                    <div class="label">DMARC</div>
+                    <div class="result {% if header_details.dmarc == True %}pass{% elif header_details.dmarc == False %}fail{% else %}unknown{% endif %}">
+                        {% if header_details.dmarc == True %}PASS{% elif header_details.dmarc == False %}FAIL{% else %}UNKNOWN{% endif %}
+                    </div>
+                </div>
+
+                <div class="header-item">
+                    <div class="label">From/Reply Mismatch</div>
+                    <div class="result {% if not header_details.from_reply_to_match %}fail{% else %}pass{% endif %}">
+                        {% if not header_details.from_reply_to_match %}MISMATCH{% else %}OK{% endif %}
+                    </div>
+                </div>
+            </div>
+
+            {% if header_details.display_name_spoofing %}
+            <div style="margin-top: 15px; padding: 12px; background: #fff3cd; border-left: 3px solid #ffc107; border-radius: 4px;">
+                <strong style="color: #856404;">⚠ Display Name Spoofing Detected</strong>
+            </div>
+            {% endif %}
+
+            {% if header_details.suspicious_received_chain %}
+            <div style="margin-top: 15px; padding: 12px; background: #fff3cd; border-left: 3px solid #ffc107; border-radius: 4px;">
+                <strong style="color: #856404;">⚠ Suspicious Received Chain Detected</strong>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Analyzer Results -->
+        <div class="card">
+            <h2>Analyzer Breakdown</h2>
+
+            <div class="analyzer-grid">
+                {% for analyzer in analyzer_scores %}
+                <div class="analyzer-card">
+                    <h4>{{ analyzer.name|replace('_', ' ')|title }}</h4>
+                    <div class="score-bar-container" style="height: 20px; margin-bottom: 10px;">
+                        <div class="score-bar-fill" style="width: {{ analyzer.bar_width }}%; font-size: 10px;">
+                            {% if analyzer.bar_width > 10 %}{{ analyzer.bar_width }}%{% endif %}
+                        </div>
+                    </div>
+                    <div class="analyzer-metrics">
+                        <div class="metric">
+                            <div class="metric-label">Risk Score</div>
+                            <div class="metric-value">{{ "%.3f"|format(analyzer.score) }}</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-label">Confidence</div>
+                            <div class="metric-value">{{ "%.3f"|format(analyzer.confidence) }}</div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Extracted URLs -->
+        {% if defanged_urls %}
+        <div class="card">
+            <h2>Extracted URLs (Defanged)</h2>
+
+            <ul class="url-list">
+                {% for url in defanged_urls %}
+                <li class="url-item">
+                    <strong>Defanged URL:</strong>
+                    <code>{{ url.defanged }}</code>
+                    <div>
+                        <span class="source-badge">{{ url.source|replace('_', ' ')|title }}</span>
+                    </div>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        <!-- QR Codes -->
+        {% if qr_codes %}
+        <div class="card">
+            <h2>QR Codes Detected</h2>
+
+            <div class="qr-section">
+                {% for qr in qr_codes %}
+                <div class="qr-item">
+                    {% if qr.image %}
+                    <img src="{{ qr.image }}" alt="QR Code" class="qr-image">
+                    {% endif %}
+                    <div class="qr-data">
+                        <strong>Decoded:</strong><br>
+                        {{ qr.decoded|truncate(100) }}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Reasoning -->
+        <div class="card">
+            <h2>Analysis Reasoning</h2>
+            <div class="reasoning-box">
+                {{ reasoning }}
+            </div>
+        </div>
+
+        <!-- Metadata -->
+        <div class="card">
+            <h2>Analysis Metadata</h2>
+            <div class="metadata">
+                <div>
+                    <strong>Email ID</strong>
+                    <code style="background: #f8f9fa; padding: 4px; border-radius: 3px; display: block; margin-top: 4px;">{{ email_id }}</code>
+                </div>
+                <div>
+                    <strong>Analysis Timestamp</strong>
+                    <code style="background: #f8f9fa; padding: 4px; border-radius: 3px; display: block; margin-top: 4px;">{{ timestamp }}</code>
+                </div>
+                <div>
+                    <strong>Extracted URLs</strong>
+                    <code style="background: #f8f9fa; padding: 4px; border-radius: 3px; display: block; margin-top: 4px;">{{ defanged_urls|length }}</code>
+                </div>
+                <div>
+                    <strong>QR Codes Found</strong>
+                    <code style="background: #f8f9fa; padding: 4px; border-radius: 3px; display: block; margin-top: 4px;">{{ qr_codes|length }}</code>
+                </div>
+            </div>
+        </div>
+
+        <!-- Raw Headers (Collapsible) -->
+        {% if raw_headers %}
+        <div class="card">
+            <h2>Raw Email Headers</h2>
+            <details style="margin-top: 15px;">
+                <summary style="cursor: pointer; padding: 10px; background: #f8f9fa; border-radius: 4px; font-weight: 500;">
+                    Click to expand raw headers
+                </summary>
+                <div class="raw-headers" style="margin-top: 10px;">
+                    {{ raw_headers }}
+                </div>
+            </details>
+        </div>
+        {% endif %}
+
+        <!-- Footer -->
+        <div class="footer">
+            <p>This report was automatically generated by the Automated Phishing Detection System.</p>
+            <p>For questions or concerns, contact your security team.</p>
+        </div>
+    </div>
+</body>
+</html>

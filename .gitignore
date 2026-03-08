@@ -1,0 +1,84 @@
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+
+# ===== Virtual Environment =====
+venv/
+.venv/
+env/
+
+# ===== Secrets & Config =====
+.env
+*.pem
+*.key
+api_keys.json
+
+# ===== IDE =====
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ===== Models & Large Binaries =====
+models/**/*.bin
+models/**/*.pt
+models/**/*.onnx
+models/**/*.pkl
+models/**/*.joblib
+models/**/*.h5
+
+# ===== Runtime Artifacts =====
+*.log
+logs/
+screenshots/
+detonation_captures/
+sandbox_results/
+*.har
+detonation_captures/*.png
+detonation_captures/*.html
+brand_references/generated_hashes/
+
+# ===== Database =====
+*.db
+*.sqlite3
+
+# ===== Docker =====
+docker-compose.override.yml
+
+# ===== OS =====
+.DS_Store
+Thumbs.db
+
+# ===== Test Artifacts =====
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+.mypy_cache/
+
+# ===== Training Data =====
+data/feedback_store/*.csv
+data/feedback_store/*.jsonl
+data/exports/
+training_runs/
+checkpoints/
+wandb/
+mlruns/
+tensorboard_logs/
+
+# ===== Dashboard Runtime =====
+instance/
+feedback/exports/
+reports/generated/
+
+# ===== Sample Emails (contain PII — do not commit) =====
+tests/sample_emails/*.eml
+tests/sample_emails/*.msg
