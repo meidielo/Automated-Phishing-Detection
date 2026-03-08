@@ -282,6 +282,12 @@ Examples:
 
   # Start server on custom port
   python main.py --serve --port 9000
+
+  # Monitor inbox continuously
+  python main.py monitor
+
+  # Monitor with custom poll interval
+  python main.py monitor --interval 30
         """,
     )
 
@@ -311,6 +317,17 @@ Examples:
         "--port",
         type=int,
         help="Port to bind to (default from config)",
+    )
+
+    # Monitor subcommand
+    monitor_parser = subparsers.add_parser(
+        "monitor",
+        help="Continuously monitor inbox for phishing emails",
+    )
+    monitor_parser.add_argument(
+        "--interval",
+        type=int,
+        help="Poll interval in seconds (default from config, usually 60)",
     )
 
     # Legacy: support old --analyze and --serve flags
@@ -351,6 +368,13 @@ Examples:
         asyncio.run(app.analyze_email_file(args.email_file, args.format))
     elif args.command == "serve":
         app.run_server(host=args.host, port=args.port)
+    elif args.command == "monitor":
+        from src.automation.email_monitor import EmailMonitor
+        config = PipelineConfig.from_env()
+        monitor = EmailMonitor.from_config(config)
+        if args.interval:
+            monitor.poll_interval = args.interval
+        asyncio.run(monitor.run())
     else:
         # No command specified
         if len(sys.argv) == 1:

@@ -40,6 +40,46 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # Continuous IMAP email monitor
+  email-monitor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: phishing-email-monitor
+    command: ["python", "main.py", "monitor"]
+    environment:
+      - LOG_LEVEL=INFO
+      - IMAP_HOST=${IMAP_HOST:-imap.example.com}
+      - IMAP_PORT=${IMAP_PORT:-993}
+      - IMAP_USER=${IMAP_USER:-}
+      - IMAP_PASSWORD=${IMAP_PASSWORD:-}
+      - IMAP_FOLDER=${IMAP_FOLDER:-INBOX}
+      - IMAP_POLL_INTERVAL=${IMAP_POLL_INTERVAL:-60}
+      - ALERT_WEBHOOK_URL=${ALERT_WEBHOOK_URL:-}
+      - FEEDBACK_DB_PATH=/app/data/feedback.db
+      - VIRUSTOTAL_API_KEY=${VIRUSTOTAL_API_KEY:-}
+      - URLSCAN_API_KEY=${URLSCAN_API_KEY:-}
+      - ABUSEIPDB_API_KEY=${ABUSEIPDB_API_KEY:-}
+      - GOOGLE_SAFE_BROWSING_API_KEY=${GOOGLE_SAFE_BROWSING_API_KEY:-}
+      - SANDBOX_PROVIDER=${SANDBOX_PROVIDER:-hybrid_analysis}
+      - HYBRID_ANALYSIS_API_KEY=${HYBRID_ANALYSIS_API_KEY:-}
+      - LLM_PROVIDER=${LLM_PROVIDER:-anthropic}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    networks:
+      - phishing-network
+    depends_on:
+      - browser-sandbox
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   # Browser automation for URL detonation
   browser-sandbox:
     image: mcr.microsoft.com/playwright:v1.40.0-jammy
