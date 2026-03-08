@@ -45,6 +45,7 @@ class PhishingDetectionApp:
         self.report_gen = ReportGenerator(template_dir="./templates")
         self.ioc_exporter = IOCExporter()
         self.dashboard = PhishingDashboard(template_dir="./templates")
+        self._monitor = None  # set when IMAP monitor starts
 
     async def analyze_email_file(self, email_path: str, output_format: str = "json"):
         """
@@ -234,6 +235,62 @@ class PhishingDetectionApp:
                 "url_detonation_timeout": self.config.url_detonation_timeout,
             }
 
+        @app.get("/monitor", response_class=HTMLResponse)
+        async def monitor_page():
+            """Serve the automation monitor/review page."""
+            monitor_path = Path("./templates/monitor.html")
+            return HTMLResponse(content=monitor_path.read_text(encoding="utf-8"))
+
+        @app.get("/api/monitor/stats")
+        async def monitor_stats():
+            """Return current monitor stats and recent results."""
+            if self._monitor is None:
+                return {
+                    "running": False,
+                    "stats": {},
+                    "recent": [],
+                    "imap_configured": bool(self.config.imap.user),
+                }
+            return {
+                "running": self._monitor._running,
+                "stats": self._monitor.stats,
+                "recent": list(reversed(self._monitor._recent_results[-50:])),
+                "imap_configured": True,
+                "quarantine_folder": self._monitor.quarantine_folder,
+            }
+
+        @app.get("/api/monitor/log")
+        async def monitor_log(limit: int = 100):
+            """Return recent results from the JSONL log file."""
+            log_path = Path("data/results.jsonl")
+            if not log_path.exists():
+                return {"entries": []}
+            lines = log_path.read_text(encoding="utf-8").strip().splitlines()
+            import json as _json
+            entries = []
+            for line in reversed(lines[-limit:]):
+                try:
+                    entries.append(_json.loads(line))
+                except Exception:
+                    pass
+            return {"entries": entries}
+
+        @app.get("/api/monitor/alerts")
+        async def monitor_alerts(limit: int = 50):
+            """Return recent alerts from the alert log file."""
+            alert_path = Path("data/alerts.jsonl")
+            if not alert_path.exists():
+                return {"alerts": []}
+            lines = alert_path.read_text(encoding="utf-8").strip().splitlines()
+            import json as _json
+            alerts = []
+            for line in reversed(lines[-limit:]):
+                try:
+                    alerts.append(_json.loads(line))
+                except Exception:
+                    pass
+            return {"alerts": alerts}
+
         # Include dashboard routes
         app.include_router(self.dashboard.router)
 
@@ -252,9 +309,30 @@ class PhishingDetectionApp:
 
         app = self.create_fastapi_app()
 
+        # Start IMAP monitor in background if credentials are configured
+        if self.config.imap.user and self.config.imap.password:
+            from src.automation.email_monitor import EmailMonitor
+
+            @app.on_event("startup")
+            async def start_monitor():
+                self._monitor = EmailMonitor.from_config(self.config)
+                asyncio.create_task(self._monitor.run())
+                logger.info(
+                    f"IMAP monitor started: {self.config.imap.user}@"
+                    f"{self.config.imap.host} → quarantine='{self.config.imap.quarantine_folder}'"
+                )
+
+            @app.on_event("shutdown")
+            async def stop_monitor():
+                if self._monitor:
+                    self._monitor.stop()
+        else:
+            logger.info("IMAP not configured — monitor inactive (set IMAP_HOST, IMAP_USER, IMAP_PASSWORD)")
+
         logger.info(f"Starting server on {host}:{port}")
-        logger.info(f"Dashboard available at http://{host}:{port}/dashboard")
-        logger.info(f"API available at http://{host}:{port}/api")
+        logger.info(f"Dashboard: http://{host}:{port}/dashboard")
+        logger.info(f"Monitor:   http://{host}:{port}/monitor")
+        logger.info(f"API:       http://{host}:{port}/api")
 
         run(
             app,

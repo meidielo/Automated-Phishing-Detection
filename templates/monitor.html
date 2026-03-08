@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Monitor — PhishDetect</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; }
+
+    nav {
+      background: #1a1d27; border-bottom: 1px solid #2d3148;
+      padding: 0 32px; height: 56px; display: flex; align-items: center; gap: 24px;
+    }
+    nav .logo { font-size: 17px; font-weight: 700; color: #a78bfa; text-decoration: none; margin-right: auto; display: flex; align-items: center; gap: 8px; }
+    nav a { color: #94a3b8; text-decoration: none; font-size: 14px; padding: 6px 12px; border-radius: 6px; transition: background .2s, color .2s; }
+    nav a:hover, nav a.active { background: #2d3148; color: #e2e8f0; }
+
+    .page { max-width: 1200px; margin: 0 auto; padding: 36px 24px; }
+
+    .page-header { display: flex; align-items: center; gap: 16px; margin-bottom: 32px; }
+    .page-header h1 { font-size: 26px; font-weight: 700; }
+    .status-pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 12px; border-radius: 20px; font-size: 13px; font-weight: 600;
+    }
+    .status-pill.running { background: #052e16; color: #4ade80; border: 1px solid #166534; }
+    .status-pill.stopped { background: #1f0000; color: #f87171; border: 1px solid #991b1b; }
+    .status-pill.unconfigured { background: #1c1400; color: #fbbf24; border: 1px solid #78350f; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+    .dot.pulse { animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+    /* Stats row */
+    .stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 28px; }
+    .stat-card { background: #1a1d27; border: 1px solid #2d3148; border-radius: 10px; padding: 20px; }
+    .stat-card .label { font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 8px; }
+    .stat-card .value { font-size: 28px; font-weight: 700; }
+    .stat-card.green .value { color: #4ade80; }
+    .stat-card.red .value   { color: #f87171; }
+    .stat-card.yellow .value{ color: #fbbf24; }
+    .stat-card.purple .value{ color: #a78bfa; }
+
+    /* Tabs */
+    .tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid #2d3148; }
+    .tab { padding: 10px 18px; font-size: 14px; font-weight: 500; color: #64748b; cursor: pointer; border-bottom: 2px solid transparent; transition: color .2s, border-color .2s; }
+    .tab:hover { color: #94a3b8; }
+    .tab.active { color: #a78bfa; border-bottom-color: #7c3aed; }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* Table */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    thead tr { background: #1a1d27; border-bottom: 1px solid #2d3148; }
+    th { padding: 10px 12px; text-align: left; font-weight: 600; color: #64748b; text-transform: uppercase; font-size: 11px; letter-spacing: .5px; white-space: nowrap; }
+    td { padding: 10px 12px; border-bottom: 1px solid #1e2130; vertical-align: middle; }
+    tbody tr:hover { background: #1a1d27; }
+    .empty { text-align: center; padding: 48px; color: #4c4f6b; font-size: 14px; }
+
+    /* Verdict badge */
+    .vb { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; }
+    .vb.CLEAN              { background: #052e16; color: #4ade80; }
+    .vb.SUSPICIOUS         { background: #1c1400; color: #fbbf24; }
+    .vb.LIKELY_PHISHING    { background: #200800; color: #fb923c; }
+    .vb.CONFIRMED_PHISHING { background: #1f0000; color: #f87171; }
+
+    .qbadge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+    .qbadge.yes { background: #1f0000; color: #f87171; }
+    .qbadge.no  { background: #1a1d27; color: #64748b; }
+
+    /* Score mini bar */
+    .mini-bar { width: 80px; height: 6px; background: #1e2130; border-radius: 3px; overflow: hidden; display: inline-block; vertical-align: middle; margin-right: 6px; }
+    .mini-fill { height: 100%; background: linear-gradient(90deg,#7c3aed,#a78bfa); border-radius: 3px; }
+
+    .ts { color: #475569; font-size: 11px; }
+    .from-cell { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .subj-cell { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* Unconfigured notice */
+    .notice {
+      background: #1c1400; border: 1px solid #78350f; border-radius: 10px;
+      padding: 24px 28px; color: #fbbf24; font-size: 14px; line-height: 1.7;
+    }
+    .notice h3 { font-size: 16px; margin-bottom: 8px; }
+    .notice code { background: #0f1117; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+
+    .refresh-row { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; font-size: 13px; color: #475569; }
+    .btn-sm { padding: 6px 14px; background: #2d3148; color: #94a3b8; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; }
+    .btn-sm:hover { background: #363b55; color: #e2e8f0; }
+    #last-refresh { font-size: 12px; color: #4c4f6b; }
+  </style>
+</head>
+<body>
+
+<nav>
+  <a class="logo" href="/">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+    PhishDetect
+  </a>
+  <a href="/">Analyze</a>
+  <a href="/dashboard">Dashboard</a>
+  <a href="/monitor" class="active">Monitor</a>
+  <a href="/api/health">API Status</a>
+</nav>
+
+<div class="page">
+
+  <div class="page-header">
+    <h1>Automation Monitor</h1>
+    <div id="status-pill" class="status-pill stopped"><span class="dot"></span> <span id="status-text">Loading…</span></div>
+  </div>
+
+  <!-- unconfigured notice (hidden when running) -->
+  <div id="unconfigured-notice" class="notice" style="display:none; margin-bottom:28px;">
+    <h3>IMAP not configured</h3>
+    Add these to your <code>.env</code> file to enable automatic inbox monitoring:
+    <pre style="margin-top:10px;font-size:12px;color:#cbd5e1;">
+IMAP_HOST=imap.gmail.com
+IMAP_PORT=993
+IMAP_USER=you@example.com
+IMAP_PASSWORD=your-app-password
+IMAP_FOLDER=INBOX
+IMAP_QUARANTINE_FOLDER=Quarantine</pre>
+    Then restart the server. The monitor will poll your inbox every 60 seconds,
+    run each new email through the detection pipeline, and move flagged emails
+    to the quarantine folder automatically.
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-row" id="stats-row">
+    <div class="stat-card purple"><div class="label">Processed</div><div class="value" id="s-processed">—</div></div>
+    <div class="stat-card red">   <div class="label">Phishing</div><div class="value" id="s-phishing">—</div></div>
+    <div class="stat-card yellow"><div class="label">Quarantined</div><div class="value" id="s-quarantined">—</div></div>
+    <div class="stat-card">      <div class="label">Errors</div><div class="value" id="s-errors">—</div></div>
+    <div class="stat-card">      <div class="label">Last Poll</div><div class="value" style="font-size:14px" id="s-last-poll">—</div></div>
+  </div>
+
+  <!-- Refresh bar -->
+  <div class="refresh-row">
+    <button class="btn-sm" onclick="loadAll()">↻ Refresh</button>
+    <span id="last-refresh"></span>
+    <span style="margin-left:auto;font-size:12px;color:#4c4f6b">Auto-refreshes every 15 s</span>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('live')">Live Activity</div>
+    <div class="tab" onclick="switchTab('alerts')">Alerts &amp; Quarantine</div>
+    <div class="tab" onclick="switchTab('log')">Full Log</div>
+  </div>
+
+  <!-- Live Activity -->
+  <div id="tab-live" class="tab-panel active">
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Time</th><th>From</th><th>Subject</th><th>Verdict</th><th>Score</th><th>Quarantined</th>
+        </tr></thead>
+        <tbody id="live-body"><tr><td colspan="6" class="empty">No activity yet</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Alerts -->
+  <div id="tab-alerts" class="tab-panel">
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Time</th><th>From</th><th>Subject</th><th>Verdict</th><th>Score</th><th>URLs</th>
+        </tr></thead>
+        <tbody id="alerts-body"><tr><td colspan="6" class="empty">No alerts yet</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Full log -->
+  <div id="tab-log" class="tab-panel">
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Time</th><th>Email ID</th><th>From</th><th>Subject</th><th>Verdict</th><th>Score</th>
+        </tr></thead>
+        <tbody id="log-body"><tr><td colspan="6" class="empty">No log entries yet</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  let currentTab = 'live';
+
+  function switchTab(name) {
+    currentTab = name;
+    document.querySelectorAll('.tab').forEach((t, i) => {
+      const names = ['live','alerts','log'];
+      t.classList.toggle('active', names[i] === name);
+    });
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    document.getElementById('tab-' + name).classList.add('active');
+  }
+
+  // ── Data loading ──────────────────────────────────────────────────
+  async function loadAll() {
+    await Promise.all([loadStats(), loadAlerts(), loadLog()]);
+    document.getElementById('last-refresh').textContent = 'Updated ' + new Date().toLocaleTimeString();
+  }
+
+  async function loadStats() {
+    try {
+      const r = await fetch('/api/monitor/stats');
+      const d = await r.json();
+
+      // Status pill
+      const pill = document.getElementById('status-pill');
+      const txt  = document.getElementById('status-text');
+      if (!d.imap_configured) {
+        pill.className = 'status-pill unconfigured';
+        txt.textContent = 'IMAP not configured';
+        document.getElementById('unconfigured-notice').style.display = '';
+      } else if (d.running) {
+        pill.className = 'status-pill running';
+        txt.textContent = 'Running';
+        document.getElementById('unconfigured-notice').style.display = 'none';
+        document.querySelector('.dot').classList.add('pulse');
+      } else {
+        pill.className = 'status-pill stopped';
+        txt.textContent = 'Stopped';
+        document.getElementById('unconfigured-notice').style.display = 'none';
+      }
+
+      // Stats
+      const s = d.stats || {};
+      set('s-processed',   s.emails_processed ?? '—');
+      set('s-phishing',    s.phishing_detected ?? '—');
+      set('s-quarantined', s.quarantined ?? '—');
+      set('s-errors',      s.errors ?? '—');
+      set('s-last-poll',   s.last_poll ? fmtTime(s.last_poll) : '—');
+
+      // Live table
+      const rows = d.recent || [];
+      renderLive(rows);
+
+    } catch(e) { console.error('stats error', e); }
+  }
+
+  async function loadAlerts() {
+    try {
+      const r = await fetch('/api/monitor/alerts?limit=50');
+      const d = await r.json();
+      renderAlerts(d.alerts || []);
+    } catch(e) { console.error('alerts error', e); }
+  }
+
+  async function loadLog() {
+    try {
+      const r = await fetch('/api/monitor/log?limit=100');
+      const d = await r.json();
+      renderLog(d.entries || []);
+    } catch(e) { console.error('log error', e); }
+  }
+
+  // ── Renderers ─────────────────────────────────────────────────────
+  function renderLive(rows) {
+    const tbody = document.getElementById('live-body');
+    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">No activity yet — waiting for incoming emails</td></tr>'; return; }
+    tbody.innerHTML = rows.map(r => `
+      <tr>
+        <td class="ts">${fmtTime(r.timestamp)}</td>
+        <td class="from-cell" title="${esc(r.from)}">${esc(r.from||'—')}</td>
+        <td class="subj-cell" title="${esc(r.subject)}">${esc(r.subject||'—')}</td>
+        <td><span class="vb ${r.verdict}">${r.verdict||'—'}</span></td>
+        <td>${scoreBar(r.score)}</td>
+        <td><span class="qbadge ${r.quarantined?'yes':'no'}">${r.quarantined?'Yes':'No'}</span></td>
+      </tr>`).join('');
+  }
+
+  function renderAlerts(rows) {
+    const tbody = document.getElementById('alerts-body');
+    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">No alerts yet</td></tr>'; return; }
+    tbody.innerHTML = rows.map(r => `
+      <tr>
+        <td class="ts">${fmtTime(r.timestamp)}</td>
+        <td class="from-cell" title="${esc(r.from)}">${esc(r.from||'—')}</td>
+        <td class="subj-cell" title="${esc(r.subject)}">${esc(r.subject||'—')}</td>
+        <td><span class="vb ${r.verdict}">${r.verdict||'—'}</span></td>
+        <td>${scoreBar(r.score)}</td>
+        <td style="color:#64748b;font-size:12px">${(r.extracted_urls||[]).length}</td>
+      </tr>`).join('');
+  }
+
+  function renderLog(rows) {
+    const tbody = document.getElementById('log-body');
+    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">No log entries</td></tr>'; return; }
+    tbody.innerHTML = rows.map(r => `
+      <tr>
+        <td class="ts">${fmtTime(r.timestamp)}</td>
+        <td style="font-size:11px;color:#475569;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.email_id)}">${esc(r.email_id||'—')}</td>
+        <td class="from-cell" title="${esc(r.from)}">${esc(r.from||'—')}</td>
+        <td class="subj-cell" title="${esc(r.subject)}">${esc(r.subject||'—')}</td>
+        <td><span class="vb ${r.verdict}">${r.verdict||'—'}</span></td>
+        <td>${scoreBar(r.score)}</td>
+      </tr>`).join('');
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────
+  function set(id, val) { const el = document.getElementById(id); if (el) el.textContent = val; }
+  function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function fmtTime(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    return d.toLocaleDateString() + ' ' + d.toLocaleTimeString();
+  }
+  function scoreBar(score) {
+    const pct = Math.round((score||0)*100);
+    return `<span class="mini-bar"><span class="mini-fill" style="width:${pct}%"></span></span>${pct}%`;
+  }
+
+  // ── Init ──────────────────────────────────────────────────────────
+  loadAll();
+  setInterval(loadAll, 15000);
+</script>
+</body>
+</html>

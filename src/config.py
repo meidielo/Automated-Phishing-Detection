@@ -29,6 +29,7 @@ class IMAPConfig:
     user: str = ""
     password: str = ""
     folder: str = "INBOX"
+    quarantine_folder: str = "Quarantine"
     poll_interval_seconds: int = 60
 
 
@@ -88,6 +89,7 @@ class PipelineConfig:
             user=os.getenv("IMAP_USER", ""),
             password=os.getenv("IMAP_PASSWORD", ""),
             folder=os.getenv("IMAP_FOLDER", "INBOX"),
+            quarantine_folder=os.getenv("IMAP_QUARANTINE_FOLDER", "Quarantine"),
         )
         return cls(
             api=api,
@@ -151,6 +153,7 @@ class PipelineConfig:
             user=_get(imap_data, "user", "IMAP_USER"),
             password=_get(imap_data, "password", "IMAP_PASSWORD"),
             folder=_get(imap_data, "folder", "IMAP_FOLDER", "INBOX"),
+            quarantine_folder=_get(imap_data, "quarantine_folder", "IMAP_QUARANTINE_FOLDER", "Quarantine"),
             poll_interval_seconds=int(imap_data.get("poll_interval_seconds", 60)),
         )
 

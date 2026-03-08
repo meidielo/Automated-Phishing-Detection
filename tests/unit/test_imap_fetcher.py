@@ -43,7 +43,7 @@ class TestIMAPFetcherConnect:
 
         mock_imap_cls.assert_called_once()
         mock_conn.login.assert_called_once_with("u", "p")
-        mock_conn.select.assert_called_once_with("INBOX", readonly=True)
+        mock_conn.select.assert_called_once_with("INBOX", readonly=False)
         assert conn == mock_conn
 
     @patch("src.ingestion.imap_fetcher.imaplib.IMAP4_SSL")

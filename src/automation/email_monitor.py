@@ -237,14 +237,18 @@ class EmailMonitor:
         self.alerts = alert_dispatcher or AlertDispatcher()
         self.store = result_store or ResultStore()
         self.poll_interval = poll_interval
+        self.quarantine_folder = "Quarantine"
         self._running = False
         self._stats = {
             "started_at": None,
             "emails_processed": 0,
             "phishing_detected": 0,
+            "quarantined": 0,
             "errors": 0,
             "last_poll": None,
         }
+        self._recent_results: list[dict] = []  # last 200 results for the UI
+        self._MAX_RECENT = 200
 
     @classmethod
     def from_config(cls, config: PipelineConfig) -> "EmailMonitor":
@@ -274,13 +278,15 @@ class EmailMonitor:
             jsonl_path="data/results.jsonl",
         )
 
-        return cls(
+        monitor = cls(
             pipeline=pipeline,
             fetcher=fetcher,
             alert_dispatcher=alert_dispatcher,
             result_store=result_store,
             poll_interval=config.imap.poll_interval_seconds,
         )
+        monitor.quarantine_folder = config.imap.quarantine_folder
+        return monitor
 
     async def run(self, max_iterations: Optional[int] = None):
         """
@@ -354,6 +360,7 @@ class EmailMonitor:
 
     async def _process_single(self, email_obj: EmailObject):
         """Analyze a single email and handle the result."""
+        quarantined = False
         try:
             logger.info(
                 f"Analyzing email: id={email_obj.email_id}, "
@@ -373,10 +380,25 @@ class EmailMonitor:
             # Store result
             await self.store.store(email_obj, result)
 
-            # Alert if phishing
+            # Alert + quarantine if phishing
             if result.verdict in ALERT_VERDICTS:
                 self._stats["phishing_detected"] += 1
                 await self.alerts.dispatch(email_obj, result)
+
+                # Move to quarantine folder
+                uid = self.fetcher.get_uid_for_email(email_obj.email_id)
+                if uid:
+                    self.fetcher.ensure_folder_exists(self.quarantine_folder)
+                    ok = self.fetcher.move_to_folder(uid, self.quarantine_folder)
+                    if ok:
+                        quarantined = True
+                        self._stats["quarantined"] += 1
+                        logger.info(
+                            f"Quarantined email {email_obj.email_id} "
+                            f"(UID {uid}) → '{self.quarantine_folder}'"
+                        )
+                    else:
+                        logger.warning(f"Failed to quarantine email {email_obj.email_id}")
 
         except Exception as e:
             logger.error(
@@ -384,6 +406,20 @@ class EmailMonitor:
                 exc_info=True,
             )
             self._stats["errors"] += 1
+
+        # Track in recent results for UI
+        record = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "email_id": email_obj.email_id,
+            "from": email_obj.from_address,
+            "subject": email_obj.subject,
+            "verdict": getattr(result, "verdict", Verdict.SUSPICIOUS).value if "result" in dir() else "ERROR",
+            "score": getattr(result, "overall_score", 0.0) if "result" in dir() else 0.0,
+            "quarantined": quarantined,
+        }
+        self._recent_results.append(record)
+        if len(self._recent_results) > self._MAX_RECENT:
+            self._recent_results.pop(0)
 
     def stop(self):
         """Signal the monitor to stop after the current cycle."""

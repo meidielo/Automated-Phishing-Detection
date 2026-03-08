@@ -52,6 +52,7 @@ class IMAPFetcher:
         self._last_uid: Optional[str] = None
         self._running = False
         self._processed_uids: set[str] = set()
+        self._uid_by_email_id: dict[str, str] = {}  # email_id → imap uid
         self._reconnect_delay = 5  # seconds
         self._max_reconnect_delay = 300  # 5 minutes
 
@@ -77,7 +78,7 @@ class IMAPFetcher:
         conn.login(self.config.user, self.config.password)
         logger.info(f"Authenticated as {self.config.user}")
 
-        status, _ = conn.select(self.config.folder, readonly=True)
+        status, _ = conn.select(self.config.folder, readonly=False)
         if status != "OK":
             raise imaplib.IMAP4.error(f"Failed to select folder: {self.config.folder}")
 
@@ -164,6 +165,7 @@ class IMAPFetcher:
         try:
             email_obj = self.parser.parse_bytes(raw_email_str)
             self._processed_uids.add(uid)
+            self._uid_by_email_id[email_obj.email_id] = uid
             logger.info(
                 f"Parsed email UID={uid}: subject='{email_obj.subject}', "
                 f"from='{email_obj.from_address}'"
@@ -193,6 +195,61 @@ class IMAPFetcher:
 
         logger.info(f"Fetched {len(emails)} new emails from {self.config.folder}")
         return emails
+
+    def get_uid_for_email(self, email_id: str) -> Optional[str]:
+        """Look up the IMAP UID for a parsed email by its email_id."""
+        return self._uid_by_email_id.get(email_id)
+
+    def move_to_folder(self, uid: str, destination: str) -> bool:
+        """
+        Move an email by UID to a destination folder.
+
+        Uses IMAP MOVE extension if available, otherwise falls back to
+        COPY + mark deleted + expunge.
+
+        Args:
+            uid: IMAP UID of the email to move
+            destination: Destination mailbox name (e.g. "Quarantine")
+
+        Returns:
+            True on success, False on failure
+        """
+        try:
+            conn = self._ensure_connected()
+
+            # Try RFC 6851 MOVE command first (Gmail, Dovecot, Exchange support it)
+            status, _ = conn.uid("move", uid, destination)
+            if status == "OK":
+                logger.info(f"Moved UID {uid} to '{destination}' via MOVE")
+                return True
+
+            # Fallback: COPY + mark \Deleted + expunge
+            status, _ = conn.uid("copy", uid, destination)
+            if status != "OK":
+                logger.error(f"COPY UID {uid} to '{destination}' failed: {status}")
+                return False
+
+            conn.uid("store", uid, "+FLAGS", "\\Deleted")
+            conn.expunge()
+            logger.info(f"Moved UID {uid} to '{destination}' via COPY+DELETE")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to move UID {uid} to '{destination}': {e}")
+            return False
+
+    def ensure_folder_exists(self, folder: str) -> bool:
+        """Create folder if it doesn't already exist."""
+        try:
+            conn = self._ensure_connected()
+            status, _ = conn.create(folder)
+            if status == "OK":
+                logger.info(f"Created IMAP folder: {folder}")
+            return True
+        except Exception as e:
+            # Folder likely already exists
+            logger.debug(f"ensure_folder_exists({folder}): {e}")
+            return True
 
     async def poll_loop(
         self,
