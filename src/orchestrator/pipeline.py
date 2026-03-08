@@ -496,19 +496,50 @@ class PhishingPipeline:
                 analyzer = HeaderAnalyzer()
             elif name == "url_reputation":
                 from src.analyzers.url_reputation import URLReputationAnalyzer
-                analyzer = URLReputationAnalyzer(self.config.api)
+                from src.analyzers.clients.virustotal import VirusTotalClient
+                from src.analyzers.clients.google_safebrowsing import GoogleSafeBrowsingClient
+                from src.analyzers.clients.urlscan import URLScanClient
+                from src.analyzers.clients.abuseipdb import AbuseIPDBClient
+                api = self.config.api
+                analyzer = URLReputationAnalyzer(
+                    virustotal_client=VirusTotalClient(api.virustotal_key) if api.virustotal_key else None,
+                    safe_browsing_client=GoogleSafeBrowsingClient(api.google_safebrowsing_key) if api.google_safebrowsing_key else None,
+                    urlscan_client=URLScanClient(api.urlscan_key) if api.urlscan_key else None,
+                    abuseipdb_client=AbuseIPDBClient(api.abuseipdb_key) if api.abuseipdb_key else None,
+                )
             elif name == "domain_intelligence":
                 from src.analyzers.domain_intel import DomainIntelAnalyzer
-                analyzer = DomainIntelAnalyzer(self.config.api)
+                from src.analyzers.clients.whois_client import WhoisClient
+                analyzer = DomainIntelAnalyzer(whois_client=WhoisClient())
             elif name == "url_detonation":
                 from src.analyzers.url_detonator import URLDetonationAnalyzer
-                analyzer = URLDetonationAnalyzer(self.config.api)
+                from src.analyzers.clients.sandbox_client import SandboxClient
+                api = self.config.api
+                sandbox_providers = {}
+                if api.hybrid_analysis_key:
+                    sandbox_providers["hybrid_analysis"] = {"api_key": api.hybrid_analysis_key}
+                if api.anyrun_key:
+                    sandbox_providers["anyrun"] = {"api_key": api.anyrun_key}
+                if api.joesandbox_key:
+                    sandbox_providers["joesandbox"] = {"api_key": api.joesandbox_key}
+                sandbox_client = SandboxClient(sandbox_providers) if sandbox_providers else None
+                analyzer = URLDetonationAnalyzer(sandbox_client=sandbox_client)
             elif name == "brand_impersonation":
                 from src.analyzers.brand_impersonation import BrandImpersonationAnalyzer
-                analyzer = BrandImpersonationAnalyzer(self.config.api)
+                analyzer = BrandImpersonationAnalyzer()
             elif name == "attachment_analysis":
                 from src.analyzers.attachment_sandbox import AttachmentSandboxAnalyzer
-                analyzer = AttachmentSandboxAnalyzer(self.config.api)
+                from src.analyzers.clients.sandbox_client import SandboxClient
+                api = self.config.api
+                sandbox_providers = {}
+                if api.hybrid_analysis_key:
+                    sandbox_providers["hybrid_analysis"] = {"api_key": api.hybrid_analysis_key}
+                if api.anyrun_key:
+                    sandbox_providers["anyrun"] = {"api_key": api.anyrun_key}
+                if api.joesandbox_key:
+                    sandbox_providers["joesandbox"] = {"api_key": api.joesandbox_key}
+                sandbox_client = SandboxClient(sandbox_providers) if sandbox_providers else None
+                analyzer = AttachmentSandboxAnalyzer(sandbox_client=sandbox_client)
             elif name == "nlp_intent":
                 from src.analyzers.nlp_intent import NLPIntentAnalyzer
                 analyzer = NLPIntentAnalyzer()

@@ -55,34 +55,8 @@ class URLReputationAnalyzer:
             return 0.0, 0.0, {}
 
         try:
-            result = await self.virustotal_client.check_url(url)
-
-            # Extract threat verdicts from VirusTotal response
-            last_analysis_stats = result.get("last_analysis_stats", {})
-            malicious = last_analysis_stats.get("malicious", 0)
-            suspicious = last_analysis_stats.get("suspicious", 0)
-            undetected = last_analysis_stats.get("undetected", 0)
-            harmless = last_analysis_stats.get("harmless", 0)
-
-            total_vendors = malicious + suspicious + undetected + harmless
-            if total_vendors == 0:
-                return 0.0, 0.0, {"virustotal": "no_data"}
-
-            # Risk calculation: malicious vendors have highest weight
-            risk_score = (malicious * 1.0 + suspicious * 0.5) / total_vendors
-            confidence = (malicious + suspicious + harmless) / total_vendors
-
-            details = {
-                "virustotal": {
-                    "malicious": malicious,
-                    "suspicious": suspicious,
-                    "undetected": undetected,
-                    "harmless": harmless,
-                    "total_vendors": total_vendors,
-                }
-            }
-
-            return risk_score, confidence, details
+            result = await self.virustotal_client.scan_url(url)
+            return result.risk_score, result.confidence, result.details
 
         except Exception as e:
             logger.warning(f"VirusTotal check failed for {url}: {e}")
@@ -102,21 +76,8 @@ class URLReputationAnalyzer:
             return 0.0, 0.0, {}
 
         try:
-            result = await self.safe_browsing_client.lookup(url)
-
-            if result.get("threat_found"):
-                threat_types = result.get("threat_types", [])
-                risk_score = 0.9 if threat_types else 0.5
-                confidence = 1.0
-                details = {
-                    "safe_browsing": {
-                        "threat_found": True,
-                        "threat_types": threat_types,
-                    }
-                }
-                return risk_score, confidence, details
-            else:
-                return 0.0, 1.0, {"safe_browsing": "clean"}
+            result = await self.safe_browsing_client.check_url(url)
+            return result.risk_score, result.confidence, result.details
 
         except Exception as e:
             logger.warning(f"Safe Browsing check failed for {url}: {e}")
@@ -136,29 +97,8 @@ class URLReputationAnalyzer:
             return 0.0, 0.0, {}
 
         try:
-            result = await self.urlscan_client.scan(url)
-
-            # Extract malicious count from urlscan result
-            malicious_count = result.get("malicious", 0)
-            suspicious_count = result.get("suspicious", 0)
-            total_vendors = result.get("total", 1)
-
-            if total_vendors == 0:
-                return 0.0, 0.0, {"urlscan": "no_data"}
-
-            risk_score = (malicious_count * 1.0 + suspicious_count * 0.5) / total_vendors
-            confidence = (malicious_count + suspicious_count) / total_vendors if total_vendors > 0 else 0.0
-
-            details = {
-                "urlscan": {
-                    "malicious": malicious_count,
-                    "suspicious": suspicious_count,
-                    "total_vendors": total_vendors,
-                    "verdict": result.get("verdict", "unknown"),
-                }
-            }
-
-            return risk_score, confidence, details
+            result = await self.urlscan_client.submit_scan(url)
+            return result.risk_score, result.confidence, result.details
 
         except Exception as e:
             logger.warning(f"urlscan.io check failed for {url}: {e}")
@@ -178,24 +118,19 @@ class URLReputationAnalyzer:
             return 0.0, 0.0, {}
 
         try:
-            result = await self.abuseipdb_client.check_url(url)
+            # AbuseIPDB checks IPs — resolve hostname from URL
+            from urllib.parse import urlparse
+            import socket
+            hostname = urlparse(url).hostname or ""
+            if not hostname:
+                return 0.0, 0.0, {}
+            try:
+                ip = socket.gethostbyname(hostname)
+            except Exception:
+                return 0.0, 0.0, {"abuseipdb": "dns_resolution_failed"}
 
-            # Extract abuse score from AbuseIPDB
-            abuse_score = result.get("abuseConfidenceScore", 0) / 100.0
-            total_reports = result.get("totalReports", 0)
-
-            # Confidence increases with report count
-            confidence = min(total_reports / 10.0, 1.0)
-
-            details = {
-                "abuseipdb": {
-                    "abuse_confidence_score": abuse_score,
-                    "total_reports": total_reports,
-                    "is_whitelisted": result.get("isWhitelisted", False),
-                }
-            }
-
-            return abuse_score, confidence, details
+            result = await self.abuseipdb_client.check_ip(ip)
+            return result.risk_score, result.confidence, result.details
 
         except Exception as e:
             logger.warning(f"AbuseIPDB check failed for {url}: {e}")
