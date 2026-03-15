@@ -106,6 +106,19 @@ class URLScanClient(BaseAPIClient):
                 errors=[str(e)],
             )
 
+    async def submit_only(self, url: str) -> None:
+        """Submit URL for scanning without waiting for results (fire-and-forget)."""
+        try:
+            await self._request(
+                method="POST",
+                endpoint="/scan/",
+                headers={"API-Key": self.api_key},
+                json={"url": url, "visibility": "public"},
+                timeout=10,
+            )
+        except Exception:
+            pass  # best-effort submission, ignore errors
+
     async def _poll_scan_results(
         self, uuid: str, url: str, timeout: int = 30, poll_interval: int = 2
     ) -> AnalyzerResult:

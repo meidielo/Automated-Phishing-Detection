@@ -96,20 +96,13 @@ class URLReputationAnalyzer:
         if not self.urlscan_client:
             return 0.0, 0.0, {}
 
+        # urlscan scans take 30-60s to complete — not usable for real-time analysis.
+        # Submit as fire-and-forget so the URL gets indexed for future lookups.
         try:
-            # Cap at 20s — urlscan scans take time; skip rather than block pipeline
-            result = await asyncio.wait_for(
-                self.urlscan_client.submit_scan(url),
-                timeout=20.0,
-            )
-            return result.risk_score, result.confidence, result.details
-
-        except asyncio.TimeoutError:
-            logger.debug(f"urlscan.io timed out for {url} (scan still pending)")
-            return 0.0, 0.0, {"urlscan_note": "scan_pending_timeout"}
-        except Exception as e:
-            logger.warning(f"urlscan.io check failed for {url}: {e}")
-            return 0.0, 0.0, {"urlscan_error": str(e)}
+            asyncio.create_task(self.urlscan_client.submit_only(url))
+        except Exception:
+            pass
+        return 0.0, 0.0, {"urlscan_note": "scan_submitted_async"}
 
     async def _check_abuseipdb(self, url: str) -> tuple[float, float, dict]:
         """

@@ -218,8 +218,13 @@ class BaseAPIClient(ABC):
                         if response.status >= 400 and response.status < 500:
                             text = await response.text()
                             error_msg = f"Client error {response.status}: {text}"
-                            logger.error(error_msg)
-                            self.circuit_breaker.record_failure()
+                            # 404 = resource not found (e.g. URL not in VT database) — not a
+                            # service failure, so don't trip the circuit breaker.
+                            if response.status == 404:
+                                logger.debug(f"404 not found: {error_msg[:120]}")
+                            else:
+                                logger.error(error_msg)
+                                self.circuit_breaker.record_failure()
                             raise Exception(error_msg)
 
                         # Handle server errors with retry

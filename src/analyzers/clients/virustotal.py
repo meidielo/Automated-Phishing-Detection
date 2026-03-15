@@ -63,8 +63,6 @@ class VirusTotalClient(BaseAPIClient):
                 return cached
 
         try:
-            # Get URL ID (encoded URL in base64-like format for VT)
-            # VT uses SHA-256 hash of URL for lookups
             url_id = self._encode_url_for_vt(url)
 
             response = await self._request(
@@ -79,6 +77,20 @@ class VirusTotalClient(BaseAPIClient):
             return result
 
         except Exception as e:
+            # 404 = URL not in VT database yet. Submit it for future lookups
+            # and return "unknown" rather than treating this as an error.
+            if "404" in str(e):
+                try:
+                    import asyncio as _asyncio
+                    _asyncio.create_task(self._submit_url_for_scan(url))
+                except Exception:
+                    pass
+                return AnalyzerResult(
+                    analyzer_name="virustotal_url",
+                    risk_score=0.0,
+                    confidence=0.0,
+                    details={"vt_status": "not_in_database", "submitted": True},
+                )
             logger.error(f"VirusTotal URL scan failed for {url}: {e}")
             return AnalyzerResult(
                 analyzer_name="virustotal_url",
@@ -87,6 +99,22 @@ class VirusTotalClient(BaseAPIClient):
                 details={},
                 errors=[str(e)],
             )
+
+    async def _submit_url_for_scan(self, url: str) -> None:
+        """Submit a URL to VirusTotal for scanning (fire-and-forget)."""
+        try:
+            session = await self._get_session()
+            import aiohttp as _aiohttp
+            async with session.post(
+                f"{self.base_url}/urls",
+                headers={"x-apikey": self.api_key, "Content-Type": "application/x-www-form-urlencoded"},
+                data=f"url={url}",
+                timeout=_aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                pass  # fire-and-forget, ignore response
+            logger.debug(f"Submitted URL to VirusTotal for scanning: {url[:80]}")
+        except Exception as e:
+            logger.debug(f"VT URL submission failed (non-critical): {e}")
 
     async def get_domain_report(self, domain: str) -> AnalyzerResult:
         """
