@@ -1,7 +1,4 @@
-version: '3.8'
-
 services:
-  # Main orchestrator and API
   orchestrator:
     build:
       context: .
@@ -9,127 +6,26 @@ services:
     container_name: phishing-orchestrator
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     environment:
-      - LOG_LEVEL=INFO
+      # These override .env values if set; leave blank to use .env
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - DASHBOARD_PORT=8000
-      - MAX_CONCURRENT_ANALYZERS=10
-      - ANALYSIS_PIPELINE_TIMEOUT_SECONDS=120
-      - URL_DETONATION_TIMEOUT_SECONDS=30
-      - VIRUSTOTAL_API_KEY=${VIRUSTOTAL_API_KEY:-}
-      - URLSCAN_API_KEY=${URLSCAN_API_KEY:-}
-      - ABUSEIPDB_API_KEY=${ABUSEIPDB_API_KEY:-}
-      - GOOGLE_SAFE_BROWSING_API_KEY=${GOOGLE_SAFE_BROWSING_API_KEY:-}
-      - SANDBOX_PROVIDER=${SANDBOX_PROVIDER:-hybrid_analysis}
-      - HYBRID_ANALYSIS_API_KEY=${HYBRID_ANALYSIS_API_KEY:-}
-      - ANYRUN_API_KEY=${ANYRUN_API_KEY:-}
-      - JOESANDBOX_API_KEY=${JOESANDBOX_API_KEY:-}
-      - LLM_PROVIDER=${LLM_PROVIDER:-anthropic}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - MAX_CONCURRENT_ANALYZERS=${MAX_CONCURRENT_ANALYZERS:-10}
+      - ANALYSIS_PIPELINE_TIMEOUT_SECONDS=${ANALYSIS_PIPELINE_TIMEOUT_SECONDS:-120}
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
-    networks:
-      - phishing-network
-    depends_on:
-      - browser-sandbox
     restart: unless-stopped
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
-
-  # Continuous IMAP email monitor
-  email-monitor:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: phishing-email-monitor
-    command: ["python", "main.py", "monitor"]
-    environment:
-      - LOG_LEVEL=INFO
-      - IMAP_HOST=${IMAP_HOST:-imap.example.com}
-      - IMAP_PORT=${IMAP_PORT:-993}
-      - IMAP_USER=${IMAP_USER:-}
-      - IMAP_PASSWORD=${IMAP_PASSWORD:-}
-      - IMAP_FOLDER=${IMAP_FOLDER:-INBOX}
-      - IMAP_POLL_INTERVAL=${IMAP_POLL_INTERVAL:-60}
-      - ALERT_WEBHOOK_URL=${ALERT_WEBHOOK_URL:-}
-      - FEEDBACK_DB_PATH=/app/data/feedback.db
-      - VIRUSTOTAL_API_KEY=${VIRUSTOTAL_API_KEY:-}
-      - URLSCAN_API_KEY=${URLSCAN_API_KEY:-}
-      - ABUSEIPDB_API_KEY=${ABUSEIPDB_API_KEY:-}
-      - GOOGLE_SAFE_BROWSING_API_KEY=${GOOGLE_SAFE_BROWSING_API_KEY:-}
-      - SANDBOX_PROVIDER=${SANDBOX_PROVIDER:-hybrid_analysis}
-      - HYBRID_ANALYSIS_API_KEY=${HYBRID_ANALYSIS_API_KEY:-}
-      - LLM_PROVIDER=${LLM_PROVIDER:-anthropic}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-    volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
-    networks:
-      - phishing-network
-    depends_on:
-      - browser-sandbox
-    restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  # Browser automation for URL detonation
-  browser-sandbox:
-    image: mcr.microsoft.com/playwright:v1.40.0-jammy
-    container_name: phishing-browser-sandbox
-    shm_size: '1gb'
-    networks:
-      - phishing-network
-    # Network isolation: only accessible from orchestrator
-    expose:
-      - "3000"
-    environment:
-      - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-    volumes:
-      - playwright-cache:/ms-playwright
-    restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "5m"
-        max-file: "2"
-
-  # Optional: Redis for caching and result storage
-  redis:
-    image: redis:7-alpine
-    container_name: phishing-redis
-    networks:
-      - phishing-network
-    expose:
-      - "6379"
-    volumes:
-      - redis-data:/data
-    restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "5m"
-        max-file: "1"
-
-networks:
-  phishing-network:
-    driver: bridge
-    ipam:
-      config:
-        - subnet: 172.20.0.0/16
-    # Isolate network traffic between services
-    driver_opts:
-      com.docker.network.bridge.name: br-phishing
-
-volumes:
-  playwright-cache:
-    driver: local
-  redis-data:
-    driver: local
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 15s
+      retries: 3

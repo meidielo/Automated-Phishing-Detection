@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(override=True)  # override=True so .env values win over empty system env vars
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Request
 from fastapi.responses import HTMLResponse
@@ -256,6 +256,147 @@ class PhishingDetectionApp:
                 },
             }
 
+        @app.get("/api/diagnose")
+        async def diagnose_apis():
+            """
+            Live diagnostic: test each external API with a real HTTP request.
+            Returns pass/fail status for each service.
+            """
+            import aiohttp as _aiohttp
+            import base64 as _b64
+
+            results = {}
+            a = self.config.api
+
+            async def _test_service(name, coro):
+                try:
+                    results[name] = await asyncio.wait_for(coro, timeout=15)
+                except asyncio.TimeoutError:
+                    results[name] = {"status": "fail", "error": "timeout (15s)"}
+                except Exception as e:
+                    results[name] = {"status": "fail", "error": str(e)}
+
+            async def _check_vt():
+                if not a.virustotal_key:
+                    return {"status": "skip", "reason": "no API key"}
+                async with _aiohttp.ClientSession() as s:
+                    url_id = _b64.urlsafe_b64encode(b"https://www.google.com").decode().rstrip("=")
+                    async with s.get(
+                        f"https://www.virustotal.com/api/v3/urls/{url_id}",
+                        headers={"x-apikey": a.virustotal_key},
+                        timeout=_aiohttp.ClientTimeout(total=12),
+                    ) as r:
+                        if r.status == 200:
+                            return {"status": "pass", "http": 200}
+                        elif r.status == 404:
+                            return {"status": "pass", "http": 404, "note": "key valid, URL not in DB"}
+                        elif r.status == 401:
+                            return {"status": "fail", "http": 401, "error": "invalid API key"}
+                        elif r.status == 429:
+                            return {"status": "warn", "http": 429, "error": "rate limited"}
+                        else:
+                            return {"status": "fail", "http": r.status}
+
+            async def _check_sb():
+                if not a.google_safebrowsing_key:
+                    return {"status": "skip", "reason": "no API key"}
+                async with _aiohttp.ClientSession() as s:
+                    async with s.post(
+                        f"https://safebrowsing.googleapis.com/v4/threatMatches:find?key={a.google_safebrowsing_key}",
+                        json={
+                            "client": {"clientId": "diag", "clientVersion": "1.0"},
+                            "threatInfo": {
+                                "threatTypes": ["SOCIAL_ENGINEERING"],
+                                "platformTypes": ["ANY_PLATFORM"],
+                                "threatEntryTypes": ["URL"],
+                                "threatEntries": [{"url": "http://testsafebrowsing.appspot.com/s/phishing.html"}],
+                            },
+                        },
+                        timeout=_aiohttp.ClientTimeout(total=12),
+                    ) as r:
+                        if r.status == 200:
+                            data = await r.json()
+                            matches = len(data.get("matches", []))
+                            return {"status": "pass", "http": 200, "threats_found": matches}
+                        elif r.status == 403:
+                            return {"status": "fail", "http": 403, "error": "API key invalid or Safe Browsing API not enabled in Google Cloud Console"}
+                        else:
+                            return {"status": "fail", "http": r.status}
+
+            async def _check_abuseipdb():
+                if not a.abuseipdb_key:
+                    return {"status": "skip", "reason": "no API key"}
+                async with _aiohttp.ClientSession() as s:
+                    async with s.get(
+                        "https://api.abuseipdb.com/api/v2/check",
+                        params={"ipAddress": "8.8.8.8", "maxAgeInDays": 90},
+                        headers={"Key": a.abuseipdb_key, "Accept": "application/json"},
+                        timeout=_aiohttp.ClientTimeout(total=12),
+                    ) as r:
+                        if r.status == 200:
+                            data = await r.json()
+                            score = data.get("data", {}).get("abuseConfidenceScore", "?")
+                            return {"status": "pass", "http": 200, "test_ip_score": score}
+                        elif r.status == 401:
+                            return {"status": "fail", "http": 401, "error": "invalid API key"}
+                        elif r.status == 429:
+                            return {"status": "warn", "http": 429, "error": "rate limited"}
+                        else:
+                            return {"status": "fail", "http": r.status}
+
+            async def _check_urlscan():
+                if not a.urlscan_key:
+                    return {"status": "skip", "reason": "no API key"}
+                async with _aiohttp.ClientSession() as s:
+                    async with s.get(
+                        "https://urlscan.io/api/v1/search/?q=domain:google.com&size=1",
+                        headers={"API-Key": a.urlscan_key},
+                        timeout=_aiohttp.ClientTimeout(total=12),
+                    ) as r:
+                        if r.status == 200:
+                            return {"status": "pass", "http": 200, "note": "fire-and-forget by design, always confidence=0"}
+                        elif r.status == 401:
+                            return {"status": "fail", "http": 401, "error": "invalid API key"}
+                        else:
+                            return {"status": "fail", "http": r.status}
+
+            async def _check_anthropic():
+                if not a.anthropic_key:
+                    return {"status": "skip", "reason": "no API key"}
+                async with _aiohttp.ClientSession() as s:
+                    async with s.post(
+                        "https://api.anthropic.com/v1/messages",
+                        json={"model": "claude-haiku-4-5-20251001", "max_tokens": 5, "messages": [{"role": "user", "content": "hi"}]},
+                        headers={"x-api-key": a.anthropic_key, "anthropic-version": "2023-06-01", "content-type": "application/json"},
+                        timeout=_aiohttp.ClientTimeout(total=12),
+                    ) as r:
+                        if r.status == 200:
+                            return {"status": "pass", "http": 200}
+                        elif r.status == 401:
+                            return {"status": "fail", "http": 401, "error": "invalid API key"}
+                        else:
+                            return {"status": "fail", "http": r.status}
+
+            await asyncio.gather(
+                _test_service("virustotal", _check_vt()),
+                _test_service("google_safebrowsing", _check_sb()),
+                _test_service("abuseipdb", _check_abuseipdb()),
+                _test_service("urlscan", _check_urlscan()),
+                _test_service("anthropic_llm", _check_anthropic()),
+            )
+
+            # Summary
+            passing = sum(1 for v in results.values() if v.get("status") == "pass")
+            total = len(results)
+            return {
+                "summary": f"{passing}/{total} services operational",
+                "services": results,
+                "notes": {
+                    "url_detonation": "not implemented (no browser sandbox)",
+                    "urlscan": "works but fire-and-forget design means confidence=0 always",
+                },
+            }
+
         @app.get("/status", response_class=HTMLResponse)
         async def status_page():
             """Serve the API/system status page."""
@@ -292,7 +433,7 @@ class PhishingDetectionApp:
                 "stats": self._monitor.stats,
                 "recent": list(reversed(self._monitor._recent_results[-50:])),
                 "imap_configured": True,
-                "quarantine_folder": self._monitor.quarantine_folder,
+                "quarantine_folder": getattr(self._monitor, "quarantine_folder", None),
             }
 
         @app.get("/api/monitor/log")

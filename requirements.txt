@@ -1,6 +1,7 @@
 # Core
 aiohttp>=3.9
 asyncio-throttle>=1.0
+python-dotenv>=1.0
 
 # Email parsing
 mail-parser>=3.15
