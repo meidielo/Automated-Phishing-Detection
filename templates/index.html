@@ -214,6 +214,16 @@
     }
 
     .full-width { grid-column: 1 / -1; }
+
+    /* Feedback buttons */
+    .fbtn { padding: 8px 18px; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; transition: background .2s; }
+    .fbtn.agree { background: #052e16; color: #4ade80; border: 1px solid #166534; }
+    .fbtn.agree:hover { background: #14532d; }
+    .fbtn.disagree { background: #1f0000; color: #f87171; border: 1px solid #991b1b; }
+    .fbtn.disagree:hover { background: #450a0a; }
+    .fbtn.submit { background: #7c3aed; color: #fff; }
+    .fbtn.submit:hover { background: #6d28d9; }
+    .fbtn:disabled { opacity: .5; cursor: not-allowed; }
   </style>
 </head>
 <body>
@@ -293,6 +303,30 @@
         <h3>Extracted URLs (<span id="url-count">0</span>)</h3>
         <ul class="url-list" id="url-list"></ul>
       </div>
+
+      <!-- Feedback card -->
+      <div class="card full-width" id="feedback-card">
+        <h3>Was this analysis correct?</h3>
+        <div id="feedback-form" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center">
+          <button class="fbtn agree" onclick="submitFeedback('agree')">&#10003; Correct</button>
+          <button class="fbtn disagree" onclick="showCorrectionForm()">&#10007; Incorrect</button>
+          <span id="feedback-status" style="font-size:13px;color:#64748b"></span>
+        </div>
+        <div id="correction-form" style="display:none;margin-top:14px">
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <label style="font-size:13px;color:#94a3b8">Correct verdict:</label>
+            <select id="correct-verdict" style="padding:7px 12px;background:#0f1117;border:1px solid #2d3148;border-radius:6px;color:#e2e8f0;font-size:13px">
+              <option value="CLEAN">Clean</option>
+              <option value="SUSPICIOUS">Suspicious</option>
+              <option value="LIKELY_PHISHING">Likely Phishing</option>
+              <option value="CONFIRMED_PHISHING">Confirmed Phishing</option>
+            </select>
+            <input type="text" id="feedback-notes" placeholder="Optional notes..." style="flex:1;min-width:180px;padding:7px 12px;background:#0f1117;border:1px solid #2d3148;border-radius:6px;color:#e2e8f0;font-size:13px" />
+            <button class="fbtn submit" onclick="submitFeedback('correct')">Submit</button>
+          </div>
+        </div>
+        <div id="feedback-done" style="display:none;margin-top:8px;font-size:13px;color:#4ade80"></div>
+      </div>
     </div>
 
   </div>
@@ -300,6 +334,7 @@
 
 <script>
   let selectedFile = null;
+  let _lastResult = null;  // track last analysis for feedback
 
   const dropZone   = document.getElementById('drop-zone');
   const fileInput  = document.getElementById('file-input');
@@ -392,6 +427,13 @@
   };
 
   function showResults(data) {
+    _lastResult = data;
+    // Reset feedback UI
+    document.getElementById('feedback-form').style.display = 'flex';
+    document.getElementById('correction-form').style.display = 'none';
+    document.getElementById('feedback-done').style.display = 'none';
+    document.getElementById('feedback-status').textContent = '';
+
     const verdict = data.verdict || 'SUSPICIOUS';
     const score   = data.overall_score ?? 0;
     const conf    = data.overall_confidence ?? 0;
@@ -461,7 +503,7 @@
       document.getElementById('url-count').textContent = urls.length;
       document.getElementById('url-list').innerHTML = urls
         .slice(0, 30)
-        .map(u => `<li>${escHtml(u)}</li>`).join('');
+        .map(u => `<li>${escHtml(typeof u === 'object' ? u.url : u)}</li>`).join('');
     } else {
       document.getElementById('urls-card').style.display = 'none';
     }
@@ -492,6 +534,80 @@
 
   function escHtml(s) {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // ── Feedback functions ──────────────────────────────────────────
+  function showCorrectionForm() {
+    document.getElementById('correction-form').style.display = 'block';
+    // Pre-select the opposite of current verdict
+    const sel = document.getElementById('correct-verdict');
+    if (_lastResult) {
+      const v = _lastResult.verdict;
+      if (v === 'CLEAN') sel.value = 'SUSPICIOUS';
+      else if (v === 'SUSPICIOUS') sel.value = 'CONFIRMED_PHISHING';
+      else sel.value = 'CLEAN';
+    }
+  }
+
+  async function submitFeedback(type) {
+    if (!_lastResult) return;
+
+    const emailId = _lastResult.email_id;
+    const originalVerdict = _lastResult.verdict;
+    let correctLabel, notes = '';
+
+    if (type === 'agree') {
+      correctLabel = originalVerdict;
+    } else {
+      correctLabel = document.getElementById('correct-verdict').value;
+      notes = document.getElementById('feedback-notes').value;
+    }
+
+    // Build feature vector from analyzer scores
+    const fv = {};
+    for (const [name, ar] of Object.entries(_lastResult.analyzer_results || {})) {
+      fv[name + '_score'] = ar.risk_score || 0;
+    }
+
+    document.querySelectorAll('.fbtn').forEach(b => b.disabled = true);
+    document.getElementById('feedback-status').textContent = 'Submitting...';
+
+    try {
+      const res = await fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email_id: emailId,
+          original_verdict: originalVerdict,
+          correct_label: correctLabel,
+          notes: notes,
+          feature_vector: fv,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        document.getElementById('feedback-form').style.display = 'none';
+        document.getElementById('correction-form').style.display = 'none';
+        const doneEl = document.getElementById('feedback-done');
+        const actions = (data.actions_taken || []).join(', ');
+        if (type === 'agree') {
+          doneEl.textContent = 'Thanks! Confirmed as ' + correctLabel + '. ' + (actions ? '(' + actions + ')' : '');
+          doneEl.style.color = '#4ade80';
+        } else {
+          doneEl.textContent = 'Correction recorded: ' + originalVerdict + ' → ' + correctLabel + '. ' + (actions ? '(' + actions + ')' : '');
+          doneEl.style.color = '#fbbf24';
+        }
+        doneEl.style.display = 'block';
+      } else {
+        document.getElementById('feedback-status').textContent = 'Error: ' + (data.detail || 'Unknown');
+        document.getElementById('feedback-status').style.color = '#f87171';
+      }
+    } catch(e) {
+      document.getElementById('feedback-status').textContent = 'Failed: ' + e.message;
+      document.getElementById('feedback-status').style.color = '#f87171';
+    }
+
+    document.querySelectorAll('.fbtn').forEach(b => b.disabled = false);
   }
 </script>
 </body>

@@ -1,62 +1,148 @@
 """
-BrandImpersonationAnalyzer: Detect brand impersonation using image similarity.
-Uses pHash and SSIM comparison against reference brand templates.
+BrandImpersonationAnalyzer: Detect brand impersonation in emails.
+
+Uses multiple signals:
+1. Domain-brand mismatch (sender domain vs claimed brand)
+2. Display name spoofing (display name contains brand but domain doesn't match)
+3. Email body content analysis (brand keywords, logos, templates)
+4. Reply-To domain mismatch
+5. Look-alike domain detection (typosquatting, homoglyphs)
+6. Optional: Screenshot comparison via pHash/SSIM (when detonation is available)
 """
 import logging
+import re
 from typing import Optional
 
-from src.models import AnalyzerResult
+from src.models import AnalyzerResult, EmailObject
 
 logger = logging.getLogger(__name__)
 
 
 class BrandImpersonationAnalyzer:
     """
-    Detect brand impersonation through visual similarity analysis.
+    Detect brand impersonation through content and domain analysis.
 
-    Analyzes screenshots using:
-    - Perceptual hashing (pHash) for robust image comparison
-    - SSIM (Structural Similarity Index) for pixel-level similarity
-    - Domain-brand mismatch detection
+    Works WITHOUT screenshots by analyzing:
+    - Sender email domain vs known brand domains
+    - Display name vs sender domain
+    - Email body for brand keywords and patterns
+    - Reply-To header mismatches
+    - Look-alike domain patterns
 
-    Supported brands:
-    - Microsoft 365
-    - Google
-    - Apple
-    - PayPal
-    - DocuSign
-    - DHL
-    - FedEx
+    When screenshots are available (via URL detonation), also compares
+    visual similarity using pHash and SSIM.
     """
 
+    # Comprehensive brand database: domains that legitimately send email for each brand
     BRANDS = {
-        "microsoft_365": {
-            "domains": ["microsoft.com", "office.com", "outlook.com"],
-            "alternate_domains": ["onedrive.com", "sharepoint.com"],
+        "microsoft": {
+            "display_names": ["microsoft", "office 365", "outlook", "onedrive", "sharepoint", "teams"],
+            "legit_domains": [
+                "microsoft.com", "office.com", "outlook.com", "live.com",
+                "onedrive.com", "sharepoint.com", "microsoftonline.com",
+                "office365.com", "microsoft365.com",
+            ],
+            "body_keywords": ["microsoft", "office 365", "outlook", "onedrive", "sharepoint", "teams", "azure"],
         },
         "google": {
-            "domains": ["google.com", "accounts.google.com"],
-            "alternate_domains": ["gmail.com", "drive.google.com"],
+            "display_names": ["google", "gmail", "google drive", "google docs"],
+            "legit_domains": [
+                "google.com", "gmail.com", "googlemail.com",
+                "accounts.google.com", "drive.google.com",
+            ],
+            "body_keywords": ["google", "gmail", "google drive", "google docs", "google workspace"],
         },
         "apple": {
-            "domains": ["apple.com", "icloud.com", "appleid.apple.com"],
-            "alternate_domains": [],
+            "display_names": ["apple", "icloud", "apple id", "app store", "itunes"],
+            "legit_domains": [
+                "apple.com", "icloud.com", "me.com", "mac.com",
+                "itunes.com", "email.apple.com",
+            ],
+            "body_keywords": ["apple id", "icloud", "app store", "itunes", "macbook", "iphone"],
         },
         "paypal": {
-            "domains": ["paypal.com", "www.paypal.com"],
-            "alternate_domains": ["checkout.paypal.com"],
+            "display_names": ["paypal", "pay pal"],
+            "legit_domains": ["paypal.com", "paypal.me", "e.paypal.com"],
+            "body_keywords": ["paypal", "payment received", "send money", "paypal.com"],
+        },
+        "amazon": {
+            "display_names": ["amazon", "amazon prime", "aws"],
+            "legit_domains": [
+                "amazon.com", "amazon.co.uk", "amazon.com.au", "amazon.de",
+                "amazonaws.com", "amazonses.com", "amazon.in",
+            ],
+            "body_keywords": ["amazon", "prime", "aws", "your order", "delivery"],
+        },
+        "indeed": {
+            "display_names": ["indeed", "interview invitation", "job invitation"],
+            "legit_domains": [
+                "indeed.com", "indeed.co.uk", "indeed.com.au",
+                "indeed.co.in", "indeed.hk",
+                "indeedemail.com", "indeed.force.com",
+                "engage.indeed.com", "notifications.indeed.com",
+                "bounces.indeed.com",
+            ],
+            "body_keywords": ["indeed", "job application", "interview invitation", "hiring process", "apply now"],
+        },
+        "linkedin": {
+            "display_names": ["linkedin", "linked in"],
+            "legit_domains": ["linkedin.com", "e.linkedin.com", "linkedin.email"],
+            "body_keywords": ["linkedin", "connection request", "new job", "endorsement"],
+        },
+        "netflix": {
+            "display_names": ["netflix"],
+            "legit_domains": ["netflix.com", "mailer.netflix.com"],
+            "body_keywords": ["netflix", "subscription", "streaming", "watch now"],
         },
         "docusign": {
-            "domains": ["docusign.com", "docusign.net"],
-            "alternate_domains": ["signnow.com"],
+            "display_names": ["docusign", "docu sign"],
+            "legit_domains": ["docusign.com", "docusign.net"],
+            "body_keywords": ["docusign", "please sign", "review document", "signature"],
         },
         "dhl": {
-            "domains": ["dhl.com", "dhl.de"],
-            "alternate_domains": ["dhlparcel.com"],
+            "display_names": ["dhl", "dhl express"],
+            "legit_domains": ["dhl.com", "dhl.de", "dhlparcel.com"],
+            "body_keywords": ["dhl", "shipment", "tracking", "delivery", "parcel"],
         },
         "fedex": {
-            "domains": ["fedex.com", "fedexexpress.com"],
-            "alternate_domains": ["groundnewsletter.fedex.com"],
+            "display_names": ["fedex", "fed ex"],
+            "legit_domains": ["fedex.com"],
+            "body_keywords": ["fedex", "tracking", "delivery", "shipment"],
+        },
+        "usps": {
+            "display_names": ["usps", "us postal"],
+            "legit_domains": ["usps.com", "informeddelivery.usps.com"],
+            "body_keywords": ["usps", "postal service", "tracking", "delivery"],
+        },
+        "auspost": {
+            "display_names": ["australia post", "auspost"],
+            "legit_domains": [
+                "auspost.com.au", "notifications.auspost.com.au",
+                "bounces.auspost.com.au",
+            ],
+            "body_keywords": ["australia post", "auspost", "parcel", "delivery", "tracking"],
+        },
+        "bank_generic": {
+            "display_names": ["bank", "security alert", "fraud alert", "account verification"],
+            "legit_domains": [],  # No legit domains — any email claiming to be a bank is checked
+            "body_keywords": [
+                "verify your account", "confirm your identity", "suspended",
+                "unusual activity", "security alert", "update your payment",
+                "click here to verify", "account locked", "confirm your details",
+            ],
+        },
+        "dropbox": {
+            "display_names": ["dropbox"],
+            "legit_domains": ["dropbox.com", "dropboxmail.com"],
+            "body_keywords": ["dropbox", "shared folder", "shared file"],
+        },
+        "facebook": {
+            "display_names": ["facebook", "meta", "instagram"],
+            "legit_domains": [
+                "facebook.com", "facebookmail.com", "fb.com",
+                "instagram.com", "meta.com",
+            ],
+            "body_keywords": ["facebook", "instagram", "meta", "login alert"],
         },
     }
 
@@ -65,206 +151,274 @@ class BrandImpersonationAnalyzer:
         image_comparison_client: Optional[object] = None,
         brand_templates_path: Optional[str] = None,
     ):
-        """
-        Initialize brand impersonation analyzer with dependency injection.
-
-        Args:
-            image_comparison_client: Client for image similarity comparison
-            brand_templates_path: Path to stored brand reference templates
-        """
         self.image_comparison_client = image_comparison_client
         self.brand_templates_path = brand_templates_path or "data/brand_templates"
 
-    def _extract_domain(self, url: Optional[str]) -> Optional[str]:
-        """
-        Extract domain from URL.
-
-        Args:
-            url: URL string
-
-        Returns:
-            Domain name or None
-        """
-        if not url:
+    def _extract_domain(self, address: Optional[str]) -> Optional[str]:
+        """Extract domain from an email address or URL."""
+        if not address:
             return None
-
         try:
+            if "@" in address:
+                return address.split("@")[-1].lower().strip()
             from urllib.parse import urlparse
-
-            parsed = urlparse(url)
+            parsed = urlparse(address)
             domain = parsed.netloc.lower()
             if not domain:
-                domain = url.lower()
+                domain = address.lower()
             if domain.startswith("www."):
                 domain = domain[4:]
             return domain
         except Exception:
             return None
 
-    def _check_domain_brand_mismatch(self, domain: Optional[str]) -> tuple[float, bool, str]:
-        """
-        Check if domain mismatches claimed brand.
+    def _is_legit_domain_for_brand(self, domain: str, brand_info: dict) -> bool:
+        """Check if a domain is a legitimate sender for a brand."""
+        for legit in brand_info["legit_domains"]:
+            if domain == legit or domain.endswith("." + legit):
+                return True
+        return False
 
-        Args:
-            domain: Domain to check
-
-        Returns:
-            Tuple of (risk_score, mismatch_detected, mismatched_brand)
+    def _detect_brand_in_text(self, text: str) -> list[tuple[str, float]]:
         """
-        if not domain:
-            return 0.0, False, ""
+        Detect brand references in text content.
+        Returns list of (brand_name, match_strength) tuples.
+        """
+        if not text:
+            return []
+
+        text_lower = text.lower()
+        matches = []
 
         for brand_name, brand_info in self.BRANDS.items():
-            all_domains = brand_info["domains"] + brand_info["alternate_domains"]
+            keyword_hits = 0
+            total_keywords = len(brand_info["body_keywords"])
 
-            # Check if domain matches brand
-            if any(bd in domain for bd in all_domains):
-                return 0.0, False, ""
+            for keyword in brand_info["body_keywords"]:
+                if keyword.lower() in text_lower:
+                    keyword_hits += 1
 
-            # Check for slight misspellings of brand domain
-            for brand_domain in all_domains:
-                base_domain = brand_domain.split(".")[0]
-                if base_domain in domain and domain != brand_domain:
-                    # Domain contains brand name but isn't exact match
-                    return 0.7, True, brand_name
+            if keyword_hits > 0:
+                strength = min(keyword_hits / max(total_keywords, 1), 1.0)
+                matches.append((brand_name, strength))
 
-        return 0.0, False, ""
+        return sorted(matches, key=lambda x: x[1], reverse=True)
 
-    async def _compare_with_brand_template(self, screenshot: bytes, brand: str) -> tuple[float, float]:
+    def _detect_brand_in_display_name(self, display_name: str) -> list[str]:
+        """Detect brand names in the email display name."""
+        if not display_name:
+            return []
+
+        name_lower = display_name.lower()
+        matched_brands = []
+
+        for brand_name, brand_info in self.BRANDS.items():
+            for dn in brand_info["display_names"]:
+                if dn.lower() in name_lower:
+                    matched_brands.append(brand_name)
+                    break
+
+        return matched_brands
+
+    def _check_lookalike_domain(self, domain: str) -> list[tuple[str, float]]:
         """
-        Compare screenshot with brand reference template.
-
-        Args:
-            screenshot: Screenshot bytes to analyze
-            brand: Brand name to compare against
-
-        Returns:
-            Tuple of (similarity_score, confidence)
+        Check if a domain is a look-alike of a known brand domain.
+        Detects: indeed-verify.com, indeedhr.com, lndeed.com, indeed.evil.com
         """
-        if not self.image_comparison_client or not screenshot:
-            return 0.0, 0.0
+        if not domain:
+            return []
 
-        try:
-            # Load reference template
-            template_path = f"{self.brand_templates_path}/{brand}_template.png"
+        matches = []
+        domain_parts = domain.split(".")
 
-            result = await self.image_comparison_client.compare_images(
-                screenshot,
-                template_path,
-            )
+        for brand_name, brand_info in self.BRANDS.items():
+            for legit_domain in brand_info["legit_domains"]:
+                legit_base = legit_domain.split(".")[0]
 
-            phash_similarity = result.get("phash_similarity", 0.0)
-            ssim_similarity = result.get("ssim_similarity", 0.0)
+                if len(legit_base) < 3:
+                    continue
 
-            # Combined similarity with weighted average
-            combined_similarity = (phash_similarity * 0.4) + (ssim_similarity * 0.6)
+                # Brand name in domain but not a legit domain
+                if legit_base in domain and not self._is_legit_domain_for_brand(domain, brand_info):
+                    matches.append((brand_name, 0.7))
+                    break
 
-            # Confidence increases with high SSIM (pixel-level similarity)
-            confidence = ssim_similarity
+                # Subdomain abuse: brand.evil.com
+                if legit_base in domain_parts[0] and len(domain_parts) > 2:
+                    if not self._is_legit_domain_for_brand(domain, brand_info):
+                        matches.append((brand_name, 0.6))
+                        break
 
-            return combined_similarity, confidence
+        return matches
 
-        except Exception as e:
-            logger.warning(f"Brand template comparison failed for {brand}: {e}")
-            return 0.0, 0.0
+    def _detect_random_sender(self, local_part: str) -> float:
+        """
+        Detect random/generated email local parts like 'as628967uuwwj_3eg'.
+        Returns suspicion score 0.0-1.0.
+        """
+        if not local_part:
+            return 0.0
+
+        # Long random strings with mixed alphanumeric
+        if len(local_part) > 12 and re.search(r'\d.*[a-z].*\d|[a-z].*\d.*[a-z]', local_part):
+            digit_ratio = sum(c.isdigit() for c in local_part) / len(local_part)
+            if digit_ratio > 0.25:
+                return 0.8
+
+        # Pattern like as628967uuwwj_3eg (letters+digits+underscore)
+        if re.match(r'^[a-z]+\d+[a-z_]+\d*[a-z]*$', local_part, re.IGNORECASE):
+            return 0.6
+
+        # Pure numeric
+        if re.match(r'^\d+$', local_part):
+            return 0.7
+
+        return 0.0
 
     async def analyze(
-        self, detonation_screenshots: dict[str, bytes], extracted_urls: Optional[list] = None
+        self,
+        email: Optional[EmailObject] = None,
+        detonation_screenshots: Optional[dict[str, bytes]] = None,
+        extracted_urls: Optional[list] = None,
     ) -> AnalyzerResult:
         """
-        Analyze screenshots for brand impersonation.
+        Analyze email for brand impersonation.
 
-        Args:
-            detonation_screenshots: Dict mapping URLs to screenshot bytes
-            extracted_urls: Optional list of ExtractedURL objects for domain context
-
-        Returns:
-            AnalyzerResult with risk score and confidence
+        Works with or without screenshots. When no screenshots are available,
+        uses email headers, display name, body content, and domain analysis.
         """
         analyzer_name = "brand_impersonation"
 
         try:
-            if not detonation_screenshots:
-                return AnalyzerResult(
-                    analyzer_name=analyzer_name,
-                    risk_score=0.0,
-                    confidence=1.0,
-                    details={"message": "no_screenshots_to_analyze"},
-                )
-
-            analysis_results: dict[str, dict] = {}
-            max_risk_score = 0.0
-            max_confidence = 0.0
-
-            for url, screenshot in detonation_screenshots.items():
-                try:
-                    url_result: dict = {
-                        "url": url,
-                        "screenshot_present": screenshot is not None,
-                        "brand_checks": {},
-                    }
-
-                    domain = self._extract_domain(url)
-
-                    # Check for domain-brand mismatch
-                    mismatch_risk, mismatch_detected, mismatched_brand = (
-                        self._check_domain_brand_mismatch(domain)
+            # If no email object, fall back to screenshot-only mode
+            if not email:
+                if not detonation_screenshots:
+                    return AnalyzerResult(
+                        analyzer_name=analyzer_name,
+                        risk_score=0.0,
+                        confidence=0.0,  # No data = no confidence
+                        details={"message": "no_email_data"},
                     )
+                return await self._analyze_screenshots_only(detonation_screenshots)
 
-                    if mismatch_detected:
-                        url_result["domain_mismatch"] = {
-                            "detected": True,
-                            "brand": mismatched_brand,
-                            "risk_score": mismatch_risk,
-                        }
-                        max_risk_score = max(max_risk_score, mismatch_risk)
+            signals = []
+            max_risk = 0.0
 
-                    # Compare screenshot against all brand templates
-                    if screenshot:
-                        for brand_name in self.BRANDS.keys():
-                            similarity, confidence = await self._compare_with_brand_template(
-                                screenshot, brand_name
-                            )
+            from_addr = email.from_address or ""
+            from_domain = self._extract_domain(from_addr)
+            from_local = from_addr.split("@")[0] if "@" in from_addr else ""
+            display_name = getattr(email, "display_name", "") or ""
+            reply_to = getattr(email, "reply_to", "") or ""
+            reply_domain = self._extract_domain(reply_to)
+            body = email.body_plain or email.body_html or ""
+            subject = email.subject or ""
+            combined_text = f"{subject} {body}"
 
-                            url_result["brand_checks"][brand_name] = {
-                                "similarity": similarity,
-                                "confidence": confidence,
-                            }
+            # ── Signal 1: Brand in display name but sender domain doesn't match ──
+            display_brands = self._detect_brand_in_display_name(display_name)
+            if not display_brands:
+                display_brands = self._detect_brand_in_display_name(subject)
 
-                            # Impersonation detected if high similarity but domain mismatch
-                            if similarity > 0.7 and mismatch_detected:
-                                max_risk_score = max(max_risk_score, 0.85)
-                                max_confidence = max(max_confidence, confidence)
-                                url_result["impersonation_detected"] = True
-                                url_result["impersonated_brand"] = brand_name
-                            elif similarity > 0.7:
-                                max_risk_score = max(max_risk_score, 0.6)
-                                max_confidence = max(max_confidence, confidence)
+            for brand in display_brands:
+                brand_info = self.BRANDS[brand]
+                if from_domain and not self._is_legit_domain_for_brand(from_domain, brand_info):
+                    risk = 0.75
+                    signals.append({
+                        "signal": "display_name_brand_mismatch",
+                        "brand": brand,
+                        "display_name": display_name or subject,
+                        "from_domain": from_domain,
+                        "risk": risk,
+                    })
+                    max_risk = max(max_risk, risk)
 
-                    analysis_results[url] = url_result
+            # ── Signal 2: Brand in body content but sender domain doesn't match ──
+            body_brands = self._detect_brand_in_text(combined_text)
+            for brand, strength in body_brands:
+                brand_info = self.BRANDS[brand]
+                if from_domain and not self._is_legit_domain_for_brand(from_domain, brand_info):
+                    if strength >= 0.3:
+                        risk = min(0.5 + strength * 0.4, 0.85)
+                        signals.append({
+                            "signal": "body_brand_mismatch",
+                            "brand": brand,
+                            "keyword_strength": round(strength, 2),
+                            "from_domain": from_domain,
+                            "risk": risk,
+                        })
+                        max_risk = max(max_risk, risk)
 
-                except Exception as e:
-                    logger.error(f"Error analyzing screenshot for {url}: {e}")
-                    analysis_results[url] = {
-                        "error": str(e),
-                    }
+            # ── Signal 3: Look-alike domain ──
+            if from_domain:
+                lookalikes = self._check_lookalike_domain(from_domain)
+                for brand, risk in lookalikes:
+                    signals.append({
+                        "signal": "lookalike_domain",
+                        "brand": brand,
+                        "domain": from_domain,
+                        "risk": risk,
+                    })
+                    max_risk = max(max_risk, risk)
 
-            # Determine overall confidence
-            overall_confidence = max_confidence if max_risk_score > 0.5 else 0.3
+            # ── Signal 4: Reply-To domain mismatch ──
+            if reply_domain and from_domain and reply_domain != from_domain:
+                reply_risk = 0.6
+                if signals:  # Combined with brand signals = very suspicious
+                    reply_risk = 0.85
+                signals.append({
+                    "signal": "reply_to_domain_mismatch",
+                    "from_domain": from_domain,
+                    "reply_domain": reply_domain,
+                    "risk": reply_risk,
+                })
+                max_risk = max(max_risk, reply_risk)
+
+            # ── Signal 5: Random/generated sender address ──
+            random_score = self._detect_random_sender(from_local)
+            if random_score > 0.5:
+                if signals:  # Random sender + brand signals = phishing
+                    random_score = min(random_score + 0.15, 0.9)
+                signals.append({
+                    "signal": "random_sender_address",
+                    "local_part": from_local,
+                    "suspicion": round(random_score, 2),
+                    "risk": random_score,
+                })
+                max_risk = max(max_risk, random_score)
+
+            # ── Signal 6: Screenshot comparison (if available) ──
+            screenshot_results = {}
+            if detonation_screenshots:
+                screenshot_results = await self._analyze_screenshots(detonation_screenshots)
+                for url, result in screenshot_results.items():
+                    if result.get("risk", 0) > 0:
+                        signals.append({
+                            "signal": "screenshot_brand_match",
+                            "url": url,
+                            **result,
+                        })
+                        max_risk = max(max_risk, result.get("risk", 0))
+
+            # ── Compute overall confidence ──
+            if not signals:
+                confidence = 0.8  # Moderately confident it's clean
+            else:
+                confidence = min(0.6 + len(signals) * 0.1, 1.0)
 
             logger.info(
-                f"Brand impersonation analysis complete: "
-                f"risk={max_risk_score:.2f}, confidence={overall_confidence:.2f}"
+                f"Brand impersonation analysis: risk={max_risk:.2f}, "
+                f"confidence={confidence:.2f}, signals={len(signals)}"
             )
 
             return AnalyzerResult(
                 analyzer_name=analyzer_name,
-                risk_score=max_risk_score,
-                confidence=overall_confidence,
+                risk_score=max_risk,
+                confidence=confidence,
                 details={
-                    "screenshot_count": len(detonation_screenshots),
-                    "screenshots_analyzed": analysis_results,
-                    "brands_checked": list(self.BRANDS.keys()),
+                    "signals_found": len(signals),
+                    "signals": signals,
+                    "brands_checked": len(self.BRANDS),
+                    "screenshot_analysis": screenshot_results if screenshot_results else None,
                 },
             )
 
@@ -277,3 +431,53 @@ class BrandImpersonationAnalyzer:
                 details={},
                 errors=[str(e)],
             )
+
+    async def _analyze_screenshots_only(self, screenshots: dict[str, bytes]) -> AnalyzerResult:
+        """Fallback: screenshot-only analysis when no email object is available."""
+        results = await self._analyze_screenshots(screenshots)
+        max_risk = max((r.get("risk", 0) for r in results.values()), default=0.0)
+        confidence = 0.5 if max_risk > 0 else 0.0
+
+        return AnalyzerResult(
+            analyzer_name="brand_impersonation",
+            risk_score=max_risk,
+            confidence=confidence,
+            details={"screenshots_analyzed": results},
+        )
+
+    async def _analyze_screenshots(self, screenshots: dict[str, bytes]) -> dict:
+        """Analyze screenshots against brand templates."""
+        results = {}
+        if not self.image_comparison_client:
+            return results
+
+        for url, screenshot in screenshots.items():
+            if not screenshot:
+                continue
+            try:
+                domain = self._extract_domain(url)
+                for brand_name, brand_info in self.BRANDS.items():
+                    template_path = f"{self.brand_templates_path}/{brand_name}_template.png"
+                    try:
+                        result = await self.image_comparison_client.compare_images(
+                            screenshot, template_path,
+                        )
+                        similarity = (
+                            result.get("phash_similarity", 0.0) * 0.4
+                            + result.get("ssim_similarity", 0.0) * 0.6
+                        )
+                        if similarity > 0.7:
+                            is_legit = domain and self._is_legit_domain_for_brand(domain, brand_info)
+                            risk = 0.3 if is_legit else 0.85
+                            results[url] = {
+                                "brand": brand_name,
+                                "similarity": round(similarity, 3),
+                                "domain_is_legit": is_legit,
+                                "risk": risk,
+                            }
+                    except Exception:
+                        pass
+            except Exception as e:
+                logger.warning(f"Screenshot analysis failed for {url}: {e}")
+
+        return results

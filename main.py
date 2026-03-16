@@ -8,6 +8,7 @@ Supports two modes:
 """
 import argparse
 import asyncio
+import json
 import logging
 import sys
 from pathlib import Path
@@ -16,7 +17,7 @@ from dotenv import load_dotenv
 load_dotenv(override=True)  # override=True so .env values win over empty system env vars
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from uvicorn import run
 
 from src.config import PipelineConfig
@@ -46,6 +47,7 @@ class PhishingDetectionApp:
         self.ioc_exporter = IOCExporter()
         self.dashboard = PhishingDashboard(template_dir="./templates")
         self._monitor = None  # set when IMAP monitor starts
+        self._upload_results: list[dict] = []  # results from manual uploads (shown on monitor)
 
     async def analyze_email_file(self, email_path: str, output_format: str = "json"):
         """
@@ -183,13 +185,32 @@ class PhishingDetectionApp:
                         return v.isoformat()
                     return v
 
+                # Build analyzer_results with proper dict details (not str())
                 analyzer_results = {}
                 for name, ar in (result.analyzer_results or {}).items():
+                    details = ar.details or {}
+                    safe_details = {}
+                    for k, v in details.items():
+                        if k == "screenshots":
+                            safe_details[k] = {url: "(base64 image)" for url in (v or {})}
+                        elif isinstance(v, bytes):
+                            safe_details[k] = "(binary data)"
+                        else:
+                            safe_details[k] = v
                     analyzer_results[name] = {
                         "risk_score": ar.risk_score,
                         "confidence": ar.confidence,
-                        "details": str(ar.details) if ar.details else None,
+                        "details": safe_details,
+                        "errors": ar.errors if ar.errors else None,
                     }
+
+                extracted_urls_list = [
+                    {"url": u.url, "source": u.source.value, "source_detail": u.source_detail}
+                    if hasattr(u, 'source') else {"url": u.url if hasattr(u, 'url') else str(u), "source": "unknown", "source_detail": ""}
+                    for u in (result.extracted_urls or [])
+                ]
+
+                reasoning_text = result.reasoning if isinstance(result.reasoning, str) else str(result.reasoning)
 
                 iocs = result.iocs or {}
                 headers_raw = iocs.get("headers", {})
@@ -199,17 +220,74 @@ class PhishingDetectionApp:
                 elif isinstance(headers_raw, dict):
                     headers_out = {k: _safe(v) for k, v in headers_raw.items()}
 
+                # Add email metadata the frontend expects
+                headers_out["from_address"] = email.from_address or ""
+                headers_out["from_display_name"] = email.from_display_name or ""
+                headers_out["subject"] = email.subject or ""
+                headers_out["reply_to"] = email.reply_to or ""
+                headers_out["to_addresses"] = email.to_addresses or []
+
+                # Convert boolean auth fields to string format frontend expects
+                def _auth_str(val):
+                    if val is True:
+                        return "pass"
+                    elif val is False:
+                        return "fail"
+                    return "unknown"
+                headers_out["spf_result"] = _auth_str(headers_out.get("spf_pass"))
+                headers_out["dkim_result"] = _auth_str(headers_out.get("dkim_pass"))
+                headers_out["dmarc_result"] = _auth_str(headers_out.get("dmarc_pass"))
+                # Alias keys the frontend expects
+                headers_out["reply_to_mismatch"] = headers_out.get("from_reply_to_mismatch", False)
+
+                from datetime import datetime, timezone
+                timestamp = datetime.now(timezone.utc).isoformat()
+
+                # Build monitor-compatible record
+                monitor_record = {
+                    "timestamp": timestamp,
+                    "email_id": result.email_id,
+                    "account": "upload",
+                    "provider": "manual",
+                    "from": email.from_address or "unknown",
+                    "display_name": email.from_display_name or "",
+                    "reply_to": email.reply_to or "",
+                    "to": email.to_addresses or [],
+                    "subject": email.subject or "",
+                    "verdict": result.verdict.value,
+                    "score": result.overall_score,
+                    "confidence": result.overall_confidence,
+                    "quarantined": False,
+                    "analyzer_results": analyzer_results,
+                    "extracted_urls": extracted_urls_list,
+                    "reasoning": reasoning_text,
+                    "body_preview": (email.body_plain or "")[:2000],
+                    "body_html": (email.body_html or "")[:5000],
+                }
+
+                # Store in upload results for monitor page
+                self._upload_results.append(monitor_record)
+                if len(self._upload_results) > 200:
+                    self._upload_results.pop(0)
+
+                # Also write to results.jsonl for the Full Log tab
+                try:
+                    import json as _json
+                    log_path = Path("data/results.jsonl")
+                    log_path.parent.mkdir(parents=True, exist_ok=True)
+                    with open(log_path, "a", encoding="utf-8") as f:
+                        f.write(_json.dumps(monitor_record, default=str) + "\n")
+                except Exception as _log_err:
+                    logger.warning(f"Failed to write result to log: {_log_err}")
+
                 return {
                     "email_id": result.email_id,
                     "verdict": result.verdict.value,
                     "overall_score": result.overall_score,
                     "overall_confidence": result.overall_confidence,
-                    "timestamp": result.timestamp.isoformat(),
+                    "timestamp": timestamp,
                     "analyzer_results": analyzer_results,
-                    "extracted_urls": [
-                        u.url if hasattr(u, 'url') else str(u)
-                        for u in (result.extracted_urls or [])
-                    ],
+                    "extracted_urls": extracted_urls_list,
                     "reasoning": result.reasoning if isinstance(result.reasoning, list) else [str(result.reasoning)],
                     "iocs": {"headers": headers_out},
                 }
@@ -421,19 +499,28 @@ class PhishingDetectionApp:
         @app.get("/api/monitor/stats")
         async def monitor_stats():
             """Return current monitor stats and recent results."""
-            if self._monitor is None:
-                return {
-                    "running": False,
-                    "stats": {},
-                    "recent": [],
-                    "imap_configured": bool(self.config.imap.user),
-                }
+            # Merge IMAP monitor results + manual upload results
+            monitor_recent = []
+            monitor_stats_dict = {}
+            is_running = False
+
+            if self._monitor is not None:
+                monitor_recent = list(self._monitor._recent_results[-50:])
+                monitor_stats_dict = self._monitor.stats
+                is_running = self._monitor._running
+
+            # Merge upload results with monitor results
+            all_recent = monitor_recent + list(self._upload_results[-50:])
+            # Sort by timestamp descending
+            all_recent.sort(key=lambda r: r.get("timestamp", ""), reverse=True)
+            all_recent = all_recent[:50]
+
             return {
-                "running": self._monitor._running,
-                "stats": self._monitor.stats,
-                "recent": list(reversed(self._monitor._recent_results[-50:])),
-                "imap_configured": True,
-                "quarantine_folder": getattr(self._monitor, "quarantine_folder", None),
+                "running": is_running,
+                "stats": monitor_stats_dict,
+                "recent": all_recent,
+                "imap_configured": self._monitor is not None or bool(self.config.imap.user),
+                "quarantine_folder": getattr(self._monitor, "quarantine_folder", None) if self._monitor else None,
             }
 
         @app.get("/api/monitor/log")
@@ -451,6 +538,55 @@ class PhishingDetectionApp:
                 except Exception:
                     pass
             return {"entries": entries}
+
+        @app.get("/api/monitor/email/{email_id}")
+        async def monitor_email_detail(email_id: str):
+            """Return full details for a specific analyzed email."""
+            # Search IMAP monitor results
+            if self._monitor is not None:
+                for record in reversed(self._monitor._recent_results):
+                    if record.get("email_id") == email_id:
+                        return record
+
+            # Search upload results
+            for record in reversed(self._upload_results):
+                if record.get("email_id") == email_id:
+                    return record
+
+            raise HTTPException(status_code=404, detail="Email not found in recent results")
+
+        @app.post("/api/detonate-url")
+        async def detonate_url_endpoint(request: Request):
+            """
+            On-demand URL detonation: visit a URL in headless browser
+            and return screenshot + analysis.
+            """
+            payload = await request.json()
+            url = payload.get("url", "").strip()
+            if not url:
+                raise HTTPException(status_code=400, detail="url is required")
+
+            # Basic URL validation
+            if not url.startswith(("http://", "https://")):
+                url = "https://" + url
+
+            try:
+                from src.analyzers.url_detonation import detonate_single_url
+                result = await asyncio.wait_for(
+                    detonate_single_url(url),
+                    timeout=30,
+                )
+                return result
+            except ImportError:
+                raise HTTPException(
+                    status_code=501,
+                    detail="URL detonation requires Playwright. Install with: pip install playwright && python -m playwright install chromium"
+                )
+            except asyncio.TimeoutError:
+                raise HTTPException(status_code=504, detail="URL detonation timed out (30s)")
+            except Exception as e:
+                logger.error(f"URL detonation failed: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
 
         @app.get("/api/monitor/alerts")
         async def monitor_alerts(limit: int = 50):
@@ -582,6 +718,201 @@ class PhishingDetectionApp:
         def list_accounts_helper():
             from src.automation.multi_account_monitor import list_accounts
             return list_accounts()
+
+        # ── Feedback / Learning endpoints ────────────────────────────
+        _feedback_db = None
+
+        async def _get_feedback_db():
+            nonlocal _feedback_db
+            if _feedback_db is None:
+                from src.feedback.database import DatabaseManager, create_sqlite_url
+                db_path = getattr(self.config, "feedback_db_path", "data/feedback.db")
+                _feedback_db = DatabaseManager(create_sqlite_url(db_path), echo=False)
+                await _feedback_db.initialize()
+                await _feedback_db.create_tables()
+            return _feedback_db
+
+        @app.post("/api/feedback")
+        async def submit_feedback(request: Request):
+            """
+            Submit analyst feedback on an analysis result.
+            Enables the system to learn from corrections.
+            """
+            import traceback as _tb
+            try:
+                payload = await request.json()
+                email_id = payload.get("email_id", "").strip()
+                original_verdict = payload.get("original_verdict", "").strip()
+                correct_label = payload.get("correct_label", "").strip()
+                analyst_notes = payload.get("notes", "").strip()
+                feature_vector = payload.get("feature_vector", {})
+
+                if not email_id or not correct_label:
+                    raise HTTPException(status_code=400, detail="email_id and correct_label required")
+
+                valid_labels = ["CLEAN", "SUSPICIOUS", "LIKELY_PHISHING", "CONFIRMED_PHISHING"]
+                if correct_label not in valid_labels:
+                    raise HTTPException(status_code=400, detail=f"correct_label must be one of: {valid_labels}")
+
+                db = await _get_feedback_db()
+
+                from src.feedback.database import FeedbackRecord, LocalBlocklist, LocalAllowlist
+                from sqlalchemy import select
+                from datetime import datetime, timezone
+
+                actions_taken = []
+
+                async with db.async_session_maker() as session:
+                    record = FeedbackRecord(
+                        email_id=email_id,
+                        original_verdict=original_verdict or "UNKNOWN",
+                        correct_label=correct_label,
+                        analyst_notes=analyst_notes,
+                        feature_vector=json.dumps(feature_vector) if feature_vector else "{}",
+                        submitted_at=datetime.now(timezone.utc),
+                    )
+                    session.add(record)
+                    actions_taken.append("feedback_recorded")
+
+                    # Auto-blocklist: if analyst says it's phishing but system said clean
+                    severity = {"CLEAN": 0, "SUSPICIOUS": 1, "LIKELY_PHISHING": 2, "CONFIRMED_PHISHING": 3}
+                    orig_sev = severity.get(original_verdict, 0)
+                    corr_sev = severity.get(correct_label, 0)
+
+                    if corr_sev > orig_sev and corr_sev >= 2:
+                        # False negative — find sender in upload results or monitor results
+                        sender = ""
+                        for rec in reversed(self._upload_results):
+                            if rec.get("email_id") == email_id:
+                                sender = rec.get("from", "")
+                                break
+                        if sender and not sender.endswith(("@gmail.com", "@outlook.com", "@yahoo.com")):
+                            existing = await session.execute(
+                                select(LocalBlocklist).where(LocalBlocklist.indicator == sender)
+                            )
+                            if not existing.scalar_one_or_none():
+                                session.add(LocalBlocklist(
+                                    indicator=sender,
+                                    indicator_type="email",
+                                    added_by="analyst_feedback",
+                                    added_at=datetime.now(timezone.utc),
+                                    reason=f"False negative: was {original_verdict}, should be {correct_label}",
+                                ))
+                                actions_taken.append(f"blocklisted_sender:{sender}")
+
+                    elif corr_sev < orig_sev and orig_sev >= 2:
+                        # False positive — find sender
+                        sender = ""
+                        for rec in reversed(self._upload_results):
+                            if rec.get("email_id") == email_id:
+                                sender = rec.get("from", "")
+                                break
+                        if sender:
+                            existing = await session.execute(
+                                select(LocalAllowlist).where(LocalAllowlist.indicator == sender)
+                            )
+                            if not existing.scalar_one_or_none():
+                                session.add(LocalAllowlist(
+                                    indicator=sender,
+                                    indicator_type="email",
+                                    added_by="analyst_feedback",
+                                    added_at=datetime.now(timezone.utc),
+                                    reason=f"False positive: was {original_verdict}, should be {correct_label}",
+                                ))
+                                actions_taken.append(f"allowlisted_sender:{sender}")
+
+                    await session.commit()
+
+                return {
+                    "status": "ok",
+                    "email_id": email_id,
+                    "original_verdict": original_verdict,
+                    "correct_label": correct_label,
+                    "actions_taken": actions_taken,
+                }
+            except HTTPException:
+                raise
+            except Exception as exc:
+                logger.error("Feedback endpoint error: %s\n%s", exc, _tb.format_exc())
+                return JSONResponse(
+                    status_code=500,
+                    content={"error": str(exc), "detail": _tb.format_exc().split("\n")[-3:]},
+                )
+
+        @app.get("/api/feedback/stats")
+        async def feedback_stats():
+            """Return feedback statistics and model accuracy metrics."""
+            db = await _get_feedback_db()
+            from src.feedback.database import FeedbackRecord
+            from sqlalchemy import select, func
+
+            async with db.async_session_maker() as session:
+                total = await session.execute(select(func.count(FeedbackRecord.id)))
+                total_count = total.scalar() or 0
+
+                if total_count == 0:
+                    return {
+                        "total_feedback": 0,
+                        "accuracy": None,
+                        "false_positives": 0,
+                        "false_negatives": 0,
+                        "corrections": [],
+                    }
+
+                # Count agreements vs disagreements
+                all_records = await session.execute(select(FeedbackRecord).order_by(FeedbackRecord.submitted_at.desc()).limit(200))
+                records = all_records.scalars().all()
+
+                agree = 0
+                false_pos = 0
+                false_neg = 0
+                corrections = []
+
+                severity = {"CLEAN": 0, "SUSPICIOUS": 1, "LIKELY_PHISHING": 2, "CONFIRMED_PHISHING": 3}
+
+                for r in records:
+                    if r.original_verdict == r.correct_label:
+                        agree += 1
+                    else:
+                        orig_sev = severity.get(r.original_verdict, 0)
+                        corr_sev = severity.get(r.correct_label, 0)
+                        if corr_sev > orig_sev:
+                            false_neg += 1
+                        else:
+                            false_pos += 1
+                        corrections.append({
+                            "email_id": r.email_id,
+                            "original": r.original_verdict,
+                            "correct": r.correct_label,
+                            "notes": r.analyst_notes,
+                            "time": r.submitted_at.isoformat() if r.submitted_at else None,
+                        })
+
+                return {
+                    "total_feedback": total_count,
+                    "accuracy": round(agree / len(records) * 100, 1) if records else None,
+                    "agreements": agree,
+                    "false_positives": false_pos,
+                    "false_negatives": false_neg,
+                    "recent_corrections": corrections[:20],
+                }
+
+        @app.post("/api/feedback/retrain")
+        async def trigger_retrain():
+            """Manually trigger model weight retraining from feedback data."""
+            db = await _get_feedback_db()
+            from src.feedback.retrainer import RetrainOrchestrator
+
+            orchestrator = RetrainOrchestrator(self.config)
+            async with db.async_session_maker() as session:
+                result = await orchestrator.run_full_retrain(session)
+
+            return {
+                "status": result.get("status", "completed"),
+                "feedback_used": result.get("feedback_records_used", 0),
+                "new_weights": result.get("new_weights"),
+                "improvement": result.get("model_improvement"),
+            }
 
         # Include dashboard routes
         app.include_router(self.dashboard.router)

@@ -2,20 +2,52 @@
 Test suite for brand impersonation analyzer in src.analyzers.brand_impersonation module.
 
 Tests:
-- BrandImpersonationDetector initialization
-- analyze() with mocked visual similarity scores
+- BrandImpersonationAnalyzer initialization
+- analyze() with email objects and various signal combinations
 - Known brand domain matching
 - Result format with confidence scores
-- Handling of missing brand references
-- Domain-brand mismatch detection
-- Visual similarity analysis
+- Look-alike domain detection
+- Display name spoofing detection
+- Random sender detection
+- Screenshot-based analysis (when available)
 """
 
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Optional
 
 from src.analyzers.brand_impersonation import BrandImpersonationAnalyzer
-from src.models import AnalyzerResult, ExtractedURL, URLSource
+from src.models import AnalyzerResult, ExtractedURL, URLSource, EmailObject
+
+
+def _make_email(
+    from_address: str = "user@example.com",
+    from_display_name: str = "",
+    reply_to: Optional[str] = None,
+    subject: str = "Test Subject",
+    body_plain: str = "",
+    body_html: str = "",
+) -> EmailObject:
+    """Create a minimal EmailObject for testing."""
+    return EmailObject(
+        email_id="test-email-001",
+        raw_headers={},
+        from_address=from_address,
+        from_display_name=from_display_name,
+        reply_to=reply_to,
+        to_addresses=["recipient@test.com"],
+        cc_addresses=[],
+        subject=subject,
+        body_plain=body_plain,
+        body_html=body_html,
+        date=datetime.now(),
+        attachments=[],
+        inline_images=[],
+        message_id="<test@example.com>",
+        received_chain=[],
+    )
 
 
 class TestBrandImpersonationAnalyzerInitialization:
@@ -56,138 +88,182 @@ class TestBrandImpersonationAnalyzerInitialization:
         assert analyzer.brand_templates_path == "/custom/templates"
 
     def test_analyzer_brands_constant(self):
-        """Test that BRANDS constant is properly defined."""
+        """Test that BRANDS constant is properly defined with new keys."""
         analyzer = BrandImpersonationAnalyzer()
 
-        assert "microsoft_365" in analyzer.BRANDS
+        # Verify key brands exist (microsoft, not microsoft_365)
+        assert "microsoft" in analyzer.BRANDS
         assert "google" in analyzer.BRANDS
         assert "apple" in analyzer.BRANDS
         assert "paypal" in analyzer.BRANDS
         assert "docusign" in analyzer.BRANDS
         assert "dhl" in analyzer.BRANDS
         assert "fedex" in analyzer.BRANDS
+        assert "indeed" in analyzer.BRANDS
+        assert "amazon" in analyzer.BRANDS
+        assert "linkedin" in analyzer.BRANDS
+
+    def test_brands_structure(self):
+        """Test that each brand has the required fields."""
+        analyzer = BrandImpersonationAnalyzer()
+
+        for brand_name, brand_info in analyzer.BRANDS.items():
+            assert "display_names" in brand_info, f"{brand_name} missing display_names"
+            assert "legit_domains" in brand_info, f"{brand_name} missing legit_domains"
+            assert "body_keywords" in brand_info, f"{brand_name} missing body_keywords"
+            assert isinstance(brand_info["display_names"], list)
+            assert isinstance(brand_info["legit_domains"], list)
+            assert isinstance(brand_info["body_keywords"], list)
 
 
 class TestBrandImpersonationAnalyze:
     """Test analyze() method."""
 
     @pytest.mark.asyncio
-    async def test_analyze_no_screenshots(self):
-        """Test analyze with empty screenshots dict."""
+    async def test_analyze_no_email_no_screenshots(self):
+        """Test analyze with no email and no screenshots."""
         analyzer = BrandImpersonationAnalyzer()
 
-        result = await analyzer.analyze({})
+        result = await analyzer.analyze()
 
         assert isinstance(result, AnalyzerResult)
         assert result.analyzer_name == "brand_impersonation"
         assert result.risk_score == 0.0
-        assert result.confidence == 1.0
-        assert "no_screenshots_to_analyze" in result.details.get("message", "")
+        assert result.confidence == 0.0  # No data = no confidence
+        assert "no_email_data" in result.details.get("message", "")
 
     @pytest.mark.asyncio
-    async def test_analyze_single_screenshot_clean(self):
-        """Test analyzing single clean screenshot."""
-        mock_client = AsyncMock()
-        mock_client.compare_images.return_value = {
-            "phash_similarity": 0.1,
-            "ssim_similarity": 0.2,
-        }
+    async def test_analyze_clean_email(self):
+        """Test analyzing a clean email from a legitimate sender."""
+        analyzer = BrandImpersonationAnalyzer()
 
-        analyzer = BrandImpersonationAnalyzer(image_comparison_client=mock_client)
+        email = _make_email(
+            from_address="noreply@microsoft.com",
+            from_display_name="Microsoft",
+            subject="Your subscription renewal",
+            body_plain="Your Microsoft 365 subscription has been renewed.",
+        )
 
-        screenshots = {
-            "https://example.com": b"fake_screenshot_data",
-        }
-
-        result = await analyzer.analyze(screenshots)
+        result = await analyzer.analyze(email=email)
 
         assert isinstance(result, AnalyzerResult)
         assert result.analyzer_name == "brand_impersonation"
-        assert result.risk_score >= 0.0
-        assert result.confidence >= 0.0
+        # Legit domain + brand name match = low risk
+        assert result.risk_score < 0.5
 
     @pytest.mark.asyncio
-    async def test_analyze_multiple_screenshots(self):
-        """Test analyzing multiple screenshots."""
-        mock_client = AsyncMock()
-        mock_client.compare_images.return_value = {
-            "phash_similarity": 0.3,
-            "ssim_similarity": 0.4,
-        }
+    async def test_analyze_phishing_email_brand_mismatch(self):
+        """Test analyzing a phishing email with brand/domain mismatch."""
+        analyzer = BrandImpersonationAnalyzer()
 
-        analyzer = BrandImpersonationAnalyzer(image_comparison_client=mock_client)
+        email = _make_email(
+            from_address="support@random-server.com",
+            from_display_name="Microsoft Support",
+            subject="Urgent: Your Microsoft account needs verification",
+            body_plain="Click here to verify your Microsoft 365 account. Your Office 365 subscription will be suspended.",
+        )
 
-        screenshots = {
-            "https://site1.example.com": b"screenshot1",
-            "https://site2.example.com": b"screenshot2",
-            "https://site3.example.com": b"screenshot3",
-        }
-
-        result = await analyzer.analyze(screenshots)
+        result = await analyzer.analyze(email=email)
 
         assert isinstance(result, AnalyzerResult)
-        assert result.details["screenshot_count"] == 3
-        assert "screenshots_analyzed" in result.details
+        # Brand in display name + non-legit domain = high risk
+        assert result.risk_score >= 0.5
+        assert result.confidence > 0.0
+        assert result.details.get("signals_found", 0) > 0
+
+    @pytest.mark.asyncio
+    async def test_analyze_indeed_phishing(self):
+        """Test analyzing an Indeed phishing email (the original false negative case)."""
+        analyzer = BrandImpersonationAnalyzer()
+
+        email = _make_email(
+            from_address="as628967uuwwj_3eg@indeedhr-apply.com",
+            from_display_name="Indeed",
+            reply_to="fake@different-domain.com",
+            subject="Interview Invitation from Indeed",
+            body_plain="You have received a job application through Indeed. Click to view.",
+        )
+
+        result = await analyzer.analyze(email=email)
+
+        assert isinstance(result, AnalyzerResult)
+        # Multiple signals: display_name mismatch, lookalike domain, random sender, reply-to mismatch
+        assert result.risk_score >= 0.6
+        assert result.details.get("signals_found", 0) >= 2
+
+    @pytest.mark.asyncio
+    async def test_analyze_multiple_brand_signals(self):
+        """Test that multiple signals increase risk score."""
+        analyzer = BrandImpersonationAnalyzer()
+
+        email = _make_email(
+            from_address="noreply@paypal-verify.xyz",
+            from_display_name="PayPal Security",
+            reply_to="reply@another-domain.com",
+            subject="Your PayPal account has been limited",
+            body_plain="Verify your PayPal account now or it will be suspended. paypal.com",
+        )
+
+        result = await analyzer.analyze(email=email)
+
+        assert result.risk_score >= 0.7
+        assert result.details.get("signals_found", 0) >= 2
 
 
 class TestBrandImpersonationDomainMatching:
-    """Test domain-brand mismatch detection."""
+    """Test domain-related helper methods."""
 
-    def test_check_domain_brand_mismatch_legitimate_microsoft(self):
+    def test_is_legit_domain_microsoft(self):
         """Test legitimate Microsoft domain matching."""
         analyzer = BrandImpersonationAnalyzer()
+        brand_info = analyzer.BRANDS["microsoft"]
 
-        risk_score, mismatch, brand = analyzer._check_domain_brand_mismatch(
-            "microsoft.com"
-        )
+        assert analyzer._is_legit_domain_for_brand("microsoft.com", brand_info)
+        assert analyzer._is_legit_domain_for_brand("outlook.com", brand_info)
+        assert analyzer._is_legit_domain_for_brand("office.com", brand_info)
+        assert not analyzer._is_legit_domain_for_brand("microsft.com", brand_info)
+        assert not analyzer._is_legit_domain_for_brand("microsoft-verify.com", brand_info)
 
-        assert risk_score == 0.0
-        assert mismatch is False
-        assert brand == ""
-
-    def test_check_domain_brand_mismatch_legitimate_google(self):
+    def test_is_legit_domain_google(self):
         """Test legitimate Google domain matching."""
         analyzer = BrandImpersonationAnalyzer()
+        brand_info = analyzer.BRANDS["google"]
 
-        risk_score, mismatch, brand = analyzer._check_domain_brand_mismatch(
-            "google.com"
-        )
+        assert analyzer._is_legit_domain_for_brand("google.com", brand_info)
+        assert analyzer._is_legit_domain_for_brand("gmail.com", brand_info)
+        assert not analyzer._is_legit_domain_for_brand("g00gle.com", brand_info)
 
-        assert risk_score == 0.0
-        assert mismatch is False
+    def test_is_legit_domain_subdomain(self):
+        """Test subdomain matching."""
+        analyzer = BrandImpersonationAnalyzer()
+        brand_info = analyzer.BRANDS["microsoft"]
 
-    def test_check_domain_brand_mismatch_misspelled_microsoft(self):
-        """Test misspelled Microsoft domain detection."""
+        # Subdomains of legit domains should be legit
+        assert analyzer._is_legit_domain_for_brand("email.microsoft.com", brand_info)
+        assert analyzer._is_legit_domain_for_brand("noreply.office.com", brand_info)
+
+    def test_check_lookalike_domain_brand_in_domain(self):
+        """Test look-alike domain detection."""
         analyzer = BrandImpersonationAnalyzer()
 
-        risk_score, mismatch, brand = analyzer._check_domain_brand_mismatch(
-            "microsft.com"
-        )
+        # Contains 'paypal' but not a legit PayPal domain
+        matches = analyzer._check_lookalike_domain("paypal-verify.com")
+        assert len(matches) > 0
+        assert matches[0][0] == "paypal"
 
-        # Misspelled domain should be flagged
-        assert risk_score > 0.0 or mismatch is False
-
-    def test_check_domain_brand_mismatch_subdomain_mismatch(self):
-        """Test domain mismatch with subdomain."""
+    def test_check_lookalike_domain_legit(self):
+        """Test that legit domains are not flagged as look-alikes."""
         analyzer = BrandImpersonationAnalyzer()
 
-        risk_score, mismatch, brand = analyzer._check_domain_brand_mismatch(
-            "microsoft.suspicious-site.com"
-        )
+        matches = analyzer._check_lookalike_domain("paypal.com")
+        assert len(matches) == 0
 
-        # Contains brand name but in wrong context
-        assert isinstance(risk_score, float)
-        assert isinstance(mismatch, bool)
-
-    def test_check_domain_brand_mismatch_none_domain(self):
-        """Test handling of None domain."""
+    def test_check_lookalike_domain_empty(self):
+        """Test look-alike with empty/None domain."""
         analyzer = BrandImpersonationAnalyzer()
 
-        risk_score, mismatch, brand = analyzer._check_domain_brand_mismatch(None)
-
-        assert risk_score == 0.0
-        assert mismatch is False
-        assert brand == ""
+        assert analyzer._check_lookalike_domain("") == []
+        assert analyzer._check_lookalike_domain(None) == []
 
 
 class TestBrandImpersonationDomainExtraction:
@@ -197,44 +273,124 @@ class TestBrandImpersonationDomainExtraction:
         """Test domain extraction from HTTPS URL."""
         analyzer = BrandImpersonationAnalyzer()
         domain = analyzer._extract_domain("https://example.com/path")
-
         assert domain == "example.com"
 
     def test_extract_domain_with_www(self):
         """Test domain extraction with www prefix."""
         analyzer = BrandImpersonationAnalyzer()
         domain = analyzer._extract_domain("https://www.example.com")
+        assert domain == "example.com"
 
+    def test_extract_domain_from_email(self):
+        """Test domain extraction from email address."""
+        analyzer = BrandImpersonationAnalyzer()
+        domain = analyzer._extract_domain("user@example.com")
         assert domain == "example.com"
 
     def test_extract_domain_subdomain(self):
         """Test domain extraction with subdomain."""
         analyzer = BrandImpersonationAnalyzer()
         domain = analyzer._extract_domain("https://mail.google.com")
-
         assert domain == "mail.google.com"
 
     def test_extract_domain_none_url(self):
         """Test domain extraction with None URL."""
         analyzer = BrandImpersonationAnalyzer()
         domain = analyzer._extract_domain(None)
-
         assert domain is None
 
     def test_extract_domain_empty_string(self):
         """Test domain extraction with empty string."""
         analyzer = BrandImpersonationAnalyzer()
         domain = analyzer._extract_domain("")
-
         assert domain is None
 
 
-class TestBrandImpersonationVisualSimilarity:
-    """Test visual similarity comparison."""
+class TestBrandImpersonationDetectBrand:
+    """Test brand detection in text and display names."""
+
+    def test_detect_brand_in_display_name_microsoft(self):
+        """Test detecting Microsoft in display name."""
+        analyzer = BrandImpersonationAnalyzer()
+        brands = analyzer._detect_brand_in_display_name("Microsoft Support")
+        assert "microsoft" in brands
+
+    def test_detect_brand_in_display_name_outlook(self):
+        """Test detecting Outlook (Microsoft variant) in display name."""
+        analyzer = BrandImpersonationAnalyzer()
+        brands = analyzer._detect_brand_in_display_name("Outlook Team")
+        assert "microsoft" in brands
+
+    def test_detect_brand_in_display_name_multiple(self):
+        """Test no false positives for unrelated display names."""
+        analyzer = BrandImpersonationAnalyzer()
+        brands = analyzer._detect_brand_in_display_name("John Smith")
+        assert len(brands) == 0
+
+    def test_detect_brand_in_text_microsoft(self):
+        """Test detecting Microsoft brand keywords in body text."""
+        analyzer = BrandImpersonationAnalyzer()
+        matches = analyzer._detect_brand_in_text(
+            "Your Microsoft Office 365 subscription has been renewed. "
+            "Please sign in to Outlook to view your account details."
+        )
+        assert len(matches) > 0
+        # Microsoft should be in results
+        brand_names = [m[0] for m in matches]
+        assert "microsoft" in brand_names
+
+    def test_detect_brand_in_text_paypal(self):
+        """Test detecting PayPal brand keywords in body text."""
+        analyzer = BrandImpersonationAnalyzer()
+        matches = analyzer._detect_brand_in_text(
+            "Your PayPal payment received. Check paypal.com for details."
+        )
+        brand_names = [m[0] for m in matches]
+        assert "paypal" in brand_names
+
+    def test_detect_brand_in_text_empty(self):
+        """Test brand detection with empty text."""
+        analyzer = BrandImpersonationAnalyzer()
+        assert analyzer._detect_brand_in_text("") == []
+        assert analyzer._detect_brand_in_text(None) == []
+
+
+class TestRandomSenderDetection:
+    """Test random/generated sender address detection."""
+
+    def test_detect_random_sender_obvious(self):
+        """Test detection of obviously random sender."""
+        analyzer = BrandImpersonationAnalyzer()
+        # Pattern like the Indeed phishing case
+        score = analyzer._detect_random_sender("as628967uuwwj_3eg")
+        assert score >= 0.5
+
+    def test_detect_random_sender_normal(self):
+        """Test that normal email addresses are not flagged."""
+        analyzer = BrandImpersonationAnalyzer()
+        assert analyzer._detect_random_sender("john.smith") == 0.0
+        assert analyzer._detect_random_sender("support") == 0.0
+        assert analyzer._detect_random_sender("noreply") == 0.0
+
+    def test_detect_random_sender_numeric(self):
+        """Test detection of purely numeric senders."""
+        analyzer = BrandImpersonationAnalyzer()
+        score = analyzer._detect_random_sender("12345678")
+        assert score >= 0.5
+
+    def test_detect_random_sender_empty(self):
+        """Test handling of empty sender."""
+        analyzer = BrandImpersonationAnalyzer()
+        assert analyzer._detect_random_sender("") == 0.0
+        assert analyzer._detect_random_sender(None) == 0.0
+
+
+class TestScreenshotAnalysis:
+    """Test screenshot-based analysis (when available)."""
 
     @pytest.mark.asyncio
-    async def test_compare_with_brand_template_high_similarity(self):
-        """Test comparison with high visual similarity."""
+    async def test_analyze_with_screenshots_high_similarity(self):
+        """Test analysis with high visual similarity screenshots."""
         mock_client = AsyncMock()
         mock_client.compare_images.return_value = {
             "phash_similarity": 0.9,
@@ -243,124 +399,88 @@ class TestBrandImpersonationVisualSimilarity:
 
         analyzer = BrandImpersonationAnalyzer(image_comparison_client=mock_client)
 
-        screenshot = b"fake_screenshot"
-        similarity, confidence = await analyzer._compare_with_brand_template(
-            screenshot, "microsoft_365"
+        email = _make_email(
+            from_address="support@phishing-site.com",
+            from_display_name="Microsoft",
+            subject="Verify your account",
+            body_plain="Microsoft account verification needed",
         )
 
-        # High similarity should be detected
-        assert similarity > 0.5
-        assert confidence > 0.0
+        screenshots = {
+            "https://phishing-site.com/login": b"fake_screenshot_data",
+        }
+
+        result = await analyzer.analyze(
+            email=email,
+            detonation_screenshots=screenshots,
+        )
+
+        assert isinstance(result, AnalyzerResult)
+        assert result.risk_score > 0  # Should have risk from brand mismatch
 
     @pytest.mark.asyncio
-    async def test_compare_with_brand_template_low_similarity(self):
-        """Test comparison with low visual similarity."""
+    async def test_analyze_screenshots_only_mode(self):
+        """Test screenshot-only mode when no email object provided."""
         mock_client = AsyncMock()
         mock_client.compare_images.return_value = {
-            "phash_similarity": 0.1,
-            "ssim_similarity": 0.15,
+            "phash_similarity": 0.9,
+            "ssim_similarity": 0.85,
         }
 
         analyzer = BrandImpersonationAnalyzer(image_comparison_client=mock_client)
 
-        screenshot = b"fake_screenshot"
-        similarity, confidence = await analyzer._compare_with_brand_template(
-            screenshot, "google"
-        )
+        screenshots = {
+            "https://fake-microsoft.com": b"screenshot_of_microsoft_page",
+        }
 
-        # Low similarity
-        assert similarity < 0.5 or similarity == 0.0
+        result = await analyzer.analyze(detonation_screenshots=screenshots)
+
+        assert isinstance(result, AnalyzerResult)
+        assert result.analyzer_name == "brand_impersonation"
 
     @pytest.mark.asyncio
-    async def test_compare_without_client(self):
-        """Test comparison without image comparison client."""
+    async def test_analyze_without_screenshot_client(self):
+        """Test that missing image client is handled gracefully."""
         analyzer = BrandImpersonationAnalyzer(image_comparison_client=None)
 
-        screenshot = b"fake_screenshot"
-        similarity, confidence = await analyzer._compare_with_brand_template(
-            screenshot, "apple"
+        email = _make_email(
+            from_address="support@example.com",
+            subject="Test",
+            body_plain="Normal email content",
         )
 
-        # Should return zeros when no client available
-        assert similarity == 0.0
-        assert confidence == 0.0
-
-    @pytest.mark.asyncio
-    async def test_compare_with_empty_screenshot(self):
-        """Test comparison with empty screenshot."""
-        mock_client = AsyncMock()
-        analyzer = BrandImpersonationAnalyzer(image_comparison_client=mock_client)
-
-        similarity, confidence = await analyzer._compare_with_brand_template(
-            b"", "microsoft_365"
+        # Should not crash even with screenshots but no client
+        result = await analyzer.analyze(
+            email=email,
+            detonation_screenshots={"https://example.com": b"screenshot"},
         )
 
-        # Empty screenshot should return zeros
-        assert similarity == 0.0
-        assert confidence == 0.0
+        assert isinstance(result, AnalyzerResult)
 
     @pytest.mark.asyncio
-    async def test_compare_client_exception_handling(self):
-        """Test exception handling in comparison."""
+    async def test_analyze_screenshot_client_exception(self):
+        """Test exception handling in screenshot comparison."""
         mock_client = AsyncMock()
         mock_client.compare_images.side_effect = Exception("Comparison failed")
 
         analyzer = BrandImpersonationAnalyzer(image_comparison_client=mock_client)
 
-        screenshot = b"fake_screenshot"
-        similarity, confidence = await analyzer._compare_with_brand_template(
-            screenshot, "paypal"
+        email = _make_email(
+            from_address="support@phishing.com",
+            from_display_name="PayPal",
+            body_plain="Your PayPal account has been suspended. Verify at paypal.com.",
         )
 
-        # Should handle exception gracefully
-        assert similarity == 0.0
-        assert confidence == 0.0
+        screenshots = {"https://phishing.com": b"screenshot"}
 
-
-class TestBrandImpersonationImpersonationDetection:
-    """Test impersonation detection logic."""
-
-    @pytest.mark.asyncio
-    async def test_detect_impersonation_high_similarity_mismatched_domain(self):
-        """Test detection when visual similarity is high but domain mismatches."""
-        mock_client = AsyncMock()
-        mock_client.compare_images.return_value = {
-            "phash_similarity": 0.85,
-            "ssim_similarity": 0.8,
-        }
-
-        analyzer = BrandImpersonationAnalyzer(image_comparison_client=mock_client)
-
-        screenshots = {
-            "https://fake-microsoft.attacker.com": b"screenshot_of_microsoft_page",
-        }
-
-        result = await analyzer.analyze(screenshots)
+        result = await analyzer.analyze(
+            email=email,
+            detonation_screenshots=screenshots,
+        )
 
         assert isinstance(result, AnalyzerResult)
-        # High similarity with mismatched domain is impersonation
-        assert result.details["screenshot_count"] == 1
-
-    @pytest.mark.asyncio
-    async def test_detect_high_similarity_legitimate_domain(self):
-        """Test no impersonation when legitimate domain."""
-        mock_client = AsyncMock()
-        mock_client.compare_images.return_value = {
-            "phash_similarity": 0.95,
-            "ssim_similarity": 0.9,
-        }
-
-        analyzer = BrandImpersonationAnalyzer(image_comparison_client=mock_client)
-
-        screenshots = {
-            "https://microsoft.com": b"screenshot_of_microsoft_page",
-        }
-
-        result = await analyzer.analyze(screenshots)
-
-        assert isinstance(result, AnalyzerResult)
-        # Legitimate domain should not be flagged as impersonation
-        assert result.risk_score < 0.85 or result.risk_score == 0.0
+        # Should still have risk from content-based signals (display_name + body brand mismatch)
+        assert result.risk_score > 0
 
 
 class TestBrandImpersonationResultFormat:
@@ -369,72 +489,41 @@ class TestBrandImpersonationResultFormat:
     @pytest.mark.asyncio
     async def test_result_format_complete(self):
         """Test complete AnalyzerResult format."""
-        mock_client = AsyncMock()
-        mock_client.compare_images.return_value = {
-            "phash_similarity": 0.5,
-            "ssim_similarity": 0.5,
-        }
+        analyzer = BrandImpersonationAnalyzer()
 
-        analyzer = BrandImpersonationAnalyzer(image_comparison_client=mock_client)
+        email = _make_email(
+            from_address="user@suspicious.com",
+            from_display_name="Google",
+            subject="Google security alert",
+            body_plain="Your Google account needs attention",
+        )
 
-        screenshots = {
-            "https://example.com": b"screenshot",
-        }
-
-        result = await analyzer.analyze(screenshots)
+        result = await analyzer.analyze(email=email)
 
         # Check AnalyzerResult structure
         assert result.analyzer_name == "brand_impersonation"
         assert isinstance(result.risk_score, float)
         assert isinstance(result.confidence, float)
         assert isinstance(result.details, dict)
-        assert isinstance(result.errors, list)
 
-        # Check details structure
-        assert "screenshot_count" in result.details
-        assert "screenshots_analyzed" in result.details
+        # Check details structure (new format)
+        assert "signals_found" in result.details
+        assert "signals" in result.details
         assert "brands_checked" in result.details
 
     @pytest.mark.asyncio
-    async def test_result_aggregation_multiple_screenshots(self):
-        """Test aggregation of results from multiple screenshots."""
-        mock_client = AsyncMock()
-
-        def compare_side_effect(screenshot, template_path):
-            if b"clean" in screenshot:
-                return {"phash_similarity": 0.2, "ssim_similarity": 0.3}
-            else:
-                return {"phash_similarity": 0.8, "ssim_similarity": 0.85}
-
-        mock_client.compare_images = compare_side_effect
-
-        analyzer = BrandImpersonationAnalyzer(image_comparison_client=mock_client)
-
-        screenshots = {
-            "https://clean-site.com": b"clean_screenshot",
-            "https://phishing-site.com": b"phishing_screenshot",
-        }
-
-        result = await analyzer.analyze(screenshots)
-
-        assert isinstance(result, AnalyzerResult)
-        assert result.details["screenshot_count"] == 2
-        # Should aggregate to worst case
-        assert result.risk_score >= 0.0
-
-    @pytest.mark.asyncio
     async def test_result_with_errors(self):
-        """Test AnalyzerResult with error handling."""
-        mock_client = AsyncMock()
-        mock_client.compare_images.side_effect = Exception("Image comparison failed")
+        """Test AnalyzerResult handles errors gracefully."""
+        analyzer = BrandImpersonationAnalyzer()
 
-        analyzer = BrandImpersonationAnalyzer(image_comparison_client=mock_client)
+        # Pass a mock email that will trigger analysis but not crash
+        email = _make_email(
+            from_address="test@example.com",
+            subject="Normal email",
+            body_plain="Nothing suspicious",
+        )
 
-        screenshots = {
-            "https://example.com": b"screenshot",
-        }
-
-        result = await analyzer.analyze(screenshots)
+        result = await analyzer.analyze(email=email)
 
         assert isinstance(result, AnalyzerResult)
         assert result.analyzer_name == "brand_impersonation"
@@ -447,97 +536,133 @@ class TestBrandImpersonationBrandCoverage:
         """Test Microsoft brand domains are properly configured."""
         analyzer = BrandImpersonationAnalyzer()
 
-        microsoft_config = analyzer.BRANDS["microsoft_365"]
-        assert "microsoft.com" in microsoft_config["domains"]
-        assert "office.com" in microsoft_config["domains"]
-        assert "outlook.com" in microsoft_config["domains"]
+        microsoft_config = analyzer.BRANDS["microsoft"]
+        assert "microsoft.com" in microsoft_config["legit_domains"]
+        assert "office.com" in microsoft_config["legit_domains"]
+        assert "outlook.com" in microsoft_config["legit_domains"]
 
     def test_google_brand_domains(self):
         """Test Google brand domains are properly configured."""
         analyzer = BrandImpersonationAnalyzer()
 
         google_config = analyzer.BRANDS["google"]
-        assert "google.com" in google_config["domains"]
-        assert "accounts.google.com" in google_config["domains"]
+        assert "google.com" in google_config["legit_domains"]
+        assert "gmail.com" in google_config["legit_domains"]
 
     def test_apple_brand_domains(self):
         """Test Apple brand domains are properly configured."""
         analyzer = BrandImpersonationAnalyzer()
 
         apple_config = analyzer.BRANDS["apple"]
-        assert "apple.com" in apple_config["domains"]
-        assert "icloud.com" in apple_config["domains"]
+        assert "apple.com" in apple_config["legit_domains"]
+        assert "icloud.com" in apple_config["legit_domains"]
 
     def test_paypal_brand_domains(self):
         """Test PayPal brand domains are properly configured."""
         analyzer = BrandImpersonationAnalyzer()
 
         paypal_config = analyzer.BRANDS["paypal"]
-        assert "paypal.com" in paypal_config["domains"]
+        assert "paypal.com" in paypal_config["legit_domains"]
 
-    @pytest.mark.asyncio
-    async def test_analyze_all_brands_checked(self):
-        """Test that all brands are checked in analysis."""
-        mock_client = AsyncMock()
-        mock_client.compare_images.return_value = {
-            "phash_similarity": 0.5,
-            "ssim_similarity": 0.5,
-        }
+    def test_indeed_brand_domains(self):
+        """Test Indeed brand domains are properly configured."""
+        analyzer = BrandImpersonationAnalyzer()
 
-        analyzer = BrandImpersonationAnalyzer(image_comparison_client=mock_client)
-
-        screenshots = {
-            "https://unknown-site.com": b"screenshot",
-        }
-
-        result = await analyzer.analyze(screenshots)
-
-        assert isinstance(result, AnalyzerResult)
-        # All brands should be in the result
-        assert "brands_checked" in result.details
-        brands_checked = result.details["brands_checked"]
-        assert len(brands_checked) >= 7  # At least 7 brands
+        indeed_config = analyzer.BRANDS["indeed"]
+        assert "indeed.com" in indeed_config["legit_domains"]
+        assert "indeedemail.com" in indeed_config["legit_domains"]
 
 
 class TestBrandImpersonationConfidenceScoring:
     """Test confidence score calculation."""
 
     @pytest.mark.asyncio
-    async def test_confidence_high_similarity(self):
-        """Test confidence scoring with high similarity."""
-        mock_client = AsyncMock()
-        mock_client.compare_images.return_value = {
-            "phash_similarity": 0.9,
-            "ssim_similarity": 0.95,
-        }
+    async def test_confidence_no_data(self):
+        """Test confidence is 0.0 when no data available."""
+        analyzer = BrandImpersonationAnalyzer()
 
-        analyzer = BrandImpersonationAnalyzer(image_comparison_client=mock_client)
+        result = await analyzer.analyze()  # No email, no screenshots
 
-        screenshots = {
-            "https://fake-google.com": b"screenshot",
-        }
-
-        result = await analyzer.analyze(screenshots)
-
-        # High similarity should yield higher confidence
-        assert isinstance(result.confidence, float)
-        assert result.confidence >= 0.0
+        assert result.confidence == 0.0
 
     @pytest.mark.asyncio
-    async def test_confidence_low_risk_score(self):
-        """Test confidence scoring with low risk."""
-        mock_client = AsyncMock()
-        mock_client.compare_images.return_value = {
-            "phash_similarity": 0.1,
-            "ssim_similarity": 0.2,
-        }
+    async def test_confidence_clean_email(self):
+        """Test confidence when email is analyzed but clean."""
+        analyzer = BrandImpersonationAnalyzer()
 
-        analyzer = BrandImpersonationAnalyzer(image_comparison_client=mock_client)
+        email = _make_email(
+            from_address="friend@personal.com",
+            subject="Hey how are you",
+            body_plain="Just checking in!",
+        )
 
-        screenshots = {
-            "https://example.com": b"screenshot",
-        }
+        result = await analyzer.analyze(email=email)
 
-        result = await analyzer.analyze(screenshots)
+        # Clean email with no signals should still have moderate confidence
+        assert result.confidence > 0.0
 
-        assert isinstance(result.confidence, float)
+    @pytest.mark.asyncio
+    async def test_confidence_increases_with_signals(self):
+        """Test that confidence increases with more signals."""
+        analyzer = BrandImpersonationAnalyzer()
+
+        # Email with multiple phishing signals
+        email = _make_email(
+            from_address="a1b2c3d4e5f6@paypal-security.xyz",
+            from_display_name="PayPal Security",
+            reply_to="reply@totally-different.com",
+            subject="PayPal: Your account has been limited",
+            body_plain="Verify your PayPal account at paypal.com/verify now.",
+        )
+
+        result = await analyzer.analyze(email=email)
+
+        # Multiple signals = high confidence
+        assert result.confidence >= 0.6
+        assert result.details.get("signals_found", 0) >= 2
+
+
+class TestBrandImpersonationEdgeCases:
+    """Test edge cases and error handling."""
+
+    @pytest.mark.asyncio
+    async def test_email_with_no_from_address(self):
+        """Test handling of email with empty from address."""
+        analyzer = BrandImpersonationAnalyzer()
+
+        email = _make_email(from_address="", subject="Test")
+        result = await analyzer.analyze(email=email)
+
+        assert isinstance(result, AnalyzerResult)
+        assert result.analyzer_name == "brand_impersonation"
+
+    @pytest.mark.asyncio
+    async def test_email_with_no_body(self):
+        """Test handling of email with empty body."""
+        analyzer = BrandImpersonationAnalyzer()
+
+        email = _make_email(
+            from_address="user@example.com",
+            body_plain="",
+            body_html="",
+        )
+
+        result = await analyzer.analyze(email=email)
+        assert isinstance(result, AnalyzerResult)
+
+    @pytest.mark.asyncio
+    async def test_bank_generic_detection(self):
+        """Test generic bank phishing detection."""
+        analyzer = BrandImpersonationAnalyzer()
+
+        email = _make_email(
+            from_address="security@random-domain.xyz",
+            from_display_name="Security Alert",
+            subject="Verify your account",
+            body_plain="Unusual activity detected. Click here to verify your account. Account locked.",
+        )
+
+        result = await analyzer.analyze(email=email)
+
+        # bank_generic keywords in body should trigger detection
+        assert result.risk_score > 0 or result.details.get("signals_found", 0) > 0

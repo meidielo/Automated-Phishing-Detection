@@ -234,12 +234,30 @@ class URLReputationAnalyzer:
                 if "error" not in result
             ]
 
+            # Collect errors from per-URL results for visibility
+            all_errors = []
+            for url_key, result in url_results.items():
+                if "error" in result:
+                    all_errors.append(f"{url_key}: {result['error']}")
+                # Also surface per-service errors
+                for svc in ("virustotal", "safe_browsing", "urlscan", "abuseipdb"):
+                    svc_detail = result.get(svc, {})
+                    for err_key in (f"{svc}_error", "error"):
+                        if err_key in svc_detail:
+                            all_errors.append(f"{svc}: {svc_detail[err_key]}")
+
             overall_risk_score = max(url_scores) if url_scores else 0.0
             overall_confidence = max(url_confidences) if url_confidences else 0.0
 
+            if all_errors:
+                logger.warning(
+                    f"URL reputation service errors: {'; '.join(all_errors[:5])}"
+                )
+
             logger.info(
                 f"URL reputation analysis complete: "
-                f"risk={overall_risk_score:.2f}, confidence={overall_confidence:.2f}"
+                f"risk={overall_risk_score:.2f}, confidence={overall_confidence:.2f}, "
+                f"services_ok={len(url_scores)}/{len(url_results)}"
             )
 
             return AnalyzerResult(
@@ -250,6 +268,7 @@ class URLReputationAnalyzer:
                     "url_count": len(urls),
                     "urls_analyzed": url_results,
                 },
+                errors=all_errors if all_errors else None,
             )
 
         except Exception as e:

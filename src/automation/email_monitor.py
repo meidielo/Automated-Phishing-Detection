@@ -457,7 +457,7 @@ class EmailMonitor:
 async def _main():
     """Run the email monitor as a standalone service."""
     from dotenv import load_dotenv
-    load_dotenv()
+    load_dotenv(override=True)
 
     logging.basicConfig(
         level=logging.INFO,

@@ -287,17 +287,60 @@ class MultiAccountMonitor:
             acct = self._stats["per_account"].get(fetched.account_id, {})
             acct["errors"] = acct.get("errors", 0) + 1
 
-        # Track recent
+        # Track recent — include full analysis details for the monitor UI
+        analyzer_summary = {}
+        extracted_urls_list = []
+        reasoning_text = ""
+        body_preview = ""
+        body_html_preview = ""
+
+        if result:
+            for ar_name, ar in (result.analyzer_results or {}).items():
+                # Serialize details, skipping raw bytes (screenshots)
+                details = ar.details or {}
+                safe_details = {}
+                for k, v in details.items():
+                    if k == "screenshots":
+                        safe_details[k] = {url: "(base64 image)" for url in (v or {})}
+                    elif isinstance(v, bytes):
+                        safe_details[k] = "(binary data)"
+                    else:
+                        safe_details[k] = v
+                analyzer_summary[ar_name] = {
+                    "risk_score": ar.risk_score,
+                    "confidence": ar.confidence,
+                    "details": safe_details,
+                    "errors": ar.errors if ar.errors else None,
+                }
+            extracted_urls_list = [
+                {"url": u.url, "source": u.source.value, "source_detail": u.source_detail}
+                for u in (result.extracted_urls or [])
+            ]
+            reasoning_text = result.reasoning if isinstance(result.reasoning, str) else str(result.reasoning)
+
+        if email_obj:
+            body_preview = (email_obj.body_plain or "")[:2000]
+            body_html_preview = (email_obj.body_html or "")[:5000]
+
         record = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "email_id": getattr(email_obj, "email_id", fetched.provider_id) if email_obj else fetched.provider_id,
             "account": fetched.account_id,
             "provider": fetched.provider_type,
             "from": getattr(email_obj, "from_address", "unknown") if email_obj else "unknown",
+            "display_name": getattr(email_obj, "from_display_name", "") if email_obj else "",
+            "reply_to": getattr(email_obj, "reply_to", "") if email_obj else "",
+            "to": getattr(email_obj, "to_addresses", []) if email_obj else [],
             "subject": getattr(email_obj, "subject", "") if email_obj else "",
             "verdict": result.verdict.value if result else "ERROR",
             "score": result.overall_score if result else 0.0,
+            "confidence": result.overall_confidence if result else 0.0,
             "quarantined": quarantined,
+            "analyzer_results": analyzer_summary,
+            "extracted_urls": extracted_urls_list,
+            "reasoning": reasoning_text,
+            "body_preview": body_preview,
+            "body_html": body_html_preview,
         }
         self._recent_results.append(record)
         if len(self._recent_results) > self._MAX_RECENT:

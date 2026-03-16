@@ -28,8 +28,7 @@
     .status-pill.stopped { background: #1f0000; color: #f87171; border: 1px solid #991b1b; }
     .status-pill.unconfigured { background: #1c1400; color: #fbbf24; border: 1px solid #78350f; }
     .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
-    .dot.pulse { -webkit-animation: pulse 2s infinite; animation: pulse 2s infinite; }
-    @-webkit-keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+    .dot.pulse { animation: pulse 2s infinite; }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
 
     /* Stats row */
@@ -58,6 +57,8 @@
     th { padding: 10px 12px; text-align: left; font-weight: 600; color: #64748b; text-transform: uppercase; font-size: 11px; letter-spacing: .5px; white-space: nowrap; }
     td { padding: 10px 12px; border-bottom: 1px solid #1e2130; vertical-align: middle; }
     tbody tr:hover { background: #1a1d27; }
+    tbody tr.clickable { cursor: pointer; }
+    tbody tr.clickable:hover { background: #1e2240; }
     .empty { text-align: center; padding: 48px; color: #4c4f6b; font-size: 14px; }
 
     /* Verdict badge */
@@ -73,7 +74,11 @@
 
     /* Score mini bar */
     .mini-bar { width: 80px; height: 6px; background: #1e2130; border-radius: 3px; overflow: hidden; display: inline-block; vertical-align: middle; margin-right: 6px; }
-    .mini-fill { height: 100%; background: linear-gradient(90deg,#7c3aed,#a78bfa); border-radius: 3px; }
+    .mini-fill { height: 100%; border-radius: 3px; }
+    .fill-green  { background: #4ade80; }
+    .fill-yellow { background: #fbbf24; }
+    .fill-orange { background: #fb923c; }
+    .fill-red    { background: #f87171; }
 
     .ts { color: #475569; font-size: 11px; }
     .from-cell { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -84,14 +89,12 @@
     .btn-sm:hover { background: #363b55; color: #e2e8f0; }
     #last-refresh { font-size: 12px; color: #4c4f6b; }
 
-    /* ── Account panel ── */
+    /* Account panel */
     .acct-panel {
       background: #1a1d27; border: 1px solid #2d3148; border-radius: 10px;
       padding: 20px 24px; margin-bottom: 28px;
     }
-    .acct-panel-header {
-      display: flex; align-items: center; justify-content: space-between; cursor: pointer;
-    }
+    .acct-panel-header { display: flex; align-items: center; justify-content: space-between; cursor: pointer; }
     .acct-panel-header h3 { font-size: 15px; font-weight: 700; }
     .acct-toggle { background: none; border: 1px solid #2d3148; color: #94a3b8; padding: 5px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; }
     .acct-toggle:hover { background: #2d3148; color: #e2e8f0; }
@@ -110,14 +113,13 @@
     .acct-field label { font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: .3px; }
     .acct-field input {
       padding: 9px 12px; background: #0f1117; border: 1px solid #2d3148; border-radius: 6px;
-      color: #e2e8f0; font-size: 14px; outline: none; -webkit-transition: border-color .2s; transition: border-color .2s;
+      color: #e2e8f0; font-size: 14px; outline: none; transition: border-color .2s;
     }
     .acct-field input:focus { border-color: #7c3aed; }
     .acct-field input::placeholder { color: #3b3f57; }
     .acct-connect-btn {
       padding: 9px 20px; background: #7c3aed; color: #fff; border: none; border-radius: 6px;
-      font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap;
-      -webkit-transition: background .2s; transition: background .2s;
+      font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: background .2s;
     }
     .acct-connect-btn:hover:not(:disabled) { background: #6d28d9; }
     .acct-connect-btn:disabled { opacity: .4; cursor: not-allowed; }
@@ -127,6 +129,106 @@
     .acct-msg.ok { background: #052e16; border: 1px solid #166534; color: #4ade80; display: block; }
     .acct-msg.err { background: #1f0000; border: 1px solid #991b1b; color: #f87171; display: block; }
     .no-accounts { color: #4c4f6b; font-size: 13px; margin-top: 10px; }
+
+    /* ── Modal overlay ── */
+    .modal-overlay {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,.7);
+      z-index: 1000; justify-content: center; align-items: flex-start; padding: 40px 20px;
+      overflow-y: auto;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: #1a1d27; border: 1px solid #2d3148; border-radius: 12px;
+      width: 100%; max-width: 900px; padding: 0; position: relative;
+    }
+    .modal-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 20px 24px; border-bottom: 1px solid #2d3148;
+    }
+    .modal-header h2 { font-size: 18px; font-weight: 700; }
+    .modal-close {
+      background: none; border: none; color: #64748b; font-size: 24px; cursor: pointer;
+      width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;
+      border-radius: 6px;
+    }
+    .modal-close:hover { background: #2d3148; color: #e2e8f0; }
+    .modal-body { padding: 24px; max-height: 70vh; overflow-y: auto; }
+
+    /* Modal sections */
+    .detail-section { margin-bottom: 24px; }
+    .detail-section h3 {
+      font-size: 13px; font-weight: 700; color: #64748b; text-transform: uppercase;
+      letter-spacing: .5px; margin-bottom: 12px; padding-bottom: 6px; border-bottom: 1px solid #2d3148;
+    }
+    .detail-grid { display: grid; grid-template-columns: 140px 1fr; gap: 8px 16px; font-size: 13px; }
+    .detail-label { color: #64748b; font-weight: 600; }
+    .detail-value { color: #e2e8f0; word-break: break-all; }
+
+    /* Analyzer cards */
+    .analyzer-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
+    .analyzer-card {
+      background: #0f1117; border: 1px solid #2d3148; border-radius: 8px; padding: 14px;
+    }
+    .analyzer-card .ac-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .analyzer-card .ac-name { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; }
+    .analyzer-card .ac-score { font-size: 20px; font-weight: 700; }
+    .analyzer-card .ac-bar { width: 100%; height: 4px; background: #1e2130; border-radius: 2px; margin: 6px 0; }
+    .analyzer-card .ac-fill { height: 100%; border-radius: 2px; }
+    .analyzer-card .ac-conf { font-size: 11px; color: #475569; }
+    .analyzer-card .ac-details { font-size: 11px; color: #475569; margin-top: 6px; line-height: 1.5; }
+
+    /* URL list in modal */
+    .url-list { list-style: none; }
+    .url-item {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 8px 12px; background: #0f1117; border: 1px solid #2d3148; border-radius: 6px;
+      margin-bottom: 6px; font-size: 12px;
+    }
+    .url-item .url-text { flex: 1; word-break: break-all; color: #94a3b8; }
+    .url-item .url-source { font-size: 10px; color: #475569; white-space: nowrap; }
+    .btn-detonate {
+      padding: 4px 12px; background: #7c3aed; color: #fff; border: none; border-radius: 4px;
+      font-size: 11px; font-weight: 600; cursor: pointer; white-space: nowrap;
+    }
+    .btn-detonate:hover:not(:disabled) { background: #6d28d9; }
+    .btn-detonate:disabled { opacity: .5; cursor: not-allowed; }
+
+    /* Detonation result in modal */
+    .det-result {
+      margin-top: 12px; padding: 16px; background: #0f1117; border: 1px solid #2d3148; border-radius: 8px;
+    }
+    .det-screenshot { max-width: 100%; border-radius: 6px; border: 1px solid #2d3148; margin-top: 12px; }
+    .det-info { font-size: 12px; color: #94a3b8; margin-top: 8px; }
+    .det-indicators { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .det-ind {
+      padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 600;
+      background: #1f0000; color: #f87171; border: 1px solid #991b1b;
+    }
+    .det-ind.safe { background: #052e16; color: #4ade80; border-color: #166534; }
+
+    /* Feedback buttons */
+    .btn-fb { padding: 6px 14px; border: none; border-radius: 5px; font-size: 12px; font-weight: 600; cursor: pointer; transition: background .2s; }
+    .btn-fb.agree { background: #052e16; color: #4ade80; border: 1px solid #166534; }
+    .btn-fb.agree:hover { background: #14532d; }
+    .btn-fb.disagree { background: #1f0000; color: #f87171; border: 1px solid #991b1b; }
+    .btn-fb.disagree:hover { background: #450a0a; }
+    .btn-fb.submit { background: #7c3aed; color: #fff; }
+    .btn-fb.submit:hover { background: #6d28d9; }
+    .btn-fb:disabled { opacity: .5; cursor: not-allowed; }
+
+    /* Body preview */
+    .body-preview {
+      background: #0f1117; border: 1px solid #2d3148; border-radius: 8px;
+      padding: 16px; font-size: 13px; line-height: 1.6; color: #94a3b8;
+      max-height: 300px; overflow-y: auto; white-space: pre-wrap; word-break: break-word;
+    }
+    .body-html-frame {
+      background: #fff; border-radius: 8px; border: 1px solid #2d3148;
+      width: 100%; height: 350px;
+    }
+    .body-toggle { display: flex; gap: 8px; margin-bottom: 8px; }
+    .body-toggle button { padding: 4px 12px; font-size: 11px; background: #2d3148; color: #94a3b8; border: none; border-radius: 4px; cursor: pointer; }
+    .body-toggle button.active { background: #7c3aed; color: #fff; }
   </style>
 </head>
 <body>
@@ -208,9 +310,9 @@
     <div class="table-wrap">
       <table>
         <thead><tr>
-          <th>Time</th><th>From</th><th>Subject</th><th>Verdict</th><th>Score</th><th>Quarantined</th>
+          <th>Time</th><th>From</th><th>Subject</th><th>Verdict</th><th>Score</th><th>Analyzers</th><th>Quarantined</th>
         </tr></thead>
-        <tbody id="live-body"><tr><td colspan="6" class="empty">No activity yet</td></tr></tbody>
+        <tbody id="live-body"><tr><td colspan="7" class="empty">No activity yet</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -241,10 +343,24 @@
 
 </div>
 
+<!-- ── Email Detail Modal ── -->
+<div class="modal-overlay" id="modal-overlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="modal-title">Email Analysis</h2>
+      <button class="modal-close" onclick="closeModal()">&times;</button>
+    </div>
+    <div class="modal-body" id="modal-body">
+      <!-- Dynamic content -->
+    </div>
+  </div>
+</div>
+
 <script>
   var currentTab = 'live';
+  var _liveData = []; // cache for click handling
 
-  // ── IMAP auto-detection ────────────────────────────────────────────
+  // ── IMAP auto-detection ──
   var IMAP_SERVERS = {
     'gmail.com': 'imap.gmail.com', 'googlemail.com': 'imap.gmail.com',
     'outlook.com': 'outlook.office365.com', 'hotmail.com': 'outlook.office365.com',
@@ -262,29 +378,23 @@
   function detectIMAPHost(email) {
     var at = email.indexOf('@');
     if (at < 0) return '';
-    var domain = email.substring(at + 1).toLowerCase();
-    return IMAP_SERVERS[domain] || ('imap.' + domain);
+    return IMAP_SERVERS[email.substring(at + 1).toLowerCase()] || ('imap.' + email.substring(at + 1).toLowerCase());
   }
 
-  // ── Account panel ──────────────────────────────────────────────────
-  function toggleAddForm() {
-    document.getElementById('acct-add-form').classList.toggle('open');
-  }
+  // ── Account panel ──
+  function toggleAddForm() { document.getElementById('acct-add-form').classList.toggle('open'); }
 
   async function loadAccounts() {
     try {
       var r = await fetch('/api/accounts');
       var data = await r.json();
-      var accounts = data.accounts || data || [];
-      renderAccountBadges(accounts);
+      renderAccountBadges(data.accounts || data || []);
     } catch(e) {}
   }
 
   function renderAccountBadges(accounts) {
     var el = document.getElementById('acct-badges');
     var countEl = document.getElementById('acct-count');
-    var noEl = document.getElementById('no-accounts');
-
     if (!accounts || !accounts.length) {
       el.innerHTML = '<span class="no-accounts">No accounts connected — click "+ Add Email" above</span>';
       countEl.textContent = '';
@@ -293,10 +403,8 @@
     countEl.textContent = '(' + accounts.length + ')';
     el.innerHTML = accounts.map(function(a) {
       var email = a.email || a.user || 'unknown';
-      return '<span class="acct-badge">' +
-        '&#9993; ' + esc(email) +
-        '<span class="x" onclick="removeAcct(\'' + esc(email) + '\')">&times;</span>' +
-      '</span>';
+      return '<span class="acct-badge">&#9993; ' + esc(email) +
+        '<span class="x" onclick="removeAcct(\'' + esc(email) + '\')">&times;</span></span>';
     }).join('');
   }
 
@@ -304,17 +412,13 @@
     var email = document.getElementById('add-email').value.trim();
     var password = document.getElementById('add-password').value;
     if (!email || !password) { showAcctMsg('err', 'Enter email and app password'); return; }
-
     var host = detectIMAPHost(email);
     var port = (host === '127.0.0.1') ? 1143 : 993;
-
     document.getElementById('add-btn').disabled = true;
     document.getElementById('add-btn').textContent = 'Connecting...';
-
     try {
       var r = await fetch('/api/accounts/add', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type: 'imap', host: host, port: port, user: email, password: password, folder: 'INBOX' }),
       });
       var data = await r.json();
@@ -323,15 +427,9 @@
         document.getElementById('add-email').value = '';
         document.getElementById('add-password').value = '';
         loadAccounts();
-        // Reload stats to pick up new monitor state
         setTimeout(loadAll, 1000);
-      } else {
-        showAcctMsg('err', data.detail || 'Failed to connect');
-      }
-    } catch(e) {
-      showAcctMsg('err', e.message);
-    }
-
+      } else { showAcctMsg('err', data.detail || 'Failed to connect'); }
+    } catch(e) { showAcctMsg('err', e.message); }
     document.getElementById('add-btn').disabled = false;
     document.getElementById('add-btn').textContent = 'Connect';
   }
@@ -340,8 +438,7 @@
     if (!confirm('Remove ' + email + '?')) return;
     try {
       var r = await fetch('/api/accounts/remove', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email }),
       });
       if (r.ok) { loadAccounts(); setTimeout(loadAll, 1000); }
@@ -356,7 +453,6 @@
     setTimeout(function() { el.style.display = 'none'; }, 6000);
   }
 
-  // Allow Enter to submit
   document.getElementById('add-password').addEventListener('keydown', function(e) {
     if (e.key === 'Enter') addAccount();
   });
@@ -364,14 +460,13 @@
   function switchTab(name) {
     currentTab = name;
     document.querySelectorAll('.tab').forEach(function(t, i) {
-      var names = ['live','alerts','log'];
-      t.classList.toggle('active', names[i] === name);
+      t.classList.toggle('active', ['live','alerts','log'][i] === name);
     });
     document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
     document.getElementById('tab-' + name).classList.add('active');
   }
 
-  // ── Data loading ──────────────────────────────────────────────────
+  // ── Data loading ──
   async function loadAll() {
     await Promise.all([loadStats(), loadAlerts(), loadLog()]);
     document.getElementById('last-refresh').textContent = 'Updated ' + new Date().toLocaleTimeString();
@@ -381,110 +476,436 @@
     try {
       var r = await fetch('/api/monitor/stats');
       var d = await r.json();
-
-      // Status pill
       var pill = document.getElementById('status-pill');
       var txt  = document.getElementById('status-text');
       if (d.running) {
-        pill.className = 'status-pill running';
-        txt.textContent = 'Running';
+        pill.className = 'status-pill running'; txt.textContent = 'Running';
         document.querySelector('.dot').classList.add('pulse');
       } else if (d.imap_configured === false && (!d.stats || !d.stats.accounts)) {
-        pill.className = 'status-pill unconfigured';
-        txt.textContent = 'No accounts';
+        pill.className = 'status-pill unconfigured'; txt.textContent = 'No accounts';
       } else {
-        pill.className = 'status-pill stopped';
-        txt.textContent = 'Stopped';
+        pill.className = 'status-pill stopped'; txt.textContent = 'Stopped';
       }
-
-      // Stats
       var s = d.stats || {};
       set('s-processed',   s.emails_processed != null ? s.emails_processed : '—');
       set('s-phishing',    s.phishing_detected != null ? s.phishing_detected : '—');
       set('s-quarantined', s.quarantined != null ? s.quarantined : '—');
       set('s-errors',      s.errors != null ? s.errors : '—');
       set('s-last-poll',   s.last_poll ? fmtTime(s.last_poll) : '—');
-
-      // Live table
-      var rows = d.recent || [];
-      renderLive(rows);
-
+      _liveData = d.recent || [];
+      renderLive(_liveData);
     } catch(e) { console.error('stats error', e); }
   }
 
   async function loadAlerts() {
     try {
-      const r = await fetch('/api/monitor/alerts?limit=50');
-      const d = await r.json();
+      var r = await fetch('/api/monitor/alerts?limit=50');
+      var d = await r.json();
       renderAlerts(d.alerts || []);
     } catch(e) { console.error('alerts error', e); }
   }
 
   async function loadLog() {
     try {
-      const r = await fetch('/api/monitor/log?limit=100');
-      const d = await r.json();
+      var r = await fetch('/api/monitor/log?limit=100');
+      var d = await r.json();
       renderLog(d.entries || []);
     } catch(e) { console.error('log error', e); }
   }
 
-  // ── Renderers ─────────────────────────────────────────────────────
+  // ── Renderers ──
   function renderLive(rows) {
-    const tbody = document.getElementById('live-body');
-    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">No activity yet — waiting for incoming emails</td></tr>'; return; }
-    tbody.innerHTML = rows.map(r => `
-      <tr>
-        <td class="ts">${fmtTime(r.timestamp)}</td>
-        <td class="from-cell" title="${esc(r.from)}">${esc(r.from||'—')}</td>
-        <td class="subj-cell" title="${esc(r.subject)}">${esc(r.subject||'—')}</td>
-        <td><span class="vb ${r.verdict}">${r.verdict||'—'}</span></td>
-        <td>${scoreBar(r.score)}</td>
-        <td><span class="qbadge ${r.quarantined?'yes':'no'}">${r.quarantined?'Yes':'No'}</span></td>
-      </tr>`).join('');
+    var tbody = document.getElementById('live-body');
+    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">No activity yet — waiting for incoming emails</td></tr>'; return; }
+    tbody.innerHTML = rows.map(function(r, i) {
+      var analyzerCount = r.analyzer_results ? Object.keys(r.analyzer_results).length : 0;
+      return '<tr class="clickable" onclick="openEmailDetail(' + i + ')">' +
+        '<td class="ts">' + fmtTime(r.timestamp) + '</td>' +
+        '<td class="from-cell" title="' + esc(r.from) + '">' + esc(r.from||'—') + '</td>' +
+        '<td class="subj-cell" title="' + esc(r.subject) + '">' + esc(r.subject||'—') + '</td>' +
+        '<td><span class="vb ' + r.verdict + '">' + (r.verdict||'—') + '</span></td>' +
+        '<td>' + scoreBar(r.score) + '</td>' +
+        '<td style="color:#64748b;font-size:12px">' + analyzerCount + '</td>' +
+        '<td><span class="qbadge ' + (r.quarantined?'yes':'no') + '">' + (r.quarantined?'Yes':'No') + '</span></td>' +
+      '</tr>';
+    }).join('');
   }
 
   function renderAlerts(rows) {
-    const tbody = document.getElementById('alerts-body');
+    var tbody = document.getElementById('alerts-body');
     if (!rows.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">No alerts yet</td></tr>'; return; }
-    tbody.innerHTML = rows.map(r => `
-      <tr>
-        <td class="ts">${fmtTime(r.timestamp)}</td>
-        <td class="from-cell" title="${esc(r.from)}">${esc(r.from||'—')}</td>
-        <td class="subj-cell" title="${esc(r.subject)}">${esc(r.subject||'—')}</td>
-        <td><span class="vb ${r.verdict}">${r.verdict||'—'}</span></td>
-        <td>${scoreBar(r.score)}</td>
-        <td style="color:#64748b;font-size:12px">${(r.extracted_urls||[]).length}</td>
-      </tr>`).join('');
+    tbody.innerHTML = rows.map(function(r) {
+      return '<tr>' +
+        '<td class="ts">' + fmtTime(r.timestamp) + '</td>' +
+        '<td class="from-cell" title="' + esc(r.from) + '">' + esc(r.from||'—') + '</td>' +
+        '<td class="subj-cell" title="' + esc(r.subject) + '">' + esc(r.subject||'—') + '</td>' +
+        '<td><span class="vb ' + r.verdict + '">' + (r.verdict||'—') + '</span></td>' +
+        '<td>' + scoreBar(r.score) + '</td>' +
+        '<td style="color:#64748b;font-size:12px">' + ((r.extracted_urls||[]).length) + '</td>' +
+      '</tr>';
+    }).join('');
   }
 
   function renderLog(rows) {
-    const tbody = document.getElementById('log-body');
+    var tbody = document.getElementById('log-body');
     if (!rows.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">No log entries</td></tr>'; return; }
-    tbody.innerHTML = rows.map(r => `
-      <tr>
-        <td class="ts">${fmtTime(r.timestamp)}</td>
-        <td style="font-size:11px;color:#475569;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.email_id)}">${esc(r.email_id||'—')}</td>
-        <td class="from-cell" title="${esc(r.from)}">${esc(r.from||'—')}</td>
-        <td class="subj-cell" title="${esc(r.subject)}">${esc(r.subject||'—')}</td>
-        <td><span class="vb ${r.verdict}">${r.verdict||'—'}</span></td>
-        <td>${scoreBar(r.score)}</td>
-      </tr>`).join('');
+    tbody.innerHTML = rows.map(function(r) {
+      return '<tr>' +
+        '<td class="ts">' + fmtTime(r.timestamp) + '</td>' +
+        '<td style="font-size:11px;color:#475569;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(r.email_id) + '">' + esc(r.email_id||'—') + '</td>' +
+        '<td class="from-cell" title="' + esc(r.from) + '">' + esc(r.from||'—') + '</td>' +
+        '<td class="subj-cell" title="' + esc(r.subject) + '">' + esc(r.subject||'—') + '</td>' +
+        '<td><span class="vb ' + r.verdict + '">' + (r.verdict||'—') + '</span></td>' +
+        '<td>' + scoreBar(r.score) + '</td>' +
+      '</tr>';
+    }).join('');
   }
 
-  // ── Helpers ───────────────────────────────────────────────────────
-  function set(id, val) { const el = document.getElementById(id); if (el) el.textContent = val; }
-  function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  // ── Email Detail Modal ──
+  function openEmailDetail(index) {
+    var r = _liveData[index];
+    if (!r) return;
+    _modalEmailData = r;  // store for feedback
+
+    document.getElementById('modal-title').textContent = r.subject || 'Email Analysis';
+    var body = document.getElementById('modal-body');
+
+    var html = '';
+
+    // ── Overview section ──
+    html += '<div class="detail-section"><h3>Overview</h3><div class="detail-grid">';
+    html += row('Verdict', '<span class="vb ' + r.verdict + '">' + (r.verdict||'—') + '</span>');
+    html += row('Risk Score', scoreBar(r.score) + ' (' + pct(r.score) + '%)');
+    html += row('Confidence', pct(r.confidence) + '%');
+    html += row('From', esc(r.from || '—'));
+    if (r.display_name) html += row('Display Name', esc(r.display_name));
+    if (r.reply_to) html += row('Reply-To', esc(r.reply_to));
+    html += row('To', esc((r.to || []).join(', ') || '—'));
+    html += row('Subject', esc(r.subject || '—'));
+    html += row('Time', fmtTime(r.timestamp));
+    if (r.quarantined) html += row('Quarantined', '<span class="qbadge yes">Yes</span>');
+    html += '</div></div>';
+
+    // ── Analyzer Results ──
+    var ar = r.analyzer_results || {};
+    if (Object.keys(ar).length > 0) {
+      html += '<div class="detail-section"><h3>Analyzer Results</h3><div class="analyzer-cards">';
+      for (var name in ar) {
+        var a = ar[name];
+        var scorePct = pct(a.risk_score);
+        var color = scoreColor(a.risk_score);
+        html += '<div class="analyzer-card">';
+        html += '<div class="ac-header"><span class="ac-name">' + esc(name.replace(/_/g, ' ')) + '</span>';
+        html += '<span class="ac-score" style="color:' + color + '">' + scorePct + '%</span></div>';
+        html += '<div class="ac-bar"><div class="ac-fill" style="width:' + scorePct + '%;background:' + color + '"></div></div>';
+        html += '<div class="ac-conf">Confidence: ' + pct(a.confidence) + '%';
+        if (a.errors && a.errors.length) html += ' · <span style="color:#f87171">Errors: ' + a.errors.length + '</span>';
+        html += '</div>';
+
+        // Show key details
+        var details = a.details || {};
+        var detailItems = [];
+        if (details.message) detailItems.push(details.message);
+        if (details.signals_found != null) detailItems.push('Signals: ' + details.signals_found);
+        if (details.spf_pass != null) detailItems.push('SPF: ' + (details.spf_pass ? 'Pass' : 'Fail'));
+        if (details.dkim_pass != null) detailItems.push('DKIM: ' + (details.dkim_pass ? 'Pass' : 'Fail'));
+        if (details.dmarc_pass != null) detailItems.push('DMARC: ' + (details.dmarc_pass ? 'Pass' : 'Fail'));
+        if (details.from_reply_to_mismatch) detailItems.push('Reply-To Mismatch');
+        if (details.display_name_spoofing) detailItems.push('Display Name Spoofing');
+        if (details.url_count != null) detailItems.push('URLs checked: ' + details.url_count);
+        if (details.urls_loaded != null) detailItems.push('URLs detonated: ' + details.urls_loaded);
+        if (details.risk_signals && details.risk_signals.length) detailItems.push('Risk signals: ' + details.risk_signals.length);
+        if (detailItems.length) {
+          html += '<div class="ac-details">' + detailItems.map(esc).join(' · ') + '</div>';
+        }
+        html += '</div>';
+      }
+      html += '</div></div>';
+    }
+
+    // ── Extracted URLs with Detonation buttons ──
+    var urls = r.extracted_urls || [];
+    if (urls.length > 0) {
+      html += '<div class="detail-section"><h3>Extracted URLs (' + urls.length + ')</h3>';
+      html += '<ul class="url-list">';
+      for (var i = 0; i < urls.length; i++) {
+        var u = urls[i];
+        var urlStr = typeof u === 'string' ? u : (u.url || '');
+        var source = typeof u === 'object' ? (u.source || '') : '';
+        html += '<li class="url-item">';
+        html += '<span class="url-text">' + esc(urlStr) + '</span>';
+        if (source) html += '<span class="url-source">' + esc(source) + '</span>';
+        html += '<button class="btn-detonate" onclick="detonateUrl(\'' + escAttr(urlStr) + '\', this)">Simulate Click</button>';
+        html += '</li>';
+      }
+      html += '</ul>';
+      html += '<div id="det-result-area"></div>';
+      html += '</div>';
+    }
+
+    // ── Email Body Preview ──
+    if (r.body_preview || r.body_html) {
+      html += '<div class="detail-section"><h3>Email Content</h3>';
+      html += '<div class="body-toggle">';
+      html += '<button class="active" onclick="showBodyTab(\'text\', this)">Plain Text</button>';
+      if (r.body_html) html += '<button onclick="showBodyTab(\'html\', this)">HTML Preview</button>';
+      html += '</div>';
+      html += '<div id="body-text-view" class="body-preview">' + esc(r.body_preview || '(no plain text)') + '</div>';
+      if (r.body_html) {
+        html += '<iframe id="body-html-view" class="body-html-frame" style="display:none" sandbox="allow-same-origin"></iframe>';
+      }
+      html += '</div>';
+    }
+
+    // ── Reasoning ──
+    if (r.reasoning) {
+      html += '<div class="detail-section"><h3>Pipeline Reasoning</h3>';
+      html += '<div class="body-preview" style="max-height:200px">' + esc(r.reasoning) + '</div></div>';
+    }
+
+    // ── Feedback section ──
+    html += '<div class="detail-section"><h3>Was This Analysis Correct?</h3>';
+    html += '<div id="modal-feedback" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">';
+    html += '<button class="btn-fb agree" onclick="submitModalFeedback(\'agree\')">&#10003; Correct</button>';
+    html += '<button class="btn-fb disagree" onclick="showModalCorrection()">&#10007; Incorrect</button>';
+    html += '<span id="modal-fb-status" style="font-size:12px;color:#64748b"></span>';
+    html += '</div>';
+    html += '<div id="modal-correction" style="display:none;margin-top:10px;display:none">';
+    html += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
+    html += '<label style="font-size:12px;color:#94a3b8">Correct verdict:</label>';
+    html += '<select id="modal-correct-verdict" style="padding:6px 10px;background:#0f1117;border:1px solid #2d3148;border-radius:5px;color:#e2e8f0;font-size:12px">';
+    html += '<option value="CLEAN">Clean</option><option value="SUSPICIOUS">Suspicious</option>';
+    html += '<option value="LIKELY_PHISHING">Likely Phishing</option><option value="CONFIRMED_PHISHING">Confirmed Phishing</option>';
+    html += '</select>';
+    html += '<input type="text" id="modal-fb-notes" placeholder="Notes..." style="flex:1;min-width:140px;padding:6px 10px;background:#0f1117;border:1px solid #2d3148;border-radius:5px;color:#e2e8f0;font-size:12px" />';
+    html += '<button class="btn-fb submit" onclick="submitModalFeedback(\'correct\')">Submit</button>';
+    html += '</div></div>';
+    html += '<div id="modal-fb-done" style="display:none;margin-top:8px;font-size:12px"></div>';
+    html += '</div>';
+
+    body.innerHTML = html;
+    document.getElementById('modal-overlay').classList.add('open');
+
+    // Load HTML into iframe if available
+    if (r.body_html) {
+      setTimeout(function() {
+        var iframe = document.getElementById('body-html-view');
+        if (iframe) {
+          var doc = iframe.contentDocument || iframe.contentWindow.document;
+          doc.open();
+          doc.write(r.body_html);
+          doc.close();
+        }
+      }, 100);
+    }
+  }
+
+  function closeModal() {
+    document.getElementById('modal-overlay').classList.remove('open');
+  }
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeModal();
+  });
+
+  function showBodyTab(type, btn) {
+    var parent = btn.parentElement;
+    parent.querySelectorAll('button').forEach(function(b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+
+    var textView = document.getElementById('body-text-view');
+    var htmlView = document.getElementById('body-html-view');
+    if (type === 'text') {
+      if (textView) textView.style.display = 'block';
+      if (htmlView) htmlView.style.display = 'none';
+    } else {
+      if (textView) textView.style.display = 'none';
+      if (htmlView) htmlView.style.display = 'block';
+    }
+  }
+
+  // ── URL Detonation ──
+  async function detonateUrl(url, btn) {
+    btn.disabled = true;
+    btn.textContent = 'Loading...';
+
+    var area = document.getElementById('det-result-area');
+    area.innerHTML = '<div class="det-result" style="text-align:center;color:#64748b">Visiting URL in sandboxed browser... This may take 10-20 seconds.</div>';
+
+    try {
+      var r = await fetch('/api/detonate-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: url }),
+      });
+
+      var data = await r.json();
+
+      if (!r.ok) {
+        area.innerHTML = '<div class="det-result"><strong style="color:#f87171">Error:</strong> ' + esc(data.detail || 'Unknown error') + '</div>';
+        btn.disabled = false;
+        btn.textContent = 'Simulate Click';
+        return;
+      }
+
+      var html = '<div class="det-result">';
+      html += '<strong style="color:#a78bfa">Detonation Result for:</strong> <span style="color:#94a3b8;font-size:12px;word-break:break-all">' + esc(url) + '</span>';
+
+      // Screenshot
+      if (data.screenshot_b64) {
+        html += '<img class="det-screenshot" src="data:image/png;base64,' + data.screenshot_b64 + '" alt="Page screenshot" />';
+      }
+
+      // Info grid
+      html += '<div class="det-info">';
+      if (data.final_url && data.final_url !== url) {
+        html += '<div><strong>Final URL:</strong> ' + esc(data.final_url) + '</div>';
+      }
+      if (data.page_title) {
+        html += '<div><strong>Page Title:</strong> ' + esc(data.page_title) + '</div>';
+      }
+      if (data.redirect_chain && data.redirect_chain.length > 0) {
+        html += '<div><strong>Redirects:</strong> ' + data.redirect_chain.length + ' redirect(s)</div>';
+      }
+      html += '</div>';
+
+      // Risk indicators
+      var indicators = data.risk_indicators || [];
+      if (data.has_login_form) indicators.push('login_form_detected');
+      if (data.has_password_field) indicators.push('password_field_detected');
+      if (data.form_action_external) indicators.push('external_form_action');
+
+      if (indicators.length > 0) {
+        html += '<div class="det-indicators">';
+        indicators.forEach(function(ind) {
+          html += '<span class="det-ind">' + esc(ind) + '</span>';
+        });
+        html += '</div>';
+      } else {
+        html += '<div class="det-indicators"><span class="det-ind safe">No risk indicators detected</span></div>';
+      }
+
+      if (data.error) {
+        html += '<div style="margin-top:8px;color:#fbbf24;font-size:12px">Note: ' + esc(data.error) + '</div>';
+      }
+
+      html += '</div>';
+      area.innerHTML = html;
+
+    } catch(e) {
+      area.innerHTML = '<div class="det-result"><strong style="color:#f87171">Failed:</strong> ' + esc(e.message) + '</div>';
+    }
+
+    btn.disabled = false;
+    btn.textContent = 'Simulate Click';
+  }
+
+  // ── Helpers ──
+  function set(id, val) { var el = document.getElementById(id); if (el) el.textContent = val; }
+  function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function escAttr(s) { return esc(s).replace(/'/g,'&#39;'); }
   function fmtTime(iso) {
     if (!iso) return '—';
-    const d = new Date(iso);
+    var d = new Date(iso);
     return d.toLocaleDateString() + ' ' + d.toLocaleTimeString();
   }
+  function pct(v) { return Math.round((v||0)*100); }
+  function scoreColor(v) {
+    var p = (v||0)*100;
+    if (p < 25) return '#4ade80';
+    if (p < 50) return '#fbbf24';
+    if (p < 75) return '#fb923c';
+    return '#f87171';
+  }
   function scoreBar(score) {
-    const pct = Math.round((score||0)*100);
-    return `<span class="mini-bar"><span class="mini-fill" style="width:${pct}%"></span></span>${pct}%`;
+    var p = pct(score);
+    var cls = p < 25 ? 'fill-green' : p < 50 ? 'fill-yellow' : p < 75 ? 'fill-orange' : 'fill-red';
+    return '<span class="mini-bar"><span class="mini-fill ' + cls + '" style="width:' + p + '%"></span></span>' + p + '%';
+  }
+  function row(label, value) {
+    return '<div class="detail-label">' + label + '</div><div class="detail-value">' + value + '</div>';
   }
 
-  // ── Init ──────────────────────────────────────────────────────────
+  // ── Feedback functions ──
+  var _modalEmailData = null;
+
+  // Override openEmailDetail to track current email
+  var _origOpen = openEmailDetail;
+  // We'll store the data directly in renderLive's onclick
+  // _modalEmailData is set in openEmailDetail above — let's add it:
+
+  function showModalCorrection() {
+    var el = document.getElementById('modal-correction');
+    if (el) el.style.display = 'block';
+    var sel = document.getElementById('modal-correct-verdict');
+    if (sel && _modalEmailData) {
+      var v = _modalEmailData.verdict;
+      if (v === 'CLEAN') sel.value = 'SUSPICIOUS';
+      else if (v === 'SUSPICIOUS') sel.value = 'CONFIRMED_PHISHING';
+      else sel.value = 'CLEAN';
+    }
+  }
+
+  async function submitModalFeedback(type) {
+    if (!_modalEmailData) return;
+    var r = _modalEmailData;
+    var correctLabel, notes = '';
+
+    if (type === 'agree') {
+      correctLabel = r.verdict;
+    } else {
+      correctLabel = (document.getElementById('modal-correct-verdict') || {}).value || 'SUSPICIOUS';
+      notes = (document.getElementById('modal-fb-notes') || {}).value || '';
+    }
+
+    var fv = {};
+    var ar = r.analyzer_results || {};
+    for (var name in ar) { fv[name + '_score'] = ar[name].risk_score || 0; }
+
+    document.querySelectorAll('.btn-fb').forEach(function(b) { b.disabled = true; });
+    var statusEl = document.getElementById('modal-fb-status');
+    if (statusEl) statusEl.textContent = 'Submitting...';
+
+    try {
+      var res = await fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email_id: r.email_id,
+          original_verdict: r.verdict,
+          correct_label: correctLabel,
+          notes: notes,
+          feature_vector: fv,
+        }),
+      });
+      var data = await res.json();
+      if (res.ok) {
+        var fb = document.getElementById('modal-feedback');
+        var corr = document.getElementById('modal-correction');
+        if (fb) fb.style.display = 'none';
+        if (corr) corr.style.display = 'none';
+        var done = document.getElementById('modal-fb-done');
+        if (done) {
+          var actions = (data.actions_taken || []).join(', ');
+          if (type === 'agree') {
+            done.textContent = 'Confirmed as ' + correctLabel + '. ' + (actions ? '(' + actions + ')' : '');
+            done.style.color = '#4ade80';
+          } else {
+            done.textContent = 'Correction: ' + r.verdict + ' → ' + correctLabel + '. ' + (actions ? '(' + actions + ')' : '');
+            done.style.color = '#fbbf24';
+          }
+          done.style.display = 'block';
+        }
+      } else {
+        if (statusEl) { statusEl.textContent = 'Error: ' + (data.detail || 'Unknown'); statusEl.style.color = '#f87171'; }
+      }
+    } catch(e) {
+      if (statusEl) { statusEl.textContent = 'Failed: ' + e.message; statusEl.style.color = '#f87171'; }
+    }
+    document.querySelectorAll('.btn-fb').forEach(function(b) { b.disabled = false; });
+  }
+
+  // ── Init ──
   loadAccounts();
   loadAll();
   setInterval(loadAll, 15000);

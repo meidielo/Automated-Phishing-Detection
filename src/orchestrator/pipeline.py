@@ -331,9 +331,20 @@ class PhishingPipeline:
                 self.logger.debug(
                     f"Analyzer {analyzer_name} completed: score={result.risk_score:.3f}"
                 )
+
+                # After url_detonation completes, store screenshots in iocs
+                # so brand_impersonation can use them
+                if analyzer_name == "url_detonation" and result.details:
+                    screenshots_b64 = result.details.get("screenshots", {})
+                    if screenshots_b64:
+                        import base64
+                        iocs["detonation_screenshots"] = {
+                            url: base64.b64decode(b64_data)
+                            for url, b64_data in screenshots_b64.items()
+                        }
+
             except asyncio.TimeoutError:
                 self.logger.warning(f"Analyzer {analyzer_name} timed out")
-                # Graceful degradation: return neutral result
                 results[analyzer_name] = AnalyzerResult(
                     analyzer_name=analyzer_name,
                     risk_score=0.5,
@@ -343,7 +354,6 @@ class PhishingPipeline:
                 )
             except Exception as e:
                 self.logger.error(f"Analyzer {analyzer_name} failed: {e}")
-                # Graceful degradation
                 results[analyzer_name] = AnalyzerResult(
                     analyzer_name=analyzer_name,
                     risk_score=0.5,
@@ -376,21 +386,33 @@ class PhishingPipeline:
                 # HeaderAnalyzer.analyze() is synchronous — call without await
                 detail = analyzer.analyze(email)
                 # Convert HeaderAnalysisDetail → AnalyzerResult
-                failures = sum([
-                    detail.spf_pass is False,
-                    detail.dkim_pass is False,
-                    detail.dmarc_pass is False,
-                    detail.from_reply_to_mismatch,
-                    detail.display_name_spoofing,
-                    detail.envelope_from_mismatch,
-                    detail.suspicious_received_chain,
-                ])
+                # Weighted scoring: not all failures are equal
+                risk_score = 0.0
+                # Auth failures (moderate weight)
+                if detail.spf_pass is False:
+                    risk_score += 0.15
+                if detail.dkim_pass is False:
+                    risk_score += 0.15
+                if detail.dmarc_pass is False:
+                    risk_score += 0.15
+                # Reply-To mismatch (HIGH weight — strong phishing indicator)
+                if detail.from_reply_to_mismatch:
+                    risk_score += 0.30
+                # Display name spoofing (moderate-high weight)
+                if detail.display_name_spoofing:
+                    risk_score += 0.20
+                # Envelope mismatch (moderate weight)
+                if detail.envelope_from_mismatch:
+                    risk_score += 0.15
+                # Suspicious received chain (moderate weight)
+                if detail.suspicious_received_chain:
+                    risk_score += 0.15
+                risk_score = min(risk_score, 1.0)
                 auth_checks = sum([
                     detail.spf_pass is not None,
                     detail.dkim_pass is not None,
                     detail.dmarc_pass is not None,
                 ])
-                risk_score = min(failures / 4.0, 1.0)
                 confidence = 0.5 + (auth_checks / 3.0) * 0.5
                 return AnalyzerResult(
                     analyzer_name="header_analysis",
@@ -413,9 +435,13 @@ class PhishingPipeline:
             elif name == "url_detonation":
                 return await analyzer.analyze(urls)
             elif name == "brand_impersonation":
-                # Extract screenshots from iocs if available
-                screenshots = iocs.get("screenshots", {})
-                return await analyzer.analyze(screenshots, urls)
+                # Pass email object for content-based analysis + detonation screenshots
+                screenshots = iocs.get("detonation_screenshots", {})
+                return await analyzer.analyze(
+                    email=email,
+                    detonation_screenshots=screenshots if screenshots else None,
+                    extracted_urls=urls,
+                )
             elif name == "attachment_analysis":
                 # Extract attachments from email
                 attachments = email.attachments if hasattr(email, 'attachments') else []
@@ -473,10 +499,15 @@ class PhishingPipeline:
                     if not skip_reason:
                         # Infer reason from details
                         details = result.details or {}
+                        errors = getattr(result, "errors", None) or []
                         if details.get("message") == "not_implemented":
                             skip_reason = "not implemented yet"
                         elif details.get("message") == "no_clients_configured":
                             skip_reason = "no API key configured"
+                        elif details.get("message") == "no_urls_to_analyze":
+                            skip_reason = "no URLs found in email"
+                        elif errors:
+                            skip_reason = f"API error: {errors[0][:100]}"
                         else:
                             skip_reason = "no data returned from services"
                     self.logger.debug(
@@ -562,11 +593,19 @@ class PhishingPipeline:
                 from src.analyzers.clients.whois_client import WhoisClient
                 analyzer = DomainIntelAnalyzer(whois_client=WhoisClient())
             elif name == "url_detonation":
-                from src.analyzers.url_detonator import URLDetonationAnalyzer
-                # browser_client requires a Playwright-based browser; not implemented yet.
-                # Return a stub analyzer that clearly reports "not implemented"
-                # rather than misleadingly saying "no API key".
-                analyzer = URLDetonationAnalyzer(browser_client=None)
+                # Try loading the real Playwright-based detonation analyzer first,
+                # falling back to the stub if Playwright is not installed.
+                try:
+                    from src.analyzers.url_detonation import URLDetonationAnalyzer as RealDetonator
+                    import playwright  # noqa: F401
+                    analyzer = RealDetonator(
+                        timeout_ms=self.config.url_detonation_timeout * 1000,
+                    )
+                    self.logger.info("URL detonation: using Playwright-based analyzer")
+                except (ImportError, Exception) as _det_err:
+                    from src.analyzers.url_detonator import URLDetonationAnalyzer
+                    analyzer = URLDetonationAnalyzer(browser_client=None)
+                    self.logger.info(f"URL detonation: stub mode ({_det_err})")
             elif name == "brand_impersonation":
                 from src.analyzers.brand_impersonation import BrandImpersonationAnalyzer
                 analyzer = BrandImpersonationAnalyzer()
@@ -616,9 +655,9 @@ class PhishingPipeline:
         qr_codes = []
 
         try:
-            from src.extractors.qr_extractor import QRExtractor
-            qr_extractor = QRExtractor()
-            qr_codes = await qr_extractor.extract_from_email(email)
+            from src.extractors.qr_decoder import QRDecoder
+            qr_decoder = QRDecoder()
+            qr_codes = await qr_decoder.decode_all(email)
         except Exception as e:
             self.logger.warning(f"QR code extraction failed: {e}")
 
