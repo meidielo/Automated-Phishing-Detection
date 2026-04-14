@@ -1,8 +1,24 @@
 # Automated Phishing Detection Pipeline
 
-A modular, async Python pipeline that ingests emails (IMAP polling or manual upload), extracts features, runs 7 concurrent analyzers against threat intelligence APIs, scores results with weighted confidence aggregation, and emits detection content (STIX 2.1 IOCs and Sigma rules) for downstream defensive consumption.
+> **TL;DR:** An async Python phishing detection pipeline rebuilt from a security audit through 8 disciplined cycles into a detection-engineering portfolio piece. 899 tests, 0 P0 audit findings, ADR-driven design decisions, hash-pinned dependencies, daily supply-chain scanning, GDPR-aware retention, and detection content (MITRE ATT&CK + Sigma + STIX) that downstream operators can actually consume.
 
-This is a **detection engineering** project, not just a classifier. Every analyzer is mapped to MITRE ATT&CK techniques in [`docs/MITRE_ATTACK_MAPPING.md`](docs/MITRE_ATTACK_MAPPING.md), the trust boundaries and residual risks are documented in [`THREAT_MODEL.md`](THREAT_MODEL.md), and security disclosure is in [`SECURITY.md`](SECURITY.md).
+## Project Arc
+
+This started as a working phishing detection pipeline with a foundation problem: an external audit identified 21 findings including 7 P0 security and correctness issues. The codebase was ambitious but the perimeter was unauthenticated, the SSRF surface was a textbook Capital-One-class primitive, the LinkedIn FP that survived four prior fix attempts was rooted in a missing architectural primitive (cross-analyzer context sharing), and the BEC detection claim was load-bearing on real samples accidentally containing URLs.
+
+Over **8 cycles** following a strict TEST → AUDIT → UPDATE → COMMIT → FINAL TEST → PUSH → AUDIT loop, every P0 was closed, 9 of 11 P1 items were resolved, and non-obvious design decisions were captured in **ADRs written before any code**. The test suite grew from 676 to 899 with zero regressions across the arc. CI was added and verified to bite via a deliberately-red sanity branch. Two architectural changes (cross-analyzer calibration in cycle 6, persistent email_id lookup in cycle 8) shipped with full failure-mode documentation and locking tests named after the bugs they prevent.
+
+The full cycle history with commit hashes, audit-item closures per cycle, and discovered-and-deferred findings is in [`HISTORY.md`](HISTORY.md). Read that file first if you want the 90-second skim.
+
+## Where to read next
+
+| Reader | Start here |
+|---|---|
+| Hiring manager / 90-second skim | [`HISTORY.md`](HISTORY.md) — arc summary + per-cycle table |
+| Detection engineer | [`docs/MITRE_ATTACK_MAPPING.md`](docs/MITRE_ATTACK_MAPPING.md) → [`sigma_rules/`](sigma_rules/) |
+| Security reviewer | [`THREAT_MODEL.md`](THREAT_MODEL.md) → [`SECURITY.md`](SECURITY.md) |
+| Architecture-curious | [`docs/adr/0001-cross-analyzer-context-passing.md`](docs/adr/0001-cross-analyzer-context-passing.md) → [`docs/adr/0002-persistent-email-id-lookup-for-feedback.md`](docs/adr/0002-persistent-email-id-lookup-for-feedback.md) |
+| Wants the ground truth on what's broken | [`lessons-learned.md`](lessons-learned.md) |
 
 ## Architecture
 
@@ -12,9 +28,11 @@ Email Ingestion → Feature Extraction → Concurrent Analysis → Decision Engi
   IMAP poll         EML parsing         7 analyzers           Weighted        JSON/HTML
   Manual upload     Header analysis     (async parallel)      scoring         STIX 2.1
   .eml/.msg files   URL extraction      API clients           Overrides       Dashboard
-                    QR decoding         NLP intent            Confidence
+                    QR decoding         NLP intent            Calibration     Sigma rules
                     Attachments         Brand matching        Thresholds
 ```
+
+The decision engine has two passes: pass 1 runs analyzers concurrently, pass 2 applies cross-analyzer calibration rules (ADR 0001) that can lower a verdict but never raise it and never modify the underlying weighted score. The persistent email_id lookup (ADR 0002) lets the feedback endpoint resolve sender-for-blocklist across server restarts.
 
 ## Detection Coverage
 
@@ -254,7 +272,12 @@ Run it from cron daily. Configure the default retention via `data_retention_days
 | [`docs/adr/0001-cross-analyzer-context-passing.md`](docs/adr/0001-cross-analyzer-context-passing.md) | ADR for the two-pass calibration design |
 | [`docs/adr/0002-persistent-email-id-lookup-for-feedback.md`](docs/adr/0002-persistent-email-id-lookup-for-feedback.md) | ADR for the persistent email_id lookup index |
 | [`docs/calibration_rules.md`](docs/calibration_rules.md)   | Registry of cross-analyzer calibration rules with FP/FN motivation and tests     |
+| [`docs/writeups/nlp-nondeterminism.md`](docs/writeups/nlp-nondeterminism.md) | Draft writeup: why temperature=1 silently destroyed test metrics      |
+| [`docs/writeups/calibration-rule-patterns.md`](docs/writeups/calibration-rule-patterns.md) | Draft writeup: dampen-vs-corroborate as a pattern choice  |
+| [`HISTORY.md`](HISTORY.md)                                 | 8-cycle arc summary, per-cycle table, what's open, counters                       |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md)                       | Project-local conventions: workflow, ADR pattern, regression-test naming         |
 | [`ROADMAP.md`](ROADMAP.md)                                 | Planned, in-progress, and explicitly-deferred work                                |
+| [`lessons-learned.md`](lessons-learned.md)                 | Honest post-mortem of detection-quality bugs found during the audit cycles       |
 | [`sigma_rules/README.md`](sigma_rules/README.md)           | Static Sigma rule library index and logsource adaptation guide                   |
 
 ## License
