@@ -115,6 +115,10 @@ These are real and verifiable. References are file paths.
 
 | Mitigation | Where | Threat addressed |
 |---|---|---|
+| **Bearer token auth on all sensitive `/api/*` routes** | `src/security/web_security.py::TokenVerifier`, applied in `main.py` and `src/feedback/feedback_api.py` | S-TB6, E-TB6, T-TB6: feedback poisoning, account/credential takeover via dashboard |
+| **`run_server()` defaults to 127.0.0.1; refuses non-loopback bind without token** | `main.py::run_server` | S-TB6: blocks accidental internet exposure |
+| **SSRF guard on `/api/detonate-url`** | `src/security/web_security.py::SSRFGuard` | T-TB3, I-TB3: cloud-metadata / internal-network exfil via URL detonator |
+| **Security headers middleware** (CSP, X-Frame-Options, X-Content-Type-Options, HSTS, Referrer-Policy, Permissions-Policy) | `src/security/web_security.py::SecurityHeadersMiddleware` | T-TB6, I-TB6: clickjacking, XSS amplification, MIME sniffing |
 | Magic-byte attachment classification (not extension-based) | `src/extractors/attachment_handler.py` | T-TB2: spoofed extensions |
 | Recursive archive depth limit | `src/extractors/attachment_handler.py` | D-TB2: zip bombs |
 | Browser sandbox in dedicated container | `docker-compose.yml`, `Dockerfile` | E-TB3: container escape blast radius |
@@ -132,10 +136,10 @@ These are real and verifiable. References are file paths.
 
 Ordered by severity-given-likelihood. Each one is something the project deliberately does not solve.
 
-### R1 — Feedback API has no authentication by default
-**Severity:** high. **Likelihood:** high if exposed.
-**Description:** The FastAPI feedback endpoints are not authenticated out of the box. An attacker on the same network — or an internet-exposed deployment — can flip verdicts and poison retraining.
-**Compensating control:** keep the API bound to localhost or behind a reverse proxy with auth. Documented in `SECURITY.md`. Adding token auth is a tracked roadmap item.
+### R1 — Feedback API authentication
+**Severity:** high (was high). **Likelihood:** low (was high if exposed).
+**Status: MITIGATED.**
+**Description:** All state-changing and information-disclosing endpoints in `main.py` (`/api/feedback`, `/api/feedback/retrain`, `/api/accounts/*`, `/api/detonate-url`, `/api/diagnose`, `/api/system-status`, `/api/monitor/email/{id}`) now require a bearer token via `Depends(TokenVerifier)` from `src/security/web_security.py`. The same token (`ANALYST_API_TOKEN` env var) is enforced by the existing `src/feedback/feedback_api.py` router, so the perimeter is consistent across both code paths. Additionally, `run_server()` now defaults to `127.0.0.1` and **refuses to start** if the operator binds to a non-loopback host without setting `ANALYST_API_TOKEN`. Residual: HTML pages (`/`, `/monitor`, `/accounts`, `/dashboard`) are still loadable without auth — the API behind them is protected, but the templates load. Cookie/session auth for browser users is a roadmap item.
 
 ### R2 — Analyst is a single trust principal
 **Severity:** high. **Likelihood:** low (depends on operator).
@@ -144,8 +148,12 @@ Ordered by severity-given-likelihood. Each one is something the project delibera
 
 ### R3 — Sandbox is a real headless browser executing attacker URLs
 **Severity:** high. **Likelihood:** medium.
-**Description:** Even containerized, a Chromium 0-day in the renderer is a real exposure path. The container is the only isolation layer.
-**Compensating control:** keep the `browser-sandbox` container on its own network namespace, never on the host network. Patch Chromium aggressively. Consider gVisor/Firecracker for higher isolation if ops allows.
+**Description:** Even containerized, a Chromium 0-day in the renderer is a real exposure path. The container is the only isolation layer. **Additionally, the on-demand `/api/detonate-url` endpoint is a textbook SSRF primitive if unguarded** — an attacker could use the detonator to map internal networks or hit cloud metadata services (169.254.169.254).
+**Compensating controls:**
+- `/api/detonate-url` is now SSRF-guarded: every URL is DNS-resolved before fetching and refused if any resolved IP is in a private/loopback/link-local/CGNAT/multicast/IETF-reserved/cloud-metadata range. Implementation in `src/security/web_security.py::SSRFGuard`. Deny networks tested at `tests/unit/test_web_security.py`.
+- Endpoint also requires bearer token (R1).
+- The browser sandbox runs in a dedicated container per `docker-compose.yml`.
+- Residual: a Chromium 0-day still owns the container. gVisor/Firecracker is on the deferred list.
 
 ### R4 — Third-party API keys are the project's attack surface for vendors
 **Severity:** medium. **Likelihood:** low.

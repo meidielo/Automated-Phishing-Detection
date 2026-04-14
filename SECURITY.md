@@ -44,7 +44,7 @@ Vulnerabilities in any of these are in scope and welcome:
 
 These are intentionally not security issues:
 
-- **The feedback API is unauthenticated by default.** This is documented in `THREAT_MODEL.md` §6 R1. Don't expose it to the internet. A report that says "I called `/feedback` from another host" is not a vulnerability.
+- **HTML dashboard pages (`/`, `/monitor`, `/accounts`, `/dashboard`) are loadable without auth.** The API endpoints they call are bearer-token protected as of the security hardening pass. The HTML loads but has no functional access without a token. Cookie/session auth for browser users is a roadmap item, not a vulnerability. (If you find a way to actually invoke a state-changing API without the token, that IS in scope — see "in scope".)
 - **False positives or false negatives in detection.** The pipeline is probabilistic. Tuning is not a security report. (Exception: a *reliable, weaponizable* bypass of the override rules — that *is* in scope.)
 - **Vendor-side issues.** If VirusTotal or urlscan returns a wrong answer, that's not this project's bug.
 - **Sandbox-evading malware.** Documented limitation (`THREAT_MODEL.md` §6 R8). Bring a novel evasion against the parser or container, not against an upstream sandbox.
@@ -56,7 +56,7 @@ These are intentionally not security issues:
 
 If you're running this in any non-laptop context, do at minimum:
 
-1. **Bind the FastAPI server to localhost** or put it behind a reverse proxy with auth (`nginx` + basic auth is enough for a small team). Never expose `:8000` to the public internet.
+1. **The server defaults to binding `127.0.0.1`** (loopback only). To expose it elsewhere, you must set `ANALYST_API_TOKEN` to a high-entropy value AND pass `--host <addr>` explicitly. The server refuses to start with a non-loopback host if the token is unset. For internet exposure, put it behind a reverse proxy with TLS termination.
 2. **Run the `browser-sandbox` container on its own Docker network.** Do not give it host networking. The default `docker-compose.yml` already separates it; verify before deploying.
 3. **Treat `.env` as secret material.** Don't commit it. Don't bake it into images. Mount it at runtime.
 4. **Back up the feedback DB off-host.** It's the only audit trail of analyst decisions and is the target of label-poisoning attacks.

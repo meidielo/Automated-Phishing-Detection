@@ -16,7 +16,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv(override=True)  # override=True so .env values win over empty system env vars
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Request
+from fastapi import Depends, FastAPI, HTTPException, UploadFile, File, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from uvicorn import run
 
@@ -27,6 +27,12 @@ from src.reporting.report_generator import ReportGenerator
 from src.reporting.ioc_exporter import IOCExporter
 from src.reporting.sigma_exporter import SigmaExporter
 from src.reporting.dashboard import PhishingDashboard
+from src.security.web_security import (
+    SSRFBlockedError,
+    TokenVerifier,
+    add_security_headers_middleware,
+    default_ssrf_guard,
+)
 
 
 # Configure logging
@@ -48,6 +54,9 @@ class PhishingDetectionApp:
         self.ioc_exporter = IOCExporter()
         self.sigma_exporter = SigmaExporter()
         self.dashboard = PhishingDashboard(template_dir="./templates")
+        self.token_verifier = TokenVerifier(
+            getattr(self.config, "analyst_api_token", None)
+        )
         self._monitor = None  # set when IMAP monitor starts
         self._upload_results: list[dict] = []  # results from manual uploads (shown on monitor)
 
@@ -168,6 +177,14 @@ class PhishingDetectionApp:
             description="Automated phishing detection and analysis API",
             version="1.0.0",
         )
+
+        # Attach security headers (CSP, X-Frame-Options, HSTS, etc.)
+        # to every response. See src/security/web_security.py.
+        add_security_headers_middleware(app)
+
+        # Capture token verifier locally so route closures can reference it
+        # without re-reading self.token_verifier on every request.
+        require_token = self.token_verifier
 
         @app.get("/", response_class=HTMLResponse)
         async def index():
@@ -327,7 +344,7 @@ class PhishingDetectionApp:
                 "pipeline": "ready",
             }
 
-        @app.get("/api/system-status")
+        @app.get("/api/system-status", dependencies=[Depends(require_token)])
         async def system_status():
             """Return which API keys are configured and system info (no key values)."""
             a = self.config.api
@@ -354,7 +371,7 @@ class PhishingDetectionApp:
                 },
             }
 
-        @app.get("/api/diagnose")
+        @app.get("/api/diagnose", dependencies=[Depends(require_token)])
         async def diagnose_apis():
             """
             Live diagnostic: test each external API with a real HTTP request.
@@ -559,7 +576,7 @@ class PhishingDetectionApp:
                     pass
             return {"entries": entries}
 
-        @app.get("/api/monitor/email/{email_id}")
+        @app.get("/api/monitor/email/{email_id}", dependencies=[Depends(require_token)])
         async def monitor_email_detail(email_id: str):
             """Return full details for a specific analyzed email."""
             # Search IMAP monitor results
@@ -575,20 +592,32 @@ class PhishingDetectionApp:
 
             raise HTTPException(status_code=404, detail="Email not found in recent results")
 
-        @app.post("/api/detonate-url")
+        @app.post("/api/detonate-url", dependencies=[Depends(require_token)])
         async def detonate_url_endpoint(request: Request):
             """
             On-demand URL detonation: visit a URL in headless browser
             and return screenshot + analysis.
+
+            SSRF-guarded: the URL is DNS-resolved and rejected if it points
+            at any private/loopback/link-local/CGNAT/cloud-metadata range.
+            See src/security/web_security.py::SSRFGuard for the deny list.
             """
             payload = await request.json()
             url = payload.get("url", "").strip()
             if not url:
                 raise HTTPException(status_code=400, detail="url is required")
 
-            # Basic URL validation
+            # Default to https:// if no scheme was provided
             if not url.startswith(("http://", "https://")):
                 url = "https://" + url
+
+            # SSRF check: refuse private/loopback/metadata IPs before doing
+            # ANY work. The check resolves DNS so we catch hostname tricks.
+            try:
+                default_ssrf_guard.assert_safe(url)
+            except SSRFBlockedError as e:
+                logger.warning(f"SSRF blocked for url={url!r}: {e}")
+                raise HTTPException(status_code=400, detail=f"URL rejected: {e}")
 
             try:
                 from src.analyzers.url_detonation import detonate_single_url
@@ -631,14 +660,14 @@ class PhishingDetectionApp:
             accounts_path = Path("./templates/accounts.html")
             return HTMLResponse(content=accounts_path.read_text(encoding="utf-8"))
 
-        @app.get("/api/accounts")
+        @app.get("/api/accounts", dependencies=[Depends(require_token)])
         async def api_list_accounts():
             """List all configured email accounts (passwords masked)."""
             from src.automation.multi_account_monitor import list_accounts
             accounts = list_accounts()
             return {"accounts": accounts}
 
-        @app.post("/api/accounts/add")
+        @app.post("/api/accounts/add", dependencies=[Depends(require_token)])
         async def api_add_account(request: Request):
             """
             Add a new email account.
@@ -724,7 +753,7 @@ class PhishingDetectionApp:
             else:
                 raise HTTPException(status_code=400, detail=f"Unknown account type: {acct_type}")
 
-        @app.post("/api/accounts/remove")
+        @app.post("/api/accounts/remove", dependencies=[Depends(require_token)])
         async def api_remove_account(request: Request):
             """Remove an account by email or type."""
             from src.automation.multi_account_monitor import remove_account_from_file
@@ -752,7 +781,7 @@ class PhishingDetectionApp:
                 await _feedback_db.create_tables()
             return _feedback_db
 
-        @app.post("/api/feedback")
+        @app.post("/api/feedback", dependencies=[Depends(require_token)])
         async def submit_feedback(request: Request):
             """
             Submit analyst feedback on an analysis result.
@@ -859,7 +888,7 @@ class PhishingDetectionApp:
                     content={"error": str(exc), "detail": _tb.format_exc().split("\n")[-3:]},
                 )
 
-        @app.get("/api/feedback/stats")
+        @app.get("/api/feedback/stats", dependencies=[Depends(require_token)])
         async def feedback_stats():
             """Return feedback statistics and model accuracy metrics."""
             db = await _get_feedback_db()
@@ -917,7 +946,7 @@ class PhishingDetectionApp:
                     "recent_corrections": corrections[:20],
                 }
 
-        @app.post("/api/feedback/retrain")
+        @app.post("/api/feedback/retrain", dependencies=[Depends(require_token)])
         async def trigger_retrain():
             """Manually trigger model weight retraining from feedback data."""
             db = await _get_feedback_db()
@@ -939,16 +968,44 @@ class PhishingDetectionApp:
 
         return app
 
-    def run_server(self, host: str = "0.0.0.0", port: int = None):
+    def run_server(self, host: str = "127.0.0.1", port: int = None):
         """
         Start FastAPI server with dashboard.
 
         Args:
-            host: Host to bind to.
+            host: Host to bind to. Defaults to 127.0.0.1 (loopback only).
+                Binding to a non-loopback address is allowed but requires
+                that ANALYST_API_TOKEN is set, otherwise the server refuses
+                to start. See SECURITY.md hardening guidance.
             port: Port to bind to (defaults to config.dashboard_port).
         """
         if port is None:
             port = self.config.dashboard_port
+
+        # Refuse to expose an unauthenticated API to a non-loopback address.
+        # This is the perimeter check that closes THREAT_MODEL.md R1.
+        is_loopback = host in ("127.0.0.1", "::1", "localhost")
+        if not is_loopback and not self.token_verifier.enabled:
+            logger.error(
+                "REFUSING TO START: host=%s is non-loopback but ANALYST_API_TOKEN "
+                "is not set. Either bind to 127.0.0.1 (the default) or set "
+                "ANALYST_API_TOKEN before exposing the dashboard.",
+                host,
+            )
+            sys.exit(2)
+
+        if not is_loopback:
+            logger.warning(
+                "Binding to %s — this exposes the dashboard beyond loopback. "
+                "Auth is enabled; ensure ANALYST_API_TOKEN is high-entropy.",
+                host,
+            )
+        if not self.token_verifier.enabled:
+            logger.warning(
+                "ANALYST_API_TOKEN is not set — API authentication is DISABLED. "
+                "Server will only accept loopback connections. Set "
+                "ANALYST_API_TOKEN to enable auth and allow remote access.",
+            )
 
         app = self.create_fastapi_app()
 
@@ -1225,7 +1282,12 @@ Quick Start:
         "serve",
         help="Start web dashboard and API server",
     )
-    serve_parser.add_argument("--host", default="0.0.0.0")
+    serve_parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Host to bind to (default: 127.0.0.1 loopback). Setting a "
+             "non-loopback host requires ANALYST_API_TOKEN to be set.",
+    )
     serve_parser.add_argument("--port", type=int)
 
     # ── Legacy flags ─────────────────────────────────────────────

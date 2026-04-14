@@ -32,8 +32,12 @@ Status is one of:
 | **MITRE ATT&CK coverage mapping**                 | `docs/MITRE_ATTACK_MAPPING.md`                                    |
 | **Threat model**                                  | `THREAT_MODEL.md`                                                 |
 | **Security disclosure policy**                    | `SECURITY.md`                                                     |
+| **Bearer token auth on all sensitive `/api/*` routes** | `src/security/web_security.py::TokenVerifier`, wired into `main.py` |
+| **SSRF guard on `/api/detonate-url`** (DNS-resolved IP denylist for RFC1918, loopback, link-local, CGNAT, cloud metadata) | `src/security/web_security.py::SSRFGuard` |
+| **Security headers middleware** (CSP, X-Frame-Options, X-Content-Type-Options, HSTS, Referrer-Policy, Permissions-Policy) | `src/security/web_security.py::SecurityHeadersMiddleware` |
+| **Default loopback bind** with refuse-to-start on non-loopback if `ANALYST_API_TOKEN` unset | `main.py::run_server` |
 | Docker Compose deployment                         | orchestrator + browser-sandbox + redis                            |
-| 676 tests (22 modules)                            | unit + integration                                                |
+| 753 tests (24 modules) — includes 34 sigma exporter + 43 web security tests | unit + integration |
 
 ---
 
@@ -41,8 +45,8 @@ Status is one of:
 
 Ordered by intended sequence, not priority.
 
-### Feedback API authentication
-Token-based auth for the feedback endpoints. Closes residual risk **R1** in `THREAT_MODEL.md`. The current "bind to localhost" guidance is a deployment hack, not a fix.
+### Browser session auth for the HTML dashboard
+HTML pages (`/`, `/monitor`, `/accounts`, `/dashboard`) load without auth even though their `/api/*` calls are bearer-token protected. A browser user therefore sees an empty dashboard until they manually inject a token. Add cookie/session auth so a `/login` POST sets a session cookie that's accepted by the same `TokenVerifier`. Tracked partial — bearer auth shipped, session layer not.
 
 ### Audit trail for feedback labels
 Append-only log of who relabeled what. Closes residual risk **R2**. Required before the project is honest about being multi-analyst.
