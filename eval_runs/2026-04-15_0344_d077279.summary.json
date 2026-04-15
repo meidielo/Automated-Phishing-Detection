@@ -1,0 +1,33 @@
+{
+  "run_id": "2026-04-15_0344_d077279",
+  "timestamp": "2026-04-15T03:44:01.527462+00:00",
+  "commit_sha": "d077279",
+  "corpus_dir": "C:\\Users\\Pongo\\Documents\\Automated Phishing Detection\\tests\\real_world_samples",
+  "sample_count": 22,
+  "permissive": {
+    "total": 22,
+    "true_positive": 2,
+    "false_positive": 0,
+    "true_negative": 12,
+    "false_negative": 8,
+    "errors": 0,
+    "projection": "permissive",
+    "precision": 1.0,
+    "recall": 0.2,
+    "f1": 0.3333,
+    "accuracy": 0.6364
+  },
+  "strict": {
+    "total": 22,
+    "true_positive": 0,
+    "false_positive": 0,
+    "true_negative": 12,
+    "false_negative": 10,
+    "errors": 0,
+    "projection": "strict",
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0,
+    "accuracy": 0.5455
+  }
+}

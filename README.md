@@ -1,6 +1,6 @@
 # Automated Phishing Detection Pipeline
 
-> **TL;DR:** An async Python phishing detection pipeline rebuilt from a security audit through 8 disciplined cycles into a detection-engineering portfolio piece. 899 tests, 0 P0 audit findings, ADR-driven design decisions, hash-pinned dependencies, daily supply-chain scanning, GDPR-aware retention, and detection content (MITRE ATT&CK + Sigma + STIX) that downstream operators can actually consume.
+> **TL;DR:** An async Python **detection engineering scaffold** — a multi-analyzer pipeline, an eval harness with per-sample storage, MITRE ATT&CK coverage mapping, Sigma rule exports, a threat model, and twelve cycles of audit-driven rebuild. **The detection layer is currently underperforming on the test corpus** (permissive recall 0.20, strict recall 0.00 on the 22-sample `tests/real_world_samples/` set — see `eval_runs/` for per-sample data). The work in progress is tracing that gap back through the analyzer stack; the cycle 12 baseline is committed unmodified so future cycles can diff against a fixed starting point. The portfolio value is in the arc documented in `HISTORY.md`, the engineering discipline in the ADRs, and the honest eval data — not in detection metrics the pipeline doesn't currently deliver.
 
 ## Project Arc
 

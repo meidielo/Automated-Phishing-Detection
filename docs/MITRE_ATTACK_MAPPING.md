@@ -105,7 +105,7 @@ The pipeline is purpose-built for **TA0001 Initial Access via T1566 Phishing**. 
 
 **What it does not catch**
 - Cold-start: new tenants have no baseline. Coverage is zero until the profiler accumulates traffic.
-- This analyzer is **not in the active scoring weights** per `config.yaml` defaults — its risk score feeds into `_is_clean_email` as a negative override only. Treat its T1078 coverage as advisory, not detective.
+- This analyzer is **not in the active scoring weights** (`config.yaml` has `sender_profiling: 0.00` as of cycle 12). Its risk score feeds `_is_clean_email` as a negative override only. Treat its T1078 coverage as advisory, not detective. On cold-start senders (email_count < 3) the analyzer returns `risk_score=0.0, confidence=0.0` so it neither dilutes the weighted score nor blocks the CLEAN override via a spurious "no data" signal — see `src/analyzers/sender_profiling.py` and the cycle 12 commit for the root-cause trace.
 
 ### Attachment sandbox + handler — `src/analyzers/attachment_sandbox.py`, `src/extractors/attachment_handler.py`
 

@@ -38,7 +38,26 @@ imap:
 
 # ── Scoring & Verdict Configuration ───────────────────────────────
 scoring:
-  # Analyzer weights (must sum to 1.0)
+  # Analyzer weights. Intended to sum to 1.0 but the decision engine
+  # normalizes by actual weighted confidence, so a non-unity total is
+  # valid (the validator warns but accepts).
+  #
+  # sender_profiling is at 0.00 because it is advisory-only: its signal
+  # contributes to the CLEAN override check (_is_clean_email) but not to
+  # the weighted score. This matches docs/MITRE_ATTACK_MAPPING.md which
+  # has always described it as "not in the active scoring weights per
+  # config.yaml defaults". The cycle 12 audit caught that the config
+  # actually had it at 0.10 — contradicting the doc — and that the
+  # analyzer was returning a hardcoded cold-start 0.45/0.5 signal on
+  # every sample, actively diluting real signals from other analyzers.
+  # Root-cause framing: cycle 4's dead-domain-confidence lesson was
+  # applied to url_reputation only, not generalized to every analyzer
+  # that could return signal-without-data. Four discipline gaps stacked:
+  # cycle 4's lesson applied incompletely, compounded by doc/config
+  # drift, compounded by no end-to-end eval until cycle 10, compounded
+  # by cycle 10 framing absorbing the result. Cycle 12 closes all four.
+  # Total weights intentionally sum to 0.90; re-weighting is a future
+  # tuning cycle, not a correctness-fix cycle.
   weights:
     header_analysis: 0.10
     url_reputation: 0.15
@@ -47,7 +66,7 @@ scoring:
     brand_impersonation: 0.10
     attachment_analysis: 0.15
     nlp_intent: 0.15
-    sender_profiling: 0.10
+    sender_profiling: 0.00
 
   # Verdict score ranges: [lower_bound, upper_bound)
   thresholds:

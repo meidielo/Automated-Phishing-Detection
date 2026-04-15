@@ -391,15 +391,53 @@ class SenderProfileAnalyzer:
 
             # Retrieve sender history
             history = self._get_sender_history(sender_email)
+            email_count = history.get("email_count", 0)
+
+            # Cold-start skip. When we have fewer than 3 prior observations
+            # of this sender, the analyzer has no meaningful baseline and
+            # any signal it produces is structural noise, not evidence.
+            # Returning (risk_score=0.0, confidence=0.0) skips the analyzer
+            # from weighted scoring entirely (see decision_engine.py:227
+            # "Skip analyzers with zero confidence") AND avoids blocking
+            # _is_clean_email's CLEAN override via a spurious >0.2 risk
+            # reading (decision_engine.py:437).
+            #
+            # This is the same pattern cycle 4 applied to url_reputation's
+            # dead-domain case. The sender_profiling equivalent went
+            # unfixed until the cycle 12 audit traced the broken eval
+            # baseline back to this exact dilution: a hardcoded 0.45/0.5
+            # output on every cold-start sender was dragging every phishing
+            # sample's weighted score down from what header_analysis and
+            # brand_impersonation would otherwise have produced. Four
+            # discipline gaps stacked: cycle 4's lesson applied incompletely,
+            # compounded by doc/config drift, compounded by no end-to-end
+            # eval until cycle 10, compounded by cycle 10 framing absorbing
+            # the result. Cycle 12 closes all four. Update sender history
+            # still happens below so future calls DO see a baseline.
+            if email_count < 3:
+                # Still record this sighting so the next call can build
+                # toward a baseline
+                try:
+                    self._update_sender_history(sender_email, email)
+                except Exception as e:
+                    logger.warning(f"Failed to update sender history: {e}")
+                return AnalyzerResult(
+                    analyzer_name=analyzer_name,
+                    risk_score=0.0,
+                    confidence=0.0,
+                    details={
+                        "message": "cold_start",
+                        "email_count": email_count,
+                        "sender": sender_email,
+                        "note": "analyzer skipped from scoring until baseline >=3",
+                    },
+                )
 
             # Calculate anomaly score
             anomaly_score, anomaly_details = self._calculate_anomaly_score(email, history)
 
             # Determine confidence based on available history
-            email_count = history.get("email_count", 0)
-            if email_count == 0:
-                confidence = 0.3
-            elif email_count < 5:
+            if email_count < 5:
                 confidence = 0.5
             elif email_count < 20:
                 confidence = 0.7

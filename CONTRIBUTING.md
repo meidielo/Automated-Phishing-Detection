@@ -2,6 +2,40 @@
 
 This file is the project-local conventions guide. The patterns here are the result of seven cycles of audit-driven refactoring (see [`HISTORY.md`](HISTORY.md)). They exist for reasons that are documented either in this file or in the linked artifact. Don't break them without reading the reason.
 
+## Two discipline rules that exist because they failed in practice
+
+Both rules are in this position — above the workflow — because they're load-bearing and easy to skip.
+
+### Rule 1: Read outcomes before narrative
+
+When reviewing any audit, plan, eval result, or cycle report, **open the outcome artifacts first**, not the narrative. Specifically:
+
+- `eval_runs/` (look at the most recent JSONL and summary)
+- `THREAT_MODEL.md` §6 (residual risks) and §6a (privacy)
+- `ROADMAP.md` "What's open" section
+
+BEFORE reading:
+
+- `HISTORY.md`
+- Commit messages
+- `README.md`
+
+The reason this rule exists: cycle 10 shipped an eval harness whose first baseline showed a broken detector (recall 0.20 permissive, 0.00 strict). The cycle 10 HISTORY entry framed the result as "data for future analysis" and the framing successfully absorbed the finding through cycle 11. Two reviewers missed it because they read HISTORY first and had the narrative frame already set by the time they (didn't) open the eval directory. The cycle 12 audit caught it because the reviewer opened `eval_runs/` first, before HISTORY, and saw the numbers without the narrative context.
+
+**Narrative absorption is this project's documented failure mode.** The rule above is the structural defense. Apply it to any audit you perform on this project — including self-audits between cycles.
+
+### Rule 2: If cycle N reveals a P0, cycle N+1 IS that P0
+
+If a cycle's work surfaces a new P0-class finding (detection correctness, security boundary, data integrity, a hidden-bug discovery like cycle 6's NEW-1), **the next cycle's scope becomes that finding**. Whatever the previous plan for cycle N+1 was, it slides to cycle N+2.
+
+This rule exists because cycle 10 revealed the broken eval baseline (a P0) and cycle 11 ran writeup polish instead of the investigation. The pre-commit discipline from earlier cycles correctly prevented cycle 10 from expanding its own scope; it did not provide an escalation path from the finding to cycle 11's scope. Pre-commits prevent scope creep, not scope transfer. The rule above is the scope-transfer analogue.
+
+**This means the cycle queue is never more than one cycle deep.** You can have a "here's what I think cycle N+1 is" plan, but if cycle N discovers something P0-class, the plan gets rescheduled without ceremony. No defending the previous plan. No "but the pre-commit for cycle 11 said writeup polish". The discovery takes precedence.
+
+A plan that assumes cycle N+1 and cycle N+2 are both already-decided is a plan that has no room for the outcomes of cycle N. Write cycle N+1's plan only after cycle N closes.
+
+---
+
 ## Workflow
 
 Every code change follows the same loop:
@@ -14,7 +48,7 @@ Every code change follows the same loop:
 6. **PUSH** — to a feature branch or directly to `main` as appropriate
 7. **POST-PUSH AUDIT** — verify CI green, sweep again for anything missed
 
-This is not optional discipline; it's why the test suite went 676 → 899 with zero regressions across 8 cycles.
+This is not optional discipline; it's why the test suite has grown across every cycle with zero regressions. Current test count is tracked in [`HISTORY.md`](HISTORY.md) — **HISTORY is the single source of truth for counters**; do not hardcode the number in this file or the README.
 
 ## ADR-first for non-obvious design decisions
 
