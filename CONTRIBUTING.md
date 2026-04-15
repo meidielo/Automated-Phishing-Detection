@@ -6,23 +6,21 @@ This file is the project-local conventions guide. The patterns here are the resu
 
 Both rules are in this position — above the workflow — because they're load-bearing and easy to skip.
 
-### Rule 1: Read outcomes before narrative
+### Rule 1: Read outcomes before narrative (enforced by `scripts/pre_cycle_check.py`)
 
-When reviewing any audit, plan, eval result, or cycle report, **open the outcome artifacts first**, not the narrative. Specifically:
+**Run `python scripts/pre_cycle_check.py` BEFORE writing any cycle plan, audit response, or review.** The script prints:
 
-- `eval_runs/` (look at the most recent JSONL and summary)
-- `THREAT_MODEL.md` §6 (residual risks) and §6a (privacy)
-- `ROADMAP.md` "What's open" section
+1. The most recent `eval_runs/*.summary.json` data (permissive + strict recall, TP/FP/TN/FN, commit SHA, age)
+2. The open residual risks from `THREAT_MODEL.md` §6
+3. The planned items from `ROADMAP.md`
 
-BEFORE reading:
+AND THEN — and only then — reminds you to read `HISTORY.md` and the commit messages. The script exits non-zero if no eval run exists or the most recent is older than 14 days. Below the pre-committed `MIN_RECALL_FLOOR` (currently 0.50 from cycle 12), it prints a tripwire warning but doesn't auto-fail — the tripwire is a conscious-acknowledgment checkpoint, not an unreviewable block.
 
-- `HISTORY.md`
-- Commit messages
-- `README.md`
+The gate exists because cycle 10 shipped an eval harness whose first baseline showed a broken detector (recall 0.20 permissive, 0.00 strict). The cycle 10 HISTORY entry framed the result as "data for future analysis" and the framing successfully absorbed the finding through cycle 11. Two reviewers missed it because they read HISTORY first and had the narrative frame set before they opened the eval directory. The cycle 12 audit caught it because the reviewer opened `eval_runs/` first.
 
-The reason this rule exists: cycle 10 shipped an eval harness whose first baseline showed a broken detector (recall 0.20 permissive, 0.00 strict). The cycle 10 HISTORY entry framed the result as "data for future analysis" and the framing successfully absorbed the finding through cycle 11. Two reviewers missed it because they read HISTORY first and had the narrative frame already set by the time they (didn't) open the eval directory. The cycle 12 audit caught it because the reviewer opened `eval_runs/` first, before HISTORY, and saw the numbers without the narrative context.
+Cycle 13 discovered — by running this gate's logic manually before building it — that the cycle 12 "rented APIs" diagnosis was itself a framing absorption: the load-bearing bug was the cycle 1 `attachment_analysis` confidence=1.0 fix (a sixth stacked gap), not external API dependency. Rule 1 caught its own violation one cycle deep. The gate is the structural fix so the next cycle doesn't need the catch to be external.
 
-**Narrative absorption is this project's documented failure mode.** The rule above is the structural defense. Apply it to any audit you perform on this project — including self-audits between cycles.
+**Narrative absorption is this project's documented failure mode.** The gate script is the mechanical defense. Apply it every cycle — including cycles where the scope "obviously" isn't detection work, because the outcome artifacts are exactly what tells you whether that "obviously" is right.
 
 ### Rule 2: If cycle N reveals a P0, cycle N+1 IS that P0
 
