@@ -2,10 +2,10 @@
 Anthropic Claude LLM client for NLP intent analysis.
 
 Determinism contract:
-- temperature=0 — same input produces same output for a given model
-- top_p=1 — disables nucleus sampling so temperature alone controls
-  determinism. Without this, top_p<1 can reintroduce nondeterminism even
-  at temperature=0 because the candidate set still varies token-by-token.
+- temperature=0 — same input produces same output for a given model.
+  (top_p removed: the Anthropic API rejects requests that set both
+  temperature and top_p. temperature=0 alone is sufficient for greedy
+  decoding on Claude models.)
 - The model ID the API actually used is captured per-call so that any
   divergence from the configured model (Anthropic ships periodic point
   releases) is visible in PipelineResult and can be detected after the
@@ -61,8 +61,7 @@ class AnthropicLLMClient:
             model=self.model,
             max_tokens=512,
             temperature=0,  # deterministic: same input -> same output
-            top_p=1,        # nucleus sampling disabled (with temperature=0
-                            # this keeps generation fully greedy)
+                            # (top_p removed: API rejects both together)
             messages=[{"role": "user", "content": prompt}],
         )
         text = message.content[0].text

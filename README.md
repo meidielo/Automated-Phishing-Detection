@@ -1,6 +1,19 @@
 # Automated Phishing Detection Pipeline
 
-> **TL;DR:** An async Python phishing detection pipeline rebuilt from a security audit through thirteen disciplined cycles. Current detection metrics on the project's 22-sample labeled corpus: **permissive recall 0.80, strict recall 0.20, precision 1.00** (see `eval_runs/` for per-sample data and the cycle-over-cycle diff). 947 tests, all original audit P0/P1 findings closed, two ADRs for non-obvious design decisions, a mechanical pre-cycle gate (`scripts/pre_cycle_check.py`) that enforces reading outcomes before narrative, hash-pinned dependencies with daily `pip-audit`, GDPR-aware retention, and detection content exports (MITRE ATT&CK + Sigma + STIX). **The corpus is project-curated and small (22 samples); these numbers are a directional baseline, not production metrics.** Public corpus integration (Nazario/PhishTank/Enron-ham) is future work, and strict-threshold recall (0.20) remains below defensible until further detection work lands. The portfolio value is in the arc documented in `HISTORY.md`, the engineering discipline in the ADRs, the mechanical defenses against framing absorption (CONTRIBUTING Rule 1 + pre_cycle_check.py), and the honest eval data.
+Analyzes phishing emails through a 7-stage async pipeline with concurrent threat intelligence lookups, MITRE ATT&CK mapping across 12 sub-techniques, Sigma rule export, and STIX 2.1 IOC generation. Designed as analyst tooling, not autonomous detection.
+
+**Current eval baseline (degraded state):** 0.80 permissive recall, 0.20 strict recall, 1.00 precision on a 22-sample synthetic corpus, measured with the NLP intent classifier in sklearn fallback mode (no LLM key configured) and external API circuit breakers tripped. These are the floor, not the measurement; live-API numbers are pending. 947 tests. Per-sample data in [`eval_runs/`](eval_runs/). The corpus is project-curated and small; these numbers are a directional baseline, not production metrics. Strict-threshold recall (0.20) remains below defensible until further detection work lands. Public corpus integration (Nazario/PhishTank/Enron-ham) is future work.
+
+**What makes this project different** is not the detection numbers. It is the engineering arc documented in [`HISTORY.md`](HISTORY.md): thirteen disciplined audit cycles, six stacked discipline gaps that took three audits to surface, a mechanical pre-cycle gate that enforces reading outcomes before narrative, and honest eval data that includes the cycles where the numbers were bad. The full story -- including how a 0.20 recall baseline was misdiagnosed for two cycles before the real cause was found -- is in the [writeup](docs/WRITEUP.md).
+
+<!-- TODO: Replace with actual screenshot after running the dashboard.
+     1. Start the server: python main.py --serve
+     2. Navigate to http://localhost:8000
+     3. Analyze a sample email to populate the dashboard
+     4. Screenshot at 1200x700
+     Alternatively, open docs/demo_screenshot.html in a browser for a
+     static mock with realistic data. -->
+![Dashboard](docs/demo_screenshot.png)
 
 ## Project Arc
 
@@ -73,20 +86,57 @@ The mapping doc also includes an explicit **uncovered techniques** table — wha
 
 ## Quick Start
 
+### Prerequisites
+
+Python 3.11+, and on Linux/macOS you need `libzbar0` for QR code decoding:
+
+```bash
+# Debian/Ubuntu
+sudo apt-get install libzbar0
+
+# macOS
+brew install zbar
+```
+
+### Local setup
+
 ```bash
 # 1. Clone and install
-git clone <repo-url> && cd automated-phishing-detection
+git clone https://github.com/meidielo/Automated-Phishing-Detection.git
+cd Automated-Phishing-Detection
 pip install -r requirements.txt
 
 # 2. Configure
 cp .env.example .env
-# Edit .env with your API keys (VirusTotal, urlscan, AbuseIPDB, etc.)
+# Edit .env with your API keys. See .env.example for signup links
+# and which keys are optional. The pipeline degrades gracefully:
+# analyzers without keys are excluded from scoring.
 
-# 3. Analyze a single email
-python main.py --analyze tests/sample_emails/suspicious.eml
+# 3. Run the eval harness against the included 22-sample corpus
+python scripts/run_eval.py
 
-# 4. Start the server (IMAP polling + dashboard + feedback API)
+# 4. Analyze a single email
+python main.py --analyze tests/real_world_samples/sample_01_microsoft_credential_harvest.eml
+
+# 5. Start the server (dashboard + feedback API)
 python main.py --serve
+```
+
+### Docker
+
+```bash
+cp .env.example .env
+# Edit .env with your API keys
+docker-compose up -d
+# Dashboard at http://localhost:8000
+```
+
+### Verify it works
+
+After starting the server (step 5 or Docker), check the health endpoint:
+
+```bash
+python -c "import urllib.request; print(urllib.request.urlopen('http://localhost:8000/api/health').read().decode())"
 ```
 
 ## Configuration

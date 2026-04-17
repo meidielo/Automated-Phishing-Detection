@@ -200,7 +200,20 @@ class DecisionEngine:
         Weighted score formula:
             score = sum(weight_i * risk_i * confidence_i) / sum(weight_i * confidence_i)
 
-        This naturally downweights failed analyzers (confidence=0.0).
+        Confidence acts as a continuous weight: an analyzer with confidence=0.8
+        contributes more to the score than one with confidence=0.3, and
+        confidence=0.0 excludes the analyzer entirely.
+
+        WARNING (cycle 14): This implementation is NOT the code path used by
+        the eval harness. The pipeline orchestrator (src/orchestrator/pipeline.py,
+        _phase_decision) uses a DIFFERENT formula:
+            score = sum(weight_i * risk_i) / sum(weight_i)   [for active analyzers]
+        where confidence acts as a binary gate (>0 = participate, =0 = skip)
+        rather than a continuous multiplier. The eval JSONL data in eval_runs/
+        was produced by _phase_decision, not by this method. This dual-
+        implementation is a cycle 14 finding; reconciling them is a future
+        cycle. Both implementations skip analyzers with confidence=0.0 and
+        weight=0.0, so the url_detonation abstain fix works under either.
 
         Overall confidence formula:
             overall_conf = sum(weight_i * confidence_i) / sum(weight_i)

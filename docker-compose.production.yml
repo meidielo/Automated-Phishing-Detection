@@ -1,0 +1,50 @@
+services:
+  orchestrator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: phishing-orchestrator
+    # No port mapping to host -- Cloudflare Tunnel connects directly
+    # to the Docker network. Nothing is exposed on the host's public IP.
+    expose:
+      - "8000"
+    env_file:
+      - .env
+    environment:
+      - LOG_LEVEL=WARNING
+      - DASHBOARD_PORT=8000
+      - MAX_CONCURRENT_ANALYZERS=5
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health', timeout=5).status == 200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      start_period: 15s
+      retries: 3
+    networks:
+      - tunnel
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared-tunnel
+    command: tunnel run
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+    restart: unless-stopped
+    depends_on:
+      orchestrator:
+        condition: service_healthy
+    networks:
+      - tunnel
+
+networks:
+  tunnel:
+    driver: bridge

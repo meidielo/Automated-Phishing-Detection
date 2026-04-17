@@ -342,9 +342,33 @@ class URLDetonationAnalyzer:
 
             risk_score = max(risk_score, url_risk)
 
-        # Confidence based on how many URLs we successfully detonated
+        # Confidence based on how many URLs we successfully detonated.
+        #
+        # Cycle 14 fix: when risk_score is 0.0 and coverage is incomplete
+        # (some URLs didn't load), confidence must be 0.0 (abstain).
+        # Asserting "clean with partial confidence" on incomplete evidence
+        # dilutes the weighted average the same way cycle 13's
+        # attachment_analysis bug did: zero numerator, non-zero denominator.
+        # A phishing email with one malicious URL among several decoys will
+        # produce risk=0.0 if the detonator tested the wrong half.
+        #
+        # When risk_score > 0 (we found something), partial coverage still
+        # warrants reporting because the finding is real even if we didn't
+        # check everything. When risk_score == 0.0, partial coverage means
+        # "I don't know" not "it's clean."
         loaded_count = sum(1 for r in all_results.values() if r.get("page_loaded"))
-        confidence = min(loaded_count / max(len(urls_to_check), 1), 1.0) * 0.8
+        total = max(len(urls_to_check), 1)
+        coverage = loaded_count / total
+
+        if risk_score > 0.0:
+            # Found something: confidence scales with coverage
+            confidence = min(coverage, 1.0) * 0.8
+        elif loaded_count == len(urls_to_check) and loaded_count > 0:
+            # Full coverage, found nothing: legitimate clean signal
+            confidence = 0.8
+        else:
+            # Partial or zero coverage, found nothing: abstain
+            confidence = 0.0
 
         # Sanitize results for JSON serialization (remove raw bytes)
         json_results = {}

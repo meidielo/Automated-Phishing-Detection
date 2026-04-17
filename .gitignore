@@ -16,6 +16,9 @@ env/
 
 # ===== Secrets & Config =====
 .env
+.env.*
+!.env.example
+!.env.production
 *.pem
 *.key
 api_keys.json
