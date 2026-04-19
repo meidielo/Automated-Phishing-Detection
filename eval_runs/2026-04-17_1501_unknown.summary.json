@@ -1,0 +1,33 @@
+{
+  "run_id": "2026-04-17_1501_unknown",
+  "timestamp": "2026-04-17T15:01:21.483124+00:00",
+  "commit_sha": "unknown",
+  "corpus_dir": "/app/tests/real_world_samples",
+  "sample_count": 22,
+  "permissive": {
+    "total": 22,
+    "true_positive": 9,
+    "false_positive": 1,
+    "true_negative": 11,
+    "false_negative": 1,
+    "errors": 0,
+    "projection": "permissive",
+    "precision": 0.9,
+    "recall": 0.9,
+    "f1": 0.9,
+    "accuracy": 0.9091
+  },
+  "strict": {
+    "total": 22,
+    "true_positive": 0,
+    "false_positive": 0,
+    "true_negative": 12,
+    "false_negative": 10,
+    "errors": 0,
+    "projection": "strict",
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0,
+    "accuracy": 0.5455
+  }
+}
