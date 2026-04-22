@@ -1195,10 +1195,17 @@ class PhishingDetectionApp:
                     # Only inject if not already present (avoid double-injection)
                     if "phishdetect-theme" not in body and "</head>" in body:
                         body = _inject_shared(body)
+                    # Strip content-length so HTMLResponse recalculates it
+                    # after injection makes the body longer. Stale content-length
+                    # causes Cloudflare 520 errors.
+                    new_headers = {
+                        k: v for k, v in response.headers.items()
+                        if k.lower() != "content-length"
+                    }
                     return HTMLResponse(
                         content=body,
                         status_code=response.status_code,
-                        headers=dict(response.headers),
+                        headers=new_headers,
                     )
                 return response
 
