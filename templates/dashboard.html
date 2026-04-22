@@ -172,6 +172,9 @@
     }
     .btn:hover { background: var(--accent-hover); }
     .btn:disabled { opacity: .5; cursor: default; }
+    .btn .spin-icon { display: inline-block; }
+    .btn.loading .spin-icon { animation: spin .8s linear infinite; }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
     @media(max-width:600px) {
       .stats-row { grid-template-columns: repeat(2,1fr); }
@@ -201,7 +204,7 @@
     </div>
     <div class="header-right">
       <span class="ts" id="tsLabel">Loading…</span>
-      <button class="btn" id="btnRefresh" onclick="loadAll()">↻ Refresh</button>
+      <button class="btn" id="btnRefresh" onclick="loadAll()"><span class="spin-icon">↻</span> Refresh</button>
     </div>
   </div>
 
@@ -460,7 +463,7 @@ function updateStatus(mon, entries) {
 // ── Load ───────────────────────────────────────────────────────────────────────
 async function loadAll() {
   const btn = document.getElementById('btnRefresh');
-  btn.disabled = true; btn.textContent = '↻ Loading…';
+  btn.disabled = true; btn.classList.add('loading');
 
   try {
     const [logRes, monRes] = await Promise.all([
@@ -489,7 +492,7 @@ async function loadAll() {
   } catch (err) {
     document.getElementById('tsLabel').textContent = 'Load failed: ' + err.message;
   } finally {
-    btn.disabled = false; btn.textContent = '↻ Refresh';
+    btn.disabled = false; btn.classList.remove('loading');
   }
 }
 

@@ -51,35 +51,18 @@ class PhishingDashboard:
     async def get_dashboard(self) -> HTMLResponse:
         """
         GET /dashboard
-        Main dashboard page showing pending review queue.
-
-        Returns:
-            HTMLResponse for dashboard main page.
+        Main dashboard page.  All data loads client-side via fetch(),
+        so there is nothing to template-render server-side.  We serve
+        the file directly (same pattern as every other page) so Jinja2
+        cannot misinterpret JS template-literals or CSS as Jinja tags.
+        SharedHTMLMiddleware injects _shared.html (auth + theme) on the
+        way out.
         """
-        try:
-            template = self.env.get_template("dashboard.html") if self.env else None
-        except TemplateNotFound:
-            template = None
-
-        if template is None:
-            return HTMLResponse(content=self._generate_fallback_dashboard())
-
-        # Fetch pending reviews from storage
-        pending = []
-        if self.storage:
-            try:
-                pending = await self.storage.get_pending_reviews(limit=50)
-            except Exception as e:
-                logger.error(f"Error fetching pending reviews: {e}")
-
-        context = {
-            "page_title": "Phishing Detection Dashboard",
-            "pending_count": len(pending),
-            "pending_reviews": pending,
-            "current_time": datetime.utcnow().isoformat(),
-        }
-
-        return HTMLResponse(content=template.render(context))
+        from pathlib import Path
+        dashboard_path = Path(self.env.loader.searchpath[0]) / "dashboard.html" if self.env else None
+        if dashboard_path and dashboard_path.exists():
+            return HTMLResponse(content=dashboard_path.read_text(encoding="utf-8"))
+        return HTMLResponse(content=self._generate_fallback_dashboard())
 
     async def get_stats(self) -> HTMLResponse:
         """
