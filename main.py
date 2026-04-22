@@ -696,6 +696,281 @@ class PhishingDetectionApp:
             remove_account_from_file(email_or_type)
             return {"status": "removed", "identifier": email_or_type}
 
+        @app.post("/api/accounts/browse", dependencies=[Depends(require_token)])
+        async def api_browse_inbox(request: Request):
+            """
+            Browse an email inbox without storing anything.
+
+            Connects to IMAP, fetches recent email headers (Subject, From,
+            Date, UID), and returns them as a scannable list. The caller
+            can then POST selected UIDs to /api/accounts/analyze-selected.
+            """
+            import imaplib, ssl, email as email_mod
+            from email.utils import parsedate_to_datetime
+
+            payload = await request.json()
+            host = payload.get("host", "").strip()
+            user = payload.get("user", "").strip()
+            password = payload.get("password", "")
+            port = int(payload.get("port", 993))
+            folder = payload.get("folder", "INBOX")
+            limit = min(int(payload.get("limit", 50)), 100)
+
+            if not all([host, user, password]):
+                raise HTTPException(status_code=400, detail="host, user, and password required")
+
+            conn = None
+            try:
+                ctx = ssl.create_default_context()
+                conn = imaplib.IMAP4_SSL(host=host, port=port, ssl_context=ctx)
+                conn.login(user, password)
+                status, _ = conn.select(folder, readonly=True)
+                if status != "OK":
+                    raise HTTPException(status_code=400, detail=f"Cannot open folder: {folder}")
+
+                # Fetch recent UIDs (last 7 days)
+                from datetime import datetime, timedelta, timezone
+                since = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%d-%b-%Y")
+                status, data = conn.uid("search", None, f"(SINCE {since})")
+                if status != "OK":
+                    return {"emails": [], "total": 0}
+
+                uids = data[0].decode().split()
+                # Take the most recent ones
+                uids = uids[-limit:] if len(uids) > limit else uids
+                uids.reverse()  # newest first
+
+                emails = []
+                if uids:
+                    uid_range = ",".join(uids)
+                    status, data = conn.uid(
+                        "fetch", uid_range,
+                        "(UID BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)] RFC822.SIZE)"
+                    )
+                    if status == "OK" and data:
+                        i = 0
+                        while i < len(data):
+                            item = data[i]
+                            if isinstance(item, tuple) and len(item) == 2:
+                                meta_line = item[0].decode("utf-8", errors="replace") if isinstance(item[0], bytes) else str(item[0])
+                                header_bytes = item[1]
+
+                                # Parse UID from response
+                                uid_match = None
+                                import re
+                                uid_m = re.search(r'UID\s+(\d+)', meta_line)
+                                if uid_m:
+                                    uid_match = uid_m.group(1)
+
+                                # Parse size
+                                size = 0
+                                size_m = re.search(r'RFC822\.SIZE\s+(\d+)', meta_line)
+                                if size_m:
+                                    size = int(size_m.group(1))
+
+                                # Parse headers
+                                msg = email_mod.message_from_bytes(header_bytes)
+                                from_addr = msg.get("From", "")
+                                subject = msg.get("Subject", "(no subject)")
+                                date_str = msg.get("Date", "")
+
+                                # Decode encoded headers
+                                from email.header import decode_header
+                                try:
+                                    parts = decode_header(subject)
+                                    subject = "".join(
+                                        p.decode(c or "utf-8", errors="replace") if isinstance(p, bytes) else p
+                                        for p, c in parts
+                                    )
+                                except Exception:
+                                    pass
+                                try:
+                                    parts = decode_header(from_addr)
+                                    from_addr = "".join(
+                                        p.decode(c or "utf-8", errors="replace") if isinstance(p, bytes) else p
+                                        for p, c in parts
+                                    )
+                                except Exception:
+                                    pass
+
+                                # Parse date
+                                date_iso = ""
+                                try:
+                                    date_iso = parsedate_to_datetime(date_str).isoformat()
+                                except Exception:
+                                    date_iso = date_str
+
+                                emails.append({
+                                    "uid": uid_match or "?",
+                                    "from": from_addr,
+                                    "subject": subject,
+                                    "date": date_iso,
+                                    "size": size,
+                                })
+                            i += 1
+
+                return {"emails": emails, "total": len(uids), "folder": folder}
+
+            except imaplib.IMAP4.error as e:
+                raise HTTPException(status_code=401, detail=f"IMAP error: {e}")
+            except Exception as e:
+                logger.error(f"Browse inbox failed: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+            finally:
+                if conn:
+                    try:
+                        conn.close()
+                        conn.logout()
+                    except Exception:
+                        pass
+
+        @app.post("/api/accounts/analyze-selected", dependencies=[Depends(require_token)])
+        async def api_analyze_selected(request: Request):
+            """
+            Analyze specific emails by UID from an IMAP account.
+
+            Fetches full RFC822 for each selected UID, runs through the
+            pipeline, and stores results — same as the monitor would.
+            """
+            import imaplib, ssl
+
+            payload = await request.json()
+            host = payload.get("host", "").strip()
+            user = payload.get("user", "").strip()
+            password = payload.get("password", "")
+            port = int(payload.get("port", 993))
+            folder = payload.get("folder", "INBOX")
+            uids = payload.get("uids", [])
+
+            if not all([host, user, password]):
+                raise HTTPException(status_code=400, detail="host, user, and password required")
+            if not uids:
+                raise HTTPException(status_code=400, detail="No emails selected (uids required)")
+            if len(uids) > 20:
+                raise HTTPException(status_code=400, detail="Maximum 20 emails per batch")
+
+            conn = None
+            results = []
+            try:
+                ctx = ssl.create_default_context()
+                conn = imaplib.IMAP4_SSL(host=host, port=port, ssl_context=ctx)
+                conn.login(user, password)
+                conn.select(folder, readonly=True)
+
+                from src.extractors.eml_parser import EMLParser
+                parser = EMLParser()
+
+                for uid in uids:
+                    try:
+                        status, data = conn.uid("fetch", str(uid), "(RFC822)")
+                        if status != "OK" or not data or data[0] is None:
+                            results.append({"uid": uid, "error": "Failed to fetch"})
+                            continue
+
+                        raw_bytes = data[0][1]
+                        if isinstance(raw_bytes, str):
+                            raw_bytes = raw_bytes.encode("utf-8", errors="replace")
+
+                        email_obj = parser.parse_bytes(raw_bytes)
+                        if email_obj is None:
+                            results.append({"uid": uid, "error": "Failed to parse"})
+                            continue
+
+                        result = await self.pipeline.analyze(email_obj)
+
+                        # Build monitor-compatible record (same as upload path)
+                        from datetime import datetime, timezone
+
+                        analyzer_results = {}
+                        for name, ar in (result.analyzer_results or {}).items():
+                            details = ar.details or {}
+                            safe_details = {}
+                            for k, v in details.items():
+                                if k == "screenshots":
+                                    safe_details[k] = {url: "(base64 image)" for url in (v or {})}
+                                elif isinstance(v, bytes):
+                                    safe_details[k] = "(binary data)"
+                                else:
+                                    safe_details[k] = v
+                            analyzer_results[name] = {
+                                "risk_score": ar.risk_score,
+                                "confidence": ar.confidence,
+                                "details": safe_details,
+                                "errors": ar.errors if ar.errors else None,
+                            }
+
+                        extracted_urls_list = [
+                            {"url": u.url, "source": u.source.value, "source_detail": u.source_detail}
+                            if hasattr(u, 'source') else {"url": u.url if hasattr(u, 'url') else str(u), "source": "unknown", "source_detail": ""}
+                            for u in (result.extracted_urls or [])
+                        ]
+
+                        timestamp = datetime.now(timezone.utc).isoformat()
+                        monitor_record = {
+                            "timestamp": timestamp,
+                            "email_id": result.email_id,
+                            "account": user,
+                            "provider": "imap-browse",
+                            "from": email_obj.from_address or "unknown",
+                            "display_name": email_obj.from_display_name or "",
+                            "reply_to": email_obj.reply_to or "",
+                            "to": email_obj.to_addresses or [],
+                            "subject": email_obj.subject or "",
+                            "verdict": result.verdict.value,
+                            "score": result.overall_score,
+                            "confidence": result.overall_confidence,
+                            "quarantined": False,
+                            "analyzer_results": analyzer_results,
+                            "extracted_urls": extracted_urls_list,
+                            "reasoning": result.reasoning if isinstance(result.reasoning, str) else str(result.reasoning),
+                            "body_preview": (email_obj.body_plain or "")[:2000],
+                            "body_html": sanitize_email_html(email_obj.body_html or "")[:5000],
+                        }
+
+                        # Store
+                        self._upload_results.append(monitor_record)
+                        if len(self._upload_results) > 200:
+                            self._upload_results.pop(0)
+
+                        try:
+                            import json as _json
+                            log_path = Path("data/results.jsonl")
+                            log_path.parent.mkdir(parents=True, exist_ok=True)
+                            with open(log_path, "ab") as f:
+                                line_offset = f.tell()
+                                f.write(_json.dumps(monitor_record, default=str).encode("utf-8") + b"\n")
+                            self.email_index.add(result.email_id, line_offset)
+                        except Exception as _log_err:
+                            logger.warning(f"Failed to write result to log: {_log_err}")
+
+                        results.append({
+                            "uid": uid,
+                            "email_id": result.email_id,
+                            "verdict": result.verdict.value,
+                            "score": result.overall_score,
+                            "subject": email_obj.subject or "",
+                            "from": email_obj.from_address or "",
+                        })
+
+                    except Exception as e:
+                        logger.error(f"Failed to analyze UID {uid}: {e}", exc_info=True)
+                        results.append({"uid": uid, "error": str(e)})
+
+                return {"results": results, "analyzed": len([r for r in results if "verdict" in r])}
+
+            except imaplib.IMAP4.error as e:
+                raise HTTPException(status_code=401, detail=f"IMAP error: {e}")
+            except Exception as e:
+                logger.error(f"Analyze selected failed: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+            finally:
+                if conn:
+                    try:
+                        conn.close()
+                        conn.logout()
+                    except Exception:
+                        pass
+
         def list_accounts_helper():
             from src.automation.multi_account_monitor import list_accounts
             return list_accounts()

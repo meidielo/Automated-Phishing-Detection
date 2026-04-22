@@ -85,8 +85,12 @@
     .subj-cell { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
     .refresh-row { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; font-size: 13px; color: var(--text-info); }
-    .btn-sm { padding: 6px 14px; background: var(--border); color: var(--text-secondary); border: none; border-radius: 6px; cursor: pointer; font-size: 13px; }
+    .btn-sm { padding: 6px 14px; background: var(--border); color: var(--text-secondary); border: none; border-radius: 6px; cursor: pointer; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; }
     .btn-sm:hover { background: var(--btn-ghost-hover); color: var(--text-primary); }
+    .btn-sm .spin-icon { display: inline-block; transition: transform .2s; }
+    .btn-sm.loading .spin-icon { animation: spin .8s linear infinite; }
+    .btn-sm.loading { opacity: .7; pointer-events: none; }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
     #last-refresh { font-size: 12px; color: var(--text-muted); }
 
     /* Account panel */
@@ -129,6 +133,27 @@
     .acct-msg.ok { background: var(--v-clean-bg); border: 1px solid var(--v-clean-border); color: var(--v-clean); display: block; }
     .acct-msg.err { background: var(--v-phishing-bg); border: 1px solid var(--v-phishing-border); color: var(--v-phishing); display: block; }
     .no-accounts { color: var(--text-muted); font-size: 13px; margin-top: 10px; }
+
+    /* ── Browse inbox modal ── */
+    .browse-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .browse-table th { padding: 8px 10px; text-align: left; font-size: 11px; text-transform: uppercase; color: var(--text-muted); border-bottom: 1px solid var(--border); }
+    .browse-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); }
+    .browse-table tbody tr:hover { background: var(--bg-hover); }
+    .browse-table .cb { width: 30px; text-align: center; }
+    .browse-table input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px; cursor: pointer; }
+    .browse-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+    .browse-bar .count { font-size: 13px; color: var(--text-muted); }
+    .browse-bar .btn-analyze {
+      padding: 8px 20px; background: var(--accent); color: #fff; border: none; border-radius: 6px;
+      font-size: 13px; font-weight: 600; cursor: pointer; margin-left: auto;
+    }
+    .browse-bar .btn-analyze:hover:not(:disabled) { background: var(--accent-hover); }
+    .browse-bar .btn-analyze:disabled { opacity: .4; cursor: not-allowed; }
+    .browse-bar .select-all-label { font-size: 12px; color: var(--text-secondary); cursor: pointer; display: flex; align-items: center; gap: 6px; }
+    .browse-progress { margin-top: 12px; padding: 12px; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 8px; font-size: 13px; }
+    .browse-progress .prog-bar { width: 100%; height: 6px; background: var(--border); border-radius: 3px; margin-top: 8px; overflow: hidden; }
+    .browse-progress .prog-fill { height: 100%; background: var(--accent); border-radius: 3px; transition: width .3s; }
+    .browse-size { font-size: 11px; color: var(--text-dim); }
 
     /* ── Modal overlay ── */
     .modal-overlay {
@@ -272,6 +297,10 @@
         </div>
         <button class="acct-connect-btn" id="add-btn" onclick="addAccount()">Connect</button>
       </div>
+      <div style="display:flex;gap:10px;align-items:center;margin-top:8px">
+        <button class="acct-connect-btn" style="background:var(--border);color:var(--text-secondary);font-size:13px;padding:8px 16px" onclick="browseInbox()">Browse Inbox First</button>
+        <span style="font-size:12px;color:var(--text-dim)">Scan emails before connecting for monitoring</span>
+      </div>
       <div class="acct-helper">
         Works with any email. Use an app password:
         <a href="https://myaccount.google.com/apppasswords" target="_blank">Gmail</a> ·
@@ -293,7 +322,7 @@
 
   <!-- Refresh bar -->
   <div class="refresh-row">
-    <button class="btn-sm" onclick="loadAll()">↻ Refresh</button>
+    <button class="btn-sm" id="btn-refresh" onclick="loadAll()"><span class="spin-icon">↻</span> Refresh</button>
     <span id="last-refresh"></span>
     <span style="margin-left:auto;font-size:12px;color:var(--text-dim)">Auto-refreshes every 15 s</span>
   </div>
@@ -343,6 +372,19 @@
 
 </div>
 
+<!-- ── Browse Inbox Modal ── -->
+<div class="modal-overlay" id="browse-overlay" onclick="if(event.target===this)closeBrowse()">
+  <div class="modal" style="max-width:1000px">
+    <div class="modal-header">
+      <h2 id="browse-title">Browse Inbox</h2>
+      <button class="modal-close" onclick="closeBrowse()">&times;</button>
+    </div>
+    <div class="modal-body" id="browse-body">
+      <div class="empty">Loading inbox...</div>
+    </div>
+  </div>
+</div>
+
 <!-- ── Email Detail Modal ── -->
 <div class="modal-overlay" id="modal-overlay" onclick="if(event.target===this)closeModal()">
   <div class="modal">
@@ -359,6 +401,7 @@
 <script>
   var currentTab = 'live';
   var _liveData = []; // cache for click handling
+  var _logData  = []; // cache for Full Log click handling
 
   // ── IMAP auto-detection ──
   var IMAP_SERVERS = {
@@ -468,8 +511,14 @@
 
   // ── Data loading ──
   async function loadAll() {
-    await Promise.all([loadStats(), loadAlerts(), loadLog()]);
-    document.getElementById('last-refresh').textContent = 'Updated ' + new Date().toLocaleTimeString();
+    var btn = document.getElementById('btn-refresh');
+    if (btn) btn.classList.add('loading');
+    try {
+      await Promise.all([loadStats(), loadAlerts(), loadLog()]);
+      document.getElementById('last-refresh').textContent = 'Updated ' + new Date().toLocaleTimeString();
+    } finally {
+      if (btn) btn.classList.remove('loading');
+    }
   }
 
   async function loadStats() {
@@ -509,7 +558,8 @@
     try {
       var r = await fetch('/api/monitor/log?limit=100');
       var d = await r.json();
-      renderLog(d.entries || []);
+      _logData = d.entries || [];
+      renderLog(_logData);
     } catch(e) { console.error('log error', e); }
   }
 
@@ -549,8 +599,8 @@
   function renderLog(rows) {
     var tbody = document.getElementById('log-body');
     if (!rows.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">No log entries</td></tr>'; return; }
-    tbody.innerHTML = rows.map(function(r) {
-      return '<tr>' +
+    tbody.innerHTML = rows.map(function(r, i) {
+      return '<tr class="clickable" onclick="openLogDetail(' + i + ')">' +
         '<td class="ts">' + fmtTime(r.timestamp) + '</td>' +
         '<td style="font-size:11px;color:var(--text-info);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(r.email_id) + '">' + esc(r.email_id||'—') + '</td>' +
         '<td class="from-cell" title="' + esc(r.from) + '">' + esc(r.from||'—') + '</td>' +
@@ -562,14 +612,7 @@
   }
 
   // ── Email Detail Modal ──
-  function openEmailDetail(index) {
-    var r = _liveData[index];
-    if (!r) return;
-    _modalEmailData = r;  // store for feedback
-
-    document.getElementById('modal-title').textContent = r.subject || 'Email Analysis';
-    var body = document.getElementById('modal-body');
-
+  function buildDetailHTML(r) {
     var html = '';
 
     // ── Overview section ──
@@ -652,13 +695,6 @@
       html += '</div>';
       html += '<div id="body-text-view" class="body-preview">' + esc(r.body_preview || '(no plain text)') + '</div>';
       if (r.body_html) {
-        // SECURITY: sandbox with NO allow flags. The iframe is its own
-        // opaque origin — scripts inside cannot read the parent DOM, make
-        // credentialed network requests, or navigate the top frame. The
-        // body_html is also bleach-sanitized server-side as defense in
-        // depth (src/security/html_sanitizer.py). Do NOT add allow-*
-        // flags; in particular, allow-same-origin defeats the entire
-        // point of this control. See THREAT_MODEL.md R3 / SECURITY.md.
         var srcdocEscaped = (r.body_html || '')
           .replace(/&/g, '&amp;')
           .replace(/"/g, '&quot;')
@@ -695,13 +731,38 @@
     html += '<div id="modal-fb-done" style="display:none;margin-top:8px;font-size:12px"></div>';
     html += '</div>';
 
-    body.innerHTML = html;
+    return html;
+  }
+
+  function openEmailDetail(index) {
+    var r = _liveData[index];
+    if (!r) return;
+    _modalEmailData = r;
+
+    document.getElementById('modal-title').textContent = r.subject || 'Email Analysis';
+    var body = document.getElementById('modal-body');
+    body.innerHTML = buildDetailHTML(r);
     document.getElementById('modal-overlay').classList.add('open');
 
     // body_html is now rendered via the iframe `srcdoc` attribute set
     // above, not via doc.write(). The previous doc.write path required
     // `sandbox="allow-same-origin"` which defeated the sandbox; the new
     // path keeps the sandbox tight. No JS injection step needed here.
+  }
+
+  function openLogDetail(index) {
+    // Full Log entries have the same structure as live entries
+    // (stored in results.jsonl with all fields). Reuse openEmailDetail.
+    var r = _logData[index];
+    if (!r) return;
+    _modalEmailData = r;
+
+    document.getElementById('modal-title').textContent = r.subject || 'Email Analysis';
+    var body = document.getElementById('modal-body');
+
+    // Reuse the same rendering as openEmailDetail — build the HTML
+    body.innerHTML = buildDetailHTML(r);
+    document.getElementById('modal-overlay').classList.add('open');
   }
 
   function closeModal() {
@@ -907,6 +968,190 @@
       if (statusEl) { statusEl.textContent = 'Failed: ' + e.message; statusEl.style.color = 'var(--v-phishing)'; }
     }
     document.querySelectorAll('.btn-fb').forEach(function(b) { b.disabled = false; });
+  }
+
+  // ── Browse Inbox ──
+  var _browseCredentials = null;  // { host, port, user, password }
+  var _browseEmails = [];
+
+  function browseInbox() {
+    var email = document.getElementById('add-email').value.trim();
+    var password = document.getElementById('add-password').value;
+    if (!email || !password) { showAcctMsg('err', 'Enter email and app password first'); return; }
+
+    var host = detectIMAPHost(email);
+    var port = (host === '127.0.0.1') ? 1143 : 993;
+    _browseCredentials = { host: host, port: port, user: email, password: password };
+
+    document.getElementById('browse-title').textContent = 'Browse Inbox — ' + email;
+    document.getElementById('browse-body').innerHTML = '<div class="empty" style="padding:60px"><span class="spin-icon" style="display:inline-block;animation:spin .8s linear infinite;font-size:20px">↻</span><br>Scanning inbox...</div>';
+    document.getElementById('browse-overlay').classList.add('open');
+
+    fetchInboxList();
+  }
+
+  async function fetchInboxList() {
+    try {
+      var r = await fetch('/api/accounts/browse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          host: _browseCredentials.host,
+          port: _browseCredentials.port,
+          user: _browseCredentials.user,
+          password: _browseCredentials.password,
+          folder: 'INBOX',
+          limit: 50,
+        }),
+      });
+      var data = await r.json();
+      if (!r.ok) {
+        document.getElementById('browse-body').innerHTML = '<div class="empty" style="color:var(--v-phishing)">Error: ' + esc(data.detail || 'Connection failed') + '</div>';
+        return;
+      }
+      _browseEmails = data.emails || [];
+      renderBrowseList();
+    } catch(e) {
+      document.getElementById('browse-body').innerHTML = '<div class="empty" style="color:var(--v-phishing)">Failed: ' + esc(e.message) + '</div>';
+    }
+  }
+
+  function renderBrowseList() {
+    var body = document.getElementById('browse-body');
+    if (!_browseEmails.length) {
+      body.innerHTML = '<div class="empty">No recent emails found in this inbox.</div>';
+      return;
+    }
+
+    var html = '<div class="browse-bar">';
+    html += '<label class="select-all-label"><input type="checkbox" id="browse-select-all" onchange="toggleBrowseAll(this.checked)"> Select all</label>';
+    html += '<span class="count" id="browse-count">0 selected</span>';
+    html += '<button class="btn-analyze" id="browse-analyze-btn" onclick="analyzeSelected()" disabled>Analyze Selected</button>';
+    html += '</div>';
+    html += '<div style="overflow-x:auto;max-height:55vh;overflow-y:auto"><table class="browse-table"><thead><tr>';
+    html += '<th class="cb"></th><th>From</th><th>Subject</th><th>Date</th><th>Size</th>';
+    html += '</tr></thead><tbody>';
+
+    for (var i = 0; i < _browseEmails.length; i++) {
+      var e = _browseEmails[i];
+      var sizeStr = e.size > 1048576 ? (e.size / 1048576).toFixed(1) + ' MB' :
+                    e.size > 1024 ? Math.round(e.size / 1024) + ' KB' :
+                    (e.size || '?') + ' B';
+      html += '<tr onclick="toggleBrowseRow(this, ' + i + ')">';
+      html += '<td class="cb"><input type="checkbox" data-idx="' + i + '" onchange="updateBrowseCount()" onclick="event.stopPropagation()"></td>';
+      html += '<td class="from-cell" title="' + esc(e.from) + '">' + esc(e.from || '—') + '</td>';
+      html += '<td class="subj-cell" style="max-width:350px" title="' + esc(e.subject) + '">' + esc(e.subject || '(no subject)') + '</td>';
+      html += '<td class="ts">' + fmtTime(e.date) + '</td>';
+      html += '<td class="browse-size">' + sizeStr + '</td>';
+      html += '</tr>';
+    }
+
+    html += '</tbody></table></div>';
+    html += '<div id="browse-progress" style="display:none"></div>';
+    body.innerHTML = html;
+  }
+
+  function toggleBrowseRow(tr, idx) {
+    var cb = tr.querySelector('input[type="checkbox"]');
+    cb.checked = !cb.checked;
+    updateBrowseCount();
+  }
+
+  function toggleBrowseAll(checked) {
+    document.querySelectorAll('.browse-table input[type="checkbox"][data-idx]').forEach(function(cb) {
+      cb.checked = checked;
+    });
+    updateBrowseCount();
+  }
+
+  function updateBrowseCount() {
+    var checked = document.querySelectorAll('.browse-table input[type="checkbox"][data-idx]:checked');
+    var count = checked.length;
+    var countEl = document.getElementById('browse-count');
+    var btn = document.getElementById('browse-analyze-btn');
+    if (countEl) countEl.textContent = count + ' selected';
+    if (btn) {
+      btn.disabled = count === 0;
+      btn.textContent = count > 0 ? 'Analyze ' + count + ' Email' + (count > 1 ? 's' : '') : 'Analyze Selected';
+    }
+  }
+
+  async function analyzeSelected() {
+    var checked = document.querySelectorAll('.browse-table input[type="checkbox"][data-idx]:checked');
+    var uids = [];
+    checked.forEach(function(cb) {
+      var idx = parseInt(cb.getAttribute('data-idx'));
+      if (_browseEmails[idx]) uids.push(_browseEmails[idx].uid);
+    });
+    if (!uids.length) return;
+    if (uids.length > 20) { alert('Maximum 20 emails per batch'); return; }
+
+    var btn = document.getElementById('browse-analyze-btn');
+    btn.disabled = true;
+    btn.textContent = 'Analyzing...';
+
+    var prog = document.getElementById('browse-progress');
+    prog.style.display = 'block';
+    prog.innerHTML = '<div class="browse-progress">Analyzing ' + uids.length + ' email(s)... This may take a moment.' +
+      '<div class="prog-bar"><div class="prog-fill" id="browse-prog-fill" style="width:5%"></div></div></div>';
+
+    try {
+      var r = await fetch('/api/accounts/analyze-selected', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          host: _browseCredentials.host,
+          port: _browseCredentials.port,
+          user: _browseCredentials.user,
+          password: _browseCredentials.password,
+          folder: 'INBOX',
+          uids: uids,
+        }),
+      });
+
+      var fill = document.getElementById('browse-prog-fill');
+      if (fill) fill.style.width = '100%';
+
+      var data = await r.json();
+      if (!r.ok) {
+        prog.innerHTML = '<div class="browse-progress" style="color:var(--v-phishing)">Error: ' + esc(data.detail || 'Analysis failed') + '</div>';
+        btn.disabled = false;
+        btn.textContent = 'Retry';
+        return;
+      }
+
+      // Show results summary
+      var results = data.results || [];
+      var html = '<div class="browse-progress"><strong>Analysis Complete</strong> — ' + data.analyzed + ' of ' + results.length + ' emails analyzed<br><br>';
+      html += '<table class="browse-table"><thead><tr><th>Subject</th><th>From</th><th>Verdict</th><th>Score</th></tr></thead><tbody>';
+      for (var i = 0; i < results.length; i++) {
+        var res = results[i];
+        if (res.error) {
+          html += '<tr><td colspan="4" style="color:var(--v-phishing)">UID ' + esc(res.uid) + ': ' + esc(res.error) + '</td></tr>';
+        } else {
+          html += '<tr>';
+          html += '<td class="subj-cell">' + esc(res.subject || '—') + '</td>';
+          html += '<td class="from-cell">' + esc(res.from || '—') + '</td>';
+          html += '<td><span class="vb ' + res.verdict + '">' + (res.verdict || '—') + '</span></td>';
+          html += '<td>' + scoreBar(res.score) + '</td>';
+          html += '</tr>';
+        }
+      }
+      html += '</tbody></table>';
+      html += '<div style="margin-top:12px;display:flex;gap:10px">';
+      html += '<button class="btn-sm" onclick="closeBrowse();loadAll()">Close & Refresh</button>';
+      html += '</div></div>';
+      prog.innerHTML = html;
+
+    } catch(e) {
+      prog.innerHTML = '<div class="browse-progress" style="color:var(--v-phishing)">Failed: ' + esc(e.message) + '</div>';
+      btn.disabled = false;
+      btn.textContent = 'Retry';
+    }
+  }
+
+  function closeBrowse() {
+    document.getElementById('browse-overlay').classList.remove('open');
   }
 
   // ── Init ──
