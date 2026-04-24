@@ -147,7 +147,10 @@ class PipelineConfig:
             # a YAML file exists, so fall through to the env-only loader.
             return cls._from_env_only()
 
-        with open(yaml_path) as f:
+        # Explicit UTF-8: Python's default open() uses the locale encoding
+        # (cp1252 on many Windows installs), which blows up on any non-ASCII
+        # byte in the YAML file. UTF-8 is what YAML 1.2 mandates anyway.
+        with open(yaml_path, encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
 
         def _get(section: dict, key: str, env_var: str, default=""):

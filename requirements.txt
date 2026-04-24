@@ -50,6 +50,12 @@ stix2>=3.0
 # Reporting
 jinja2>=3.1
 
+# Config loading. PipelineConfig.from_env() delegates to from_yaml() when
+# config.yaml is present in CWD, which is the default for both local runs
+# and the Docker image (the file is COPY'd in). This has to be a declared
+# runtime dep, not optional, to match actual runtime behaviour.
+pyyaml>=6.0
+
 # Security: HTML sanitization for body_html rendering (defense in depth
 # alongside the sandboxed iframe). See src/security/html_sanitizer.py.
 bleach>=6.0
