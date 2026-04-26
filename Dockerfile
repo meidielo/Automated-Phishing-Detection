@@ -24,10 +24,11 @@ COPY requirements.lock .
 RUN pip install --no-cache-dir --require-hashes -r requirements.lock
 
 # Playwright: install Chromium + all system deps in one command.
-# This auto-detects the Debian version and installs the right packages,
-# so we don't have to hand-maintain a libxcb/libgtk apt list that breaks
-# every time the base image moves to a new Debian release.
-RUN playwright install --with-deps chromium
+# Keep browsers in a shared path so the non-root runtime user can launch
+# Chromium; the default root cache is not visible after gosu drops privileges.
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN playwright install --with-deps chromium \
+    && chmod -R a+rX /ms-playwright
 
 # Copy application code
 COPY src/ src/

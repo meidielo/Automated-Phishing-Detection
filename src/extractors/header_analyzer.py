@@ -23,7 +23,7 @@ except ImportError:
     logger.warning("checkdmarc not available; DMARC validation will be limited")
 
 try:
-    import dkimpy.dns_queries
+    import dkim
     HAS_DKIMPY = True
 except ImportError:
     HAS_DKIMPY = False
