@@ -306,6 +306,7 @@ function cssVar(name) { return getComputedStyle(document.documentElement).getPro
 let allEntries = [];
 let verdictChart = null;
 let trendsChart  = null;
+let loadInFlight = false;
 
 const CHART_DEFAULTS = {
   color: '#94a3b8',
@@ -334,51 +335,70 @@ function countVerdicts(entries) {
 
 // ── Charts ────────────────────────────────────────────────────────────────────
 function initCharts() {
+  if (!window.Chart) {
+    console.warn('Chart.js unavailable; dashboard will render without charts');
+    return;
+  }
+  const verdictCanvas = document.getElementById('verdictChart');
+  const trendsCanvas = document.getElementById('trendsChart');
+  if (!verdictCanvas || !trendsCanvas) {
+    console.warn('Dashboard chart canvases missing; skipping chart initialization');
+    return;
+  }
+
   Chart.defaults.color = '#94a3b8';
 
-  verdictChart = new Chart(document.getElementById('verdictChart'), {
-    type: 'doughnut',
-    data: {
-      labels: ['Clean', 'Suspicious', 'Likely Phishing', 'Confirmed Phishing'],
-      datasets: [{
-        data: [0, 0, 0, 0],
-        backgroundColor: ['#166534','#78350f','#9a3412','#991b1b'],
-        borderColor: ['#4ade80','#fbbf24','#fb923c','#f87171'],
-        borderWidth: 2,
-      }]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { position: 'bottom', labels: { color: '#94a3b8', font: { size: 12 }, padding: 14 } } }
-    }
-  });
-
-  trendsChart = new Chart(document.getElementById('trendsChart'), {
-    type: 'line',
-    data: {
-      labels: [],
-      datasets: [
-        { label: 'Phishing/Likely', data: [], borderColor: '#f87171', backgroundColor: 'rgba(248,113,113,.08)', tension: 0.3, fill: true },
-        { label: 'Suspicious',      data: [], borderColor: '#fbbf24', backgroundColor: 'rgba(251,191,36,.06)',  tension: 0.3, fill: true },
-        { label: 'Clean',           data: [], borderColor: '#4ade80', backgroundColor: 'rgba(74,222,128,.06)',  tension: 0.3, fill: true },
-      ]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { labels: { color: '#94a3b8', font: { size: 12 }, padding: 14 } } },
-      scales: {
-        x: { ticks: { color: '#4c4f6b' }, grid: { color: '#1e2130' } },
-        y: { beginAtZero: true, ticks: { color: '#4c4f6b', stepSize: 1 }, grid: { color: '#1e2130' },
-             title: { display: true, text: 'Emails', color: '#4c4f6b' } }
+  try {
+    verdictChart = new Chart(verdictCanvas, {
+      type: 'doughnut',
+      data: {
+        labels: ['Clean', 'Suspicious', 'Likely Phishing', 'Confirmed Phishing'],
+        datasets: [{
+          data: [0, 0, 0, 0],
+          backgroundColor: ['#166534','#78350f','#9a3412','#991b1b'],
+          borderColor: ['#4ade80','#fbbf24','#fb923c','#f87171'],
+          borderWidth: 2,
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom', labels: { color: '#94a3b8', font: { size: 12 }, padding: 14 } } }
       }
-    }
-  });
+    });
+
+    trendsChart = new Chart(trendsCanvas, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [
+          { label: 'Phishing/Likely', data: [], borderColor: '#f87171', backgroundColor: 'rgba(248,113,113,.08)', tension: 0.3, fill: true },
+          { label: 'Suspicious',      data: [], borderColor: '#fbbf24', backgroundColor: 'rgba(251,191,36,.06)',  tension: 0.3, fill: true },
+          { label: 'Clean',           data: [], borderColor: '#4ade80', backgroundColor: 'rgba(74,222,128,.06)',  tension: 0.3, fill: true },
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: '#94a3b8', font: { size: 12 }, padding: 14 } } },
+        scales: {
+          x: { ticks: { color: '#4c4f6b' }, grid: { color: '#1e2130' } },
+          y: { beginAtZero: true, ticks: { color: '#4c4f6b', stepSize: 1 }, grid: { color: '#1e2130' },
+               title: { display: true, text: 'Emails', color: '#4c4f6b' } }
+        }
+      }
+    });
+  } catch (err) {
+    console.error('chart init failed', err);
+    verdictChart = null;
+    trendsChart = null;
+  }
 }
 
 function updateCharts(entries) {
   const c = countVerdicts(entries);
-  verdictChart.data.datasets[0].data = [c.clean, c.suspicious, c.likely_phishing, c.confirmed_phishing];
-  verdictChart.update();
+  if (verdictChart) {
+    verdictChart.data.datasets[0].data = [c.clean, c.suspicious, c.likely_phishing, c.confirmed_phishing];
+    verdictChart.update();
+  }
 
   const today = new Date();
   const days = [];
@@ -397,11 +417,13 @@ function updateCharts(entries) {
     else if (k === 'suspicious') b[day].s++;
     else b[day].p++;
   }
-  trendsChart.data.labels = days.map(d => d.slice(5));
-  trendsChart.data.datasets[0].data = days.map(d => b[d].p);
-  trendsChart.data.datasets[1].data = days.map(d => b[d].s);
-  trendsChart.data.datasets[2].data = days.map(d => b[d].c);
-  trendsChart.update();
+  if (trendsChart) {
+    trendsChart.data.labels = days.map(d => d.slice(5));
+    trendsChart.data.datasets[0].data = days.map(d => b[d].p);
+    trendsChart.data.datasets[1].data = days.map(d => b[d].s);
+    trendsChart.data.datasets[2].data = days.map(d => b[d].c);
+    trendsChart.update();
+  }
 }
 
 // ── Table ─────────────────────────────────────────────────────────────────────
@@ -443,6 +465,7 @@ function renderTable() {
 
 // ── Status section ─────────────────────────────────────────────────────────────
 function updateStatus(mon, entries) {
+  mon = mon || {};
   const imap = document.getElementById('sImap');
   if (!mon.imap_configured) {
     imap.innerHTML = '<span class="dot grey"></span>Not configured';
@@ -461,19 +484,31 @@ function updateStatus(mon, entries) {
 }
 
 // ── Load ───────────────────────────────────────────────────────────────────────
+async function requireJson(response, label) {
+  let payload = null;
+  try { payload = await response.json(); } catch (err) {}
+  if (!response.ok) {
+    const detail = payload && (payload.detail || payload.error);
+    throw new Error(label + ' failed (' + response.status + ')' + (detail ? ': ' + detail : ''));
+  }
+  return payload || {};
+}
+
 async function loadAll() {
+  if (loadInFlight) return;
+  loadInFlight = true;
   const btn = document.getElementById('btnRefresh');
   btn.disabled = true; btn.classList.add('loading');
 
   try {
     const [logRes, monRes] = await Promise.all([
-      fetch('/api/monitor/log?limit=2000'),
+      fetch('/api/monitor/log?limit=500&compact=true'),
       fetch('/api/monitor/stats'),
     ]);
-    const log = logRes.ok ? await logRes.json() : { entries: [] };
-    const mon = monRes.ok ? await monRes.json() : {};
+    const log = await requireJson(logRes, 'Activity log');
+    const mon = await requireJson(monRes, 'Monitor stats');
 
-    allEntries = (log.entries || []).sort((a, b) => {
+    allEntries = (Array.isArray(log.entries) ? log.entries : []).sort((a, b) => {
       return (b.timestamp||b.ts||'').localeCompare(a.timestamp||a.ts||'');
     });
 
@@ -493,6 +528,7 @@ async function loadAll() {
     document.getElementById('tsLabel').textContent = 'Load failed: ' + err.message;
   } finally {
     btn.disabled = false; btn.classList.remove('loading');
+    loadInFlight = false;
   }
 }
 

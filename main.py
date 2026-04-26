@@ -11,12 +11,13 @@ import asyncio
 import json
 import logging
 import sys
+from collections import deque
 from pathlib import Path
 
 from dotenv import load_dotenv
 load_dotenv(override=True)  # override=True so .env values win over empty system env vars
 
-from fastapi import Depends, FastAPI, HTTPException, UploadFile, File, Request
+from fastapi import Depends, FastAPI, HTTPException, UploadFile, File, Request, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 from uvicorn import run
 
@@ -43,6 +44,50 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+def _tail_jsonl_records(log_path: Path, limit: int) -> list[dict]:
+    """Return the newest JSONL records without reading the whole file."""
+    if limit <= 0 or not log_path.exists():
+        return []
+
+    try:
+        with log_path.open("r", encoding="utf-8") as fh:
+            lines = deque(fh, maxlen=limit)
+    except OSError as e:
+        logger.warning("Failed to read monitor log %s: %s", log_path, e)
+        return []
+
+    entries = []
+    for line in reversed(lines):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entries.append(json.loads(line))
+        except json.JSONDecodeError:
+            # Ignore partial/corrupt lines so one bad append doesn't break the UI.
+            continue
+    return entries
+
+
+def _compact_monitor_record(record: dict) -> dict:
+    """Keep only fields needed by dashboard/list views."""
+    score = record.get("overall_score", record.get("score"))
+    confidence = record.get("overall_confidence", record.get("confidence"))
+    analyzer_results = record.get("analyzer_results")
+    return {
+        "email_id": record.get("email_id"),
+        "from": record.get("from"),
+        "subject": record.get("subject"),
+        "verdict": record.get("verdict"),
+        "score": score,
+        "overall_score": score,
+        "overall_confidence": confidence,
+        "timestamp": record.get("timestamp", record.get("ts")),
+        "quarantined": record.get("quarantined", False),
+        "analyzer_count": len(analyzer_results) if isinstance(analyzer_results, dict) else 0,
+    }
 
 
 class PhishingDetectionApp:
@@ -489,20 +534,16 @@ class PhishingDetectionApp:
             }
 
         @app.get("/api/monitor/log", dependencies=[Depends(require_token)])
-        async def monitor_log(limit: int = 100):
+        async def monitor_log(
+            limit: int = Query(100, ge=1, le=2000),
+            compact: bool = False,
+        ):
             """Return recent results from the JSONL log file."""
             log_path = Path("data/results.jsonl")
-            if not log_path.exists():
-                return {"entries": []}
-            lines = log_path.read_text(encoding="utf-8").strip().splitlines()
-            import json as _json
-            entries = []
-            for line in reversed(lines[-limit:]):
-                try:
-                    entries.append(_json.loads(line))
-                except Exception:
-                    pass
-            return {"entries": entries}
+            entries = _tail_jsonl_records(log_path, limit)
+            if compact:
+                entries = [_compact_monitor_record(entry) for entry in entries]
+            return {"entries": entries, "count": len(entries)}
 
         @app.get("/api/monitor/email/{email_id}", dependencies=[Depends(require_token)])
         async def monitor_email_detail(email_id: str):
