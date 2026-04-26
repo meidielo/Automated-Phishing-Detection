@@ -6,11 +6,13 @@ import asyncio
 import json
 import logging
 from datetime import datetime
+from email.utils import parseaddr
 from typing import Optional
 
 from src.models import EmailObject, PipelineResult, Verdict, AnalyzerResult
 from src.config import PipelineConfig
 from src.scoring.blocklist_allowlist import BlocklistAllowlistChecker, ListCheckResult
+from src.utils.domains import get_root_domain
 
 
 logger = logging.getLogger(__name__)
@@ -468,6 +470,7 @@ class PhishingPipeline:
             if name == "header_analysis":
                 # HeaderAnalyzer.analyze() is synchronous — call without await
                 detail = analyzer.analyze(email)
+                from_domain = self._extract_email_domain(email.from_address)
                 # Convert HeaderAnalysisDetail → AnalyzerResult
                 # Weighted scoring: not all failures are equal
                 risk_score = 0.0
@@ -509,6 +512,9 @@ class PhishingPipeline:
                         "display_name_spoofing": detail.display_name_spoofing,
                         "envelope_from_mismatch": detail.envelope_from_mismatch,
                         "suspicious_received_chain": detail.suspicious_received_chain,
+                        "from_address": email.from_address,
+                        "from_domain": from_domain,
+                        "from_root_domain": get_root_domain(from_domain),
                     },
                 )
             elif name == "url_reputation":
@@ -580,7 +586,82 @@ class PhishingPipeline:
         "booking.com",
         "twitch.tv",
         "roblox.com",
+        # Observed legitimate SaaS, job, and hosting notifications
+        "ahrefs.com",
+        "apify.com",
+        "cloudflare.com",
+        "emergent.sh",
+        "gradconnection.com",
+        "hatch.team",
+        "jora.com",
+        "maxion.com.au",
+        "meandu.com",
+        "mobilemonster.com.au",
+        "moonshot.ai",
+        "msy.com.au",
+        "rebrandly.com",
+        "tanda.co",
+        "trustpilotmail.com",
+        "ventraip.com.au",
     }
+
+    @staticmethod
+    def _extract_email_domain(address: str) -> str:
+        """Return the normalized domain from an email address-like string."""
+        if not address:
+            return ""
+
+        _, parsed_address = parseaddr(address)
+        candidate = parsed_address or address
+        if "@" not in candidate:
+            return ""
+
+        return candidate.rsplit("@", 1)[1].strip().strip(">").lower().strip(".")
+
+    @classmethod
+    def _sender_domain_from_header_details(cls, details: dict) -> str:
+        """Extract the sender domain from current or legacy header details."""
+        for key in ("from_domain", "sender_domain"):
+            value = details.get(key)
+            if isinstance(value, str) and value:
+                return value.lower().strip(".")
+
+        for key in ("from_address", "sender", "mail_from"):
+            value = details.get(key)
+            if isinstance(value, str):
+                domain = cls._extract_email_domain(value)
+                if domain:
+                    return domain
+
+        nested = details.get("header_analysis_detail")
+        if isinstance(nested, dict):
+            return cls._sender_domain_from_header_details(nested)
+
+        return ""
+
+    @classmethod
+    def _matching_trusted_sender_domain(cls, sender_domain: str) -> str:
+        """Return the matched trusted domain, or an empty string."""
+        sender_domain = (sender_domain or "").lower().strip(".")
+        if not sender_domain:
+            return ""
+
+        sender_root = get_root_domain(sender_domain)
+        trusted_domains = sorted(
+            domain.lower().strip(".")
+            for domain in cls.TRUSTED_AUTHENTICATED_DOMAINS
+        )
+        for trusted_domain in trusted_domains:
+            if sender_domain == trusted_domain or sender_domain.endswith(f".{trusted_domain}"):
+                return trusted_domain
+
+        for trusted_domain in trusted_domains:
+            trusted_domain = trusted_domain.lower().strip(".")
+            trusted_root = get_root_domain(trusted_domain)
+            if sender_root == trusted_root:
+                return trusted_root
+
+        return ""
 
     def _is_trusted_authenticated_sender(
         self, analyzer_results: dict[str, AnalyzerResult]
@@ -597,7 +678,8 @@ class PhishingPipeline:
 
         details = header_result.details or {}
 
-        # Must have at least SPF or DKIM passing, PLUS low risk score
+        # Must have at least two authentication passes before any trust
+        # dampening is considered.
         spf_pass = details.get("spf_pass")
         dkim_pass = details.get("dkim_pass")
         dmarc_pass = details.get("dmarc_pass")
@@ -609,20 +691,37 @@ class PhishingPipeline:
         if auth_passes < 2 or auth_fails > 0:
             return False, ""
 
-        # Risk score must be low (authentication-clean).
-        # Allow up to 0.35 to accommodate minor non-spoofing signals
-        # like subdomain reply-to that aren't truly suspicious.
+        sender_domain = self._sender_domain_from_header_details(details)
+        trusted_domain = self._matching_trusted_sender_domain(sender_domain)
+        if trusted_domain:
+            # Trusted providers often trip content or display-name heuristics
+            # with legitimate security alerts, invoices, and notifications.
+            # Keep the header ceiling bounded so severe header anomalies still
+            # require normal scoring.
+            if header_result.risk_score > 0.50:
+                return False, ""
+            return (
+                True,
+                f"sender_domain={sender_domain}, trusted_domain={trusted_domain}, "
+                f"auth_passes={auth_passes}, header_risk={header_result.risk_score:.2f}",
+            )
+
+        # New header results always include sender_domain. If the sender is
+        # not on the trusted list, do not dampen content scores merely because
+        # SPF/DKIM/DMARC pass; attacker-controlled domains can pass auth too.
+        if sender_domain:
+            return False, ""
+
+        # Legacy/test-only fallback for AnalyzerResult shapes without sender
+        # identity. Keep the old conservative behavior for compatibility.
         if header_result.risk_score > 0.35:
             return False, ""
 
-        # Check sender domain against trusted list.
-        # The sender domain is not directly in analyzer_results, but we can
-        # infer trust from the brand_impersonation details if available.
+        # Legacy AnalyzerResult shapes may not include the sender domain.
+        # Preserve the previous behavior only for those old/test payloads.
         brand_result = analyzer_results.get("brand_impersonation")
         if brand_result and brand_result.details:
             signals = brand_result.details.get("signals", [])
-            # If brand_impersonation found NO signals, the sender domain
-            # matched a known brand → trusted.
             if not signals:
                 return True, f"auth_passes={auth_passes}, no brand signals"
             # If the only signals are low-risk or informational (not actual
