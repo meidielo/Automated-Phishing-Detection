@@ -135,6 +135,30 @@ def _fallback_message_bytes(message: mailbox.mboxMessage) -> bytes:
     return "\n".join(lines).encode("utf-8", "surrogateescape")
 
 
+def _iter_mbox_message_payloads(mbox_path: Path) -> Iterator[bytes]:
+    current: list[bytes] = []
+    preamble: list[bytes] = []
+    saw_separator = False
+
+    with mbox_path.open("rb") as fh:
+        for line in fh:
+            if line.startswith(b"From "):
+                if current:
+                    yield b"".join(current)
+                current = []
+                saw_separator = True
+                continue
+            if saw_separator:
+                current.append(line)
+            else:
+                preamble.append(line)
+
+    if current:
+        yield b"".join(current)
+    elif not saw_separator and preamble:
+        yield b"".join(preamble)
+
+
 def iter_nazario_candidates(corpora_dir: Path, max_bytes: int = DEFAULT_MAX_BYTES) -> Iterator[CorpusCandidate]:
     """Yield PHISHING candidates from Nazario mbox files."""
 
@@ -147,13 +171,8 @@ def iter_nazario_candidates(corpora_dir: Path, max_bytes: int = DEFAULT_MAX_BYTE
             continue
 
         try:
-            mbox = mailbox.mbox(str(mbox_path), create=False)
-        except (OSError, mailbox.Error):
-            continue
-
-        try:
-            for index, message in enumerate(mbox):
-                payload = _message_as_bytes(message)
+            payloads = _iter_mbox_message_payloads(mbox_path)
+            for index, payload in enumerate(payloads):
                 if not payload or len(payload) > max_bytes:
                     continue
                 relative = mbox_path.relative_to(corpora_dir).as_posix()
@@ -163,8 +182,8 @@ def iter_nazario_candidates(corpora_dir: Path, max_bytes: int = DEFAULT_MAX_BYTE
                     label="PHISHING",
                     payload=payload,
                 )
-        finally:
-            mbox.close()
+        except OSError:
+            continue
 
 
 def _is_reasonable_raw_message(path: Path, max_bytes: int) -> bool:

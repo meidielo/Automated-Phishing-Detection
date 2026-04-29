@@ -173,3 +173,29 @@ def test_mbox_message_serializer_handles_utf8_payload_edge_case():
 
     assert isinstance(payload, bytes)
     assert b"non-ascii payload" in payload
+
+
+def test_prepare_corpus_handles_non_ascii_mbox_separator(tmp_path: Path):
+    corpora = tmp_path / "corpora"
+    nazario = corpora / "nazario"
+    nazario.mkdir(parents=True)
+    (nazario / "phishing0.mbox").write_bytes(
+        b"From Jos\xc3\xa9@example.com Sat Jan 01 00:00:00 2026\n"
+        b"From: phish@example.com\n"
+        b"To: victim@example.com\n"
+        b"Subject: Verify\n"
+        b"\n"
+        b"Click the fake verification link.\n"
+    )
+
+    prepared = prepare_corpus(
+        corpora_dir=corpora,
+        output_dir=tmp_path / "prepared",
+        phishing=1,
+        enron_ham=0,
+        spamassassin_ham=0,
+    )
+
+    assert prepared.written_counts == {"PHISHING": 1, "CLEAN": 0}
+    [filename] = prepared.labels.keys()
+    assert (tmp_path / "prepared" / filename).read_bytes().startswith(b"From: phish@example.com")
