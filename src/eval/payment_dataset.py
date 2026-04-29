@@ -10,8 +10,12 @@ import argparse
 import csv
 import hashlib
 import json
+import random
 import shutil
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from email.message import EmailMessage
+from email.utils import format_datetime
 from pathlib import Path
 from typing import Optional
 
@@ -68,6 +72,16 @@ class ValidationResult:
         return not self.errors
 
 
+@dataclass(frozen=True)
+class SeedSummary:
+    dataset_dir: Path
+    scam_count: int
+    legitimate_count: int
+    total_count: int
+    labels_path: Path
+    eval_labels_path: Path
+
+
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as fh:
@@ -106,6 +120,17 @@ Use `PAYMENT_SCAM` only when the sample is confirmed malicious or deliberately
 synthetic. Use `LEGITIMATE_PAYMENT` for normal invoices, remittances, and
 verified bank-detail changes. Use `NON_PAYMENT` for clean business mail with no
 payment context.
+
+## Synthetic seed
+
+Run this for a reproducible development set:
+
+```bash
+python scripts/payment_dataset.py seed-synthetic --dataset data/payment_scam_dataset --scam-count 50 --legit-count 50 --seed 1337 --clean
+```
+
+Synthetic samples are for pipeline development and ML plumbing only. Replace or
+supplement them with redacted real examples before reporting product metrics.
 """
 
 
@@ -137,6 +162,24 @@ def _write_labels(labels_path: Path, rows: list[dict[str, str]]) -> None:
         writer = csv.DictWriter(fh, fieldnames=DATASET_COLUMNS)
         writer.writeheader()
         writer.writerows(rows)
+
+
+def _read_manifest_rows(manifest_path: Path) -> list[dict[str, str]]:
+    if not manifest_path.exists():
+        return []
+    rows = []
+    with manifest_path.open("r", encoding="utf-8") as fh:
+        for line in fh:
+            stripped = line.strip()
+            if stripped:
+                rows.append(json.loads(stripped))
+    return rows
+
+
+def _write_manifest_rows(manifest_path: Path, rows: list[dict[str, str]]) -> None:
+    with manifest_path.open("w", encoding="utf-8", newline="\n") as fh:
+        for row in rows:
+            fh.write(json.dumps(row, sort_keys=True) + "\n")
 
 
 def _safe_filename(scenario: str, digest: str) -> str:
@@ -197,8 +240,10 @@ def add_sample(
         "sha256": digest,
         "size_bytes": target.stat().st_size,
     }
-    with (dataset_dir / MANIFEST_JSONL).open("a", encoding="utf-8", newline="\n") as fh:
-        fh.write(json.dumps(manifest, sort_keys=True) + "\n")
+    manifest_path = dataset_dir / MANIFEST_JSONL
+    manifest_rows = [row for row in _read_manifest_rows(manifest_path) if row.get("filename") != filename]
+    manifest_rows.append(manifest)
+    _write_manifest_rows(manifest_path, manifest_rows)
 
     return target
 
@@ -281,6 +326,185 @@ def export_eval_labels(dataset_dir: Path = DEFAULT_DATASET_DIR, output: Optional
     return output
 
 
+def _assert_safe_clean_target(dataset_dir: Path) -> None:
+    resolved = dataset_dir.resolve()
+    if resolved == Path(resolved.anchor):
+        raise ValueError(f"refusing to clean filesystem root: {resolved}")
+    if resolved == Path.home().resolve():
+        raise ValueError(f"refusing to clean home directory: {resolved}")
+    if "payment_scam_dataset" not in resolved.name:
+        raise ValueError(f"refusing to clean non-payment dataset path: {resolved}")
+
+
+def _split_for_index(index: int, total: int) -> str:
+    if total <= 1:
+        return "train"
+    ratio = index / total
+    if ratio < 0.8:
+        return "train"
+    if ratio < 0.9:
+        return "validation"
+    return "test"
+
+
+def _synthetic_message(
+    subject: str,
+    body: str,
+    from_address: str,
+    message_id: str,
+    reply_to: str = "",
+    auth_results: str = "",
+) -> bytes:
+    msg = EmailMessage()
+    msg["From"] = from_address
+    msg["To"] = "accounts-payable@demo-business.example"
+    msg["Subject"] = subject
+    msg["Date"] = format_datetime(datetime(2026, 4, 29, 9, 0, 0, tzinfo=timezone.utc))
+    msg["Message-ID"] = message_id
+    if reply_to:
+        msg["Reply-To"] = reply_to
+    if auth_results:
+        msg["Authentication-Results"] = auth_results
+    msg.set_content(body)
+    return msg.as_bytes()
+
+
+def _synthetic_scam_email(index: int, rng: random.Random) -> tuple[bytes, str]:
+    suppliers = [
+        "Northline Electrical",
+        "BrightBuild Supplies",
+        "Melbourne Office Fitouts",
+        "Harbour Cleaning Co",
+        "Summit IT Services",
+    ]
+    supplier = suppliers[index % len(suppliers)]
+    amount = 1800 + index * 137
+    bsb = f"{100 + index % 800}-{200 + (index * 3) % 700}"
+    account = f"{70000000 + index * 9137}"
+    attacker_box = f"payments.{index}@gmail.com"
+    pressure = rng.choice([
+        "Please process this today to avoid a payment hold.",
+        "This is urgent and must be completed within 24 hours.",
+        "Kindly process without delay and do not call the office.",
+    ])
+    body = (
+        f"Hi accounts team,\n\n"
+        f"We have updated our bank details for {supplier}. Do not use the old account.\n"
+        f"Invoice INV-{2400 + index} is now due for AUD ${amount:,.2f}.\n"
+        f"New BSB: {bsb}\n"
+        f"New account number: {account}\n\n"
+        f"{pressure}\n"
+        f"Only reply to this email once payment has been released.\n\n"
+        f"Regards,\nSupplier Accounts"
+    )
+    payload = _synthetic_message(
+        subject=f"Urgent updated bank details for invoice INV-{2400 + index}",
+        body=body,
+        from_address=f"Supplier Accounts <accounts@{supplier.lower().replace(' ', '-')}-billing.example>",
+        reply_to=attacker_box,
+        auth_results="mx.demo-business.example; spf=fail dkim=fail dmarc=fail",
+        message_id=f"<synthetic-payment-scam-{index}@dataset.example>",
+    )
+    return payload, supplier
+
+
+def _synthetic_legitimate_email(index: int) -> tuple[bytes, str]:
+    suppliers = [
+        "Aster Plumbing",
+        "Citywide Stationery",
+        "Kangaroo Print Group",
+        "RMIT Catering Services",
+        "Yarra Facilities",
+    ]
+    supplier = suppliers[index % len(suppliers)]
+    amount = 900 + index * 83
+    bsb = f"{300 + index % 500}-{400 + (index * 5) % 500}"
+    account = f"{40000000 + index * 7211}"
+    domain = supplier.lower().replace(" ", "-") + ".example.com"
+    body = (
+        f"Hi accounts payable,\n\n"
+        f"Our bank details for {supplier} have changed in the supplier portal.\n"
+        f"Invoice INV-{5200 + index} totals AUD ${amount:,.2f}.\n"
+        f"BSB: {bsb}\n"
+        f"Account number: {account}\n\n"
+        f"Please do not update the payment record from this email alone. "
+        f"Confirm through your usual contact or the saved supplier portal before paying.\n\n"
+        f"Regards,\n{supplier} Accounts"
+    )
+    payload = _synthetic_message(
+        subject=f"Supplier portal bank detail update for INV-{5200 + index}",
+        body=body,
+        from_address=f"{supplier} Accounts <accounts@{domain}>",
+        auth_results="mx.demo-business.example; spf=pass dkim=pass dmarc=pass",
+        message_id=f"<synthetic-legit-bank-change-{index}@dataset.example>",
+    )
+    return payload, supplier
+
+
+def seed_synthetic_bank_change_dataset(
+    dataset_dir: Path = DEFAULT_DATASET_DIR,
+    scam_count: int = 50,
+    legit_count: int = 50,
+    seed: int = 1337,
+    clean: bool = False,
+) -> SeedSummary:
+    dataset_dir = Path(dataset_dir)
+    if scam_count < 0 or legit_count < 0:
+        raise ValueError("sample counts must be non-negative")
+    if clean and dataset_dir.exists():
+        _assert_safe_clean_target(dataset_dir)
+        shutil.rmtree(dataset_dir)
+    init_dataset(dataset_dir)
+
+    rng = random.Random(seed)
+    generated_dir = dataset_dir / INCOMING_DIR / "synthetic_bank_change"
+    generated_dir.mkdir(parents=True, exist_ok=True)
+
+    for index in range(scam_count):
+        payload, supplier = _synthetic_scam_email(index, rng)
+        source = generated_dir / f"scam_bank_change_{index:03d}.eml"
+        source.write_bytes(payload)
+        add_sample(
+            dataset_dir=dataset_dir,
+            source=source,
+            label="PAYMENT_SCAM",
+            payment_decision="DO_NOT_PAY",
+            scenario="bank_detail_change",
+            source_type="synthetic",
+            split=_split_for_index(index, scam_count),
+            verified_by="synthetic-generator",
+            contains_real_pii="no",
+            notes=f"Synthetic bank-detail-change scam for {supplier}",
+        )
+
+    for index in range(legit_count):
+        payload, supplier = _synthetic_legitimate_email(index)
+        source = generated_dir / f"legit_bank_change_{index:03d}.eml"
+        source.write_bytes(payload)
+        add_sample(
+            dataset_dir=dataset_dir,
+            source=source,
+            label="LEGITIMATE_PAYMENT",
+            payment_decision="VERIFY",
+            scenario="legitimate_bank_change_verified",
+            source_type="synthetic",
+            split=_split_for_index(index, legit_count),
+            verified_by="synthetic-generator",
+            contains_real_pii="no",
+            notes=f"Synthetic legitimate bank-detail-change notice for {supplier}",
+        )
+
+    eval_labels = export_eval_labels(dataset_dir)
+    return SeedSummary(
+        dataset_dir=dataset_dir,
+        scam_count=scam_count,
+        legitimate_count=legit_count,
+        total_count=scam_count + legit_count,
+        labels_path=dataset_dir / LABELS_CSV,
+        eval_labels_path=eval_labels,
+    )
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Create and maintain the local payment-scam dataset.",
@@ -309,6 +533,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
     export_parser = subparsers.add_parser("export-eval-labels", help="Write labels.json for run_eval.py")
     export_parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET_DIR)
     export_parser.add_argument("--output", type=Path, default=None)
+
+    seed_parser = subparsers.add_parser("seed-synthetic", help="Generate synthetic bank-detail-change samples")
+    seed_parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET_DIR)
+    seed_parser.add_argument("--scam-count", type=int, default=50)
+    seed_parser.add_argument("--legit-count", type=int, default=50)
+    seed_parser.add_argument("--seed", type=int, default=1337)
+    seed_parser.add_argument("--clean", action="store_true", help="Remove the dataset before seeding")
 
     return parser
 
@@ -350,6 +581,22 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.command == "export-eval-labels":
         output = export_eval_labels(args.dataset, args.output)
         print(f"Wrote eval labels: {output}")
+        return 0
+
+    if args.command == "seed-synthetic":
+        summary = seed_synthetic_bank_change_dataset(
+            dataset_dir=args.dataset,
+            scam_count=args.scam_count,
+            legit_count=args.legit_count,
+            seed=args.seed,
+            clean=args.clean,
+        )
+        print(f"Seeded synthetic payment dataset at {summary.dataset_dir}")
+        print(f"  payment scams:       {summary.scam_count}")
+        print(f"  legitimate payments: {summary.legitimate_count}")
+        print(f"  total:               {summary.total_count}")
+        print(f"  labels:              {summary.labels_path}")
+        print(f"  eval labels:         {summary.eval_labels_path}")
         return 0
 
     parser.error(f"unknown command: {args.command}")

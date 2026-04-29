@@ -6,7 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from src.eval.payment_dataset import add_sample, export_eval_labels, init_dataset, validate_dataset
+from src.eval.payment_dataset import (
+    add_sample,
+    export_eval_labels,
+    init_dataset,
+    seed_synthetic_bank_change_dataset,
+    validate_dataset,
+)
 
 
 def _write_eml(path: Path, subject: str = "Invoice") -> Path:
@@ -121,4 +127,46 @@ def test_add_sample_rejects_non_eml(tmp_path: Path):
             label="PAYMENT_SCAM",
             payment_decision="DO_NOT_PAY",
             scenario="bank_detail_change",
+        )
+
+
+def test_seed_synthetic_bank_change_dataset_creates_balanced_seed(tmp_path: Path):
+    dataset = tmp_path / "payment_scam_dataset_seed"
+
+    summary = seed_synthetic_bank_change_dataset(
+        dataset_dir=dataset,
+        scam_count=4,
+        legit_count=4,
+        seed=7,
+        clean=True,
+    )
+
+    assert summary.total_count == 8
+    result = validate_dataset(dataset)
+    assert result.ok
+    assert result.row_count == 8
+    assert summary.eval_labels_path.exists()
+
+    labels = json.loads(summary.eval_labels_path.read_text(encoding="utf-8"))
+    assert sorted(labels.values()).count("PHISHING") == 4
+    assert sorted(labels.values()).count("CLEAN") == 4
+
+    with (dataset / "labels.csv").open("r", encoding="utf-8", newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    assert {row["source_type"] for row in rows} == {"synthetic"}
+    assert {row["contains_real_pii"] for row in rows} == {"no"}
+    assert {row["payment_decision"] for row in rows} == {"DO_NOT_PAY", "VERIFY"}
+    assert all((dataset / "samples" / row["filename"]).exists() for row in rows)
+
+
+def test_seed_synthetic_clean_requires_payment_dataset_name(tmp_path: Path):
+    unsafe_dataset = tmp_path / "not_the_dataset"
+    unsafe_dataset.mkdir()
+
+    with pytest.raises(ValueError, match="non-payment dataset"):
+        seed_synthetic_bank_change_dataset(
+            dataset_dir=unsafe_dataset,
+            scam_count=1,
+            legit_count=1,
+            clean=True,
         )

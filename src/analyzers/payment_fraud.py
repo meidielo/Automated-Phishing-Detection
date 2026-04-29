@@ -67,6 +67,8 @@ class PaymentFraudAnalyzer:
         r"use\s+the\s+(?:new|updated)\s+(?:bank|account|payment)\s+details",
         r"do\s+not\s+use\s+(?:the\s+)?old\s+(?:bank|account|payment)\s+details",
         r"bank\s+account\s+(?:has\s+)?changed",
+        r"bank\s+details\s+(?:have\s+)?changed",
+        r"bank\s+details\s+.*\bchanged\s+in\s+(?:the\s+)?(?:supplier\s+)?portal",
         r"account\s+details\s+(?:have\s+)?changed",
     ]
 
@@ -516,7 +518,7 @@ class PaymentFraudAnalyzer:
     def _apply_positive_verification_discount(self, text: str, risk_score: float) -> float:
         if not self._matched_patterns(text, self.POSITIVE_VERIFICATION_PATTERNS):
             return risk_score
-        return round(max(0.0, risk_score - 0.08), 3)
+        return round(max(0.0, risk_score - 0.12), 3)
 
     def _calculate_confidence(
         self,

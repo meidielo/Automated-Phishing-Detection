@@ -88,6 +88,22 @@ python scripts/payment_dataset.py validate --dataset data/payment_scam_dataset
 python scripts/payment_dataset.py export-eval-labels --dataset data/payment_scam_dataset
 ```
 
+Seed the first reproducible development set:
+
+```bash
+python scripts/payment_dataset.py seed-synthetic \
+  --dataset data/payment_scam_dataset \
+  --scam-count 50 \
+  --legit-count 50 \
+  --seed 1337 \
+  --clean
+```
+
+This creates 50 synthetic bank-detail-change scams and 50 synthetic legitimate
+bank-detail-change notices with train, validation, and test splits. Use it to
+exercise the analyzer and future ML code. Do not treat synthetic-only results
+as production-quality evidence.
+
 Recommended minimum collection:
 
 | Scenario | Scam | Legitimate |

@@ -121,6 +121,28 @@ async def test_invoice_with_normal_verification_stays_safe():
 
 
 @pytest.mark.asyncio
+async def test_legitimate_bank_change_with_portal_verification_requires_verify():
+    analyzer = PaymentFraudAnalyzer()
+    email = make_email(
+        subject="Supplier portal bank detail update",
+        body=(
+            "Our bank details have changed in the supplier portal. "
+            "Invoice INV-5200 totals AUD $1,200.00. "
+            "BSB: 300-400 Account number: 40000000. "
+            "Please do not update the payment record from this email alone. "
+            "Confirm through your usual contact or the saved supplier portal before paying."
+        ),
+        auth_results="mx.example.com; spf=pass dkim=pass dmarc=pass",
+    )
+
+    result = await analyzer.analyze(email)
+
+    assert result.details["decision"] == "VERIFY"
+    assert any(s["name"] == "bank_detail_change_request" for s in result.details["signals"])
+    assert result.risk_score < 0.78
+
+
+@pytest.mark.asyncio
 async def test_risky_invoice_attachment_blocks_payment():
     analyzer = PaymentFraudAnalyzer()
     attachment = AttachmentObject(

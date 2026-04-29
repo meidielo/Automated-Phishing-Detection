@@ -19,7 +19,13 @@ from src.eval.harness import (
 )
 from src.eval.corpus_prepare import PreparedCorpus, prepare_corpus
 from src.eval.failure_inspector import FailureReport, FailureRow, build_report
-from src.eval.payment_dataset import ValidationResult, init_dataset, validate_dataset
+from src.eval.payment_dataset import (
+    SeedSummary,
+    ValidationResult,
+    init_dataset,
+    seed_synthetic_bank_change_dataset,
+    validate_dataset,
+)
 
 __all__ = [
     "AggregateMetrics",
@@ -28,10 +34,12 @@ __all__ = [
     "FailureRow",
     "PerSampleRow",
     "PreparedCorpus",
+    "SeedSummary",
     "ValidationResult",
     "build_report",
     "init_dataset",
     "prepare_corpus",
     "run_eval",
+    "seed_synthetic_bank_change_dataset",
     "validate_dataset",
 ]

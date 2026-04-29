@@ -2,7 +2,7 @@
 
 Analyzes phishing emails through a 7-stage async pipeline with concurrent threat intelligence lookups, MITRE ATT&CK mapping across 12 sub-techniques, Sigma rule export, and STIX 2.1 IOC generation. Designed as analyst tooling, not autonomous detection.
 
-**Current eval (live APIs):** 0.90 recall, 1.00 precision, 0.95 F1 (permissive scoring) on a 22-sample corpus. TP=9, FP=0, TN=12, FN=1. Strict recall is 0.00: all phishing detections cluster in the SUSPICIOUS band (0.30-0.60), none crossing the LIKELY_PHISHING threshold. This is a score calibration problem, not a detection gap. 992 automated tests. Per-sample data in [`eval_runs/`](eval_runs/). The corpus is project-curated and small; these numbers are a directional baseline, not production metrics. External corpus preparation now supports Nazario phishing plus Enron and SpamAssassin ham; public-corpus eval results should be generated locally from ignored data.
+**Current eval (live APIs):** 0.90 recall, 1.00 precision, 0.95 F1 (permissive scoring) on a 22-sample corpus. TP=9, FP=0, TN=12, FN=1. Strict recall is 0.00: all phishing detections cluster in the SUSPICIOUS band (0.30-0.60), none crossing the LIKELY_PHISHING threshold. This is a score calibration problem, not a detection gap. 995 automated tests. Per-sample data in [`eval_runs/`](eval_runs/). The corpus is project-curated and small; these numbers are a directional baseline, not production metrics. External corpus preparation now supports Nazario phishing plus Enron and SpamAssassin ham; public-corpus eval results should be generated locally from ignored data.
 
 **What makes this project different** is not the detection numbers. It is the engineering arc documented in [`HISTORY.md`](HISTORY.md): fourteen disciplined audit cycles, seven stacked discipline gaps that took four audits to surface, a mechanical pre-cycle gate that enforces reading outcomes before narrative, and honest eval data that includes the cycles where the numbers were bad. The full story -- including how a 0.20 recall baseline was misdiagnosed for two cycles before the real cause was found -- is in the [writeup](docs/WRITEUP.md).
 
@@ -119,12 +119,13 @@ To start a local payment-scam dataset:
 
 ```bash
 python scripts/payment_dataset.py init --dataset data/payment_scam_dataset
+python scripts/payment_dataset.py seed-synthetic --dataset data/payment_scam_dataset --scam-count 50 --legit-count 50 --seed 1337 --clean
 python scripts/payment_dataset.py add --dataset data/payment_scam_dataset --source path/to/sample.eml --label PAYMENT_SCAM --payment-decision DO_NOT_PAY --scenario bank_detail_change --source-type redacted --split train --verified-by meidie --contains-real-pii no
 python scripts/payment_dataset.py validate --dataset data/payment_scam_dataset
 python scripts/payment_dataset.py export-eval-labels --dataset data/payment_scam_dataset
 ```
 
-The payment dataset records both the generic label (`PAYMENT_SCAM`, `LEGITIMATE_PAYMENT`, `NON_PAYMENT`) and the expected business decision (`SAFE`, `VERIFY`, `DO_NOT_PAY`).
+The payment dataset records both the generic label (`PAYMENT_SCAM`, `LEGITIMATE_PAYMENT`, `NON_PAYMENT`) and the expected business decision (`SAFE`, `VERIFY`, `DO_NOT_PAY`). The synthetic seed set is for repeatable development only; replace or supplement it with redacted real examples before claiming product metrics.
 
 ## Quick Start
 
