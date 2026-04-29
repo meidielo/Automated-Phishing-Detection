@@ -38,6 +38,7 @@ models/**/*.onnx
 models/**/*.pkl
 models/**/*.joblib
 models/**/*.h5
+models/payment_classifier/
 
 # ===== Runtime Artifacts =====
 *.log

@@ -54,9 +54,9 @@ Status is one of:
 | **Diagnostic refactor (audit #10)** — three duplicate API health-check implementations (`diagnose_apis.py`, `test_apis.py`, `/api/diagnose`) consolidated into `src/diagnostics/api_checks.py` with a `CheckResult` dataclass and registry-driven `run_all_checks()`. `test_apis.py` deleted. | `src/diagnostics/` (18 tests covering the SKIP path, registry shape, dispatch, and `summarize()`) |
 | **Eval harness with per-sample JSONL storage** — corpus-agnostic `src/eval/harness.py` and `scripts/run_eval.py`. Each run produces one JSONL row per sample (sample_id, true_label, predicted_verdict, per_analyzer_scores, calibration outcome, model_id, commit_sha, TP/FP/TN/FN) plus an aggregate `.summary.json` under `eval_runs/`. Two binary projections (permissive/strict) computed and stored separately. The first baseline against `tests/real_world_samples/` is committed. The harness is the deliverable; numbers are data. | `src/eval/harness.py`, `scripts/run_eval.py`, `eval_runs/` (27 tests covering schema, projection, aggregate arithmetic) |
 | **Payment Fraud Firewall** — payment-specific analyzer that turns invoice, supplier, BEC, and bank-detail-change email signals into `SAFE`, `VERIFY`, or `DO_NOT_PAY` business decisions. | `src/analyzers/payment_fraud.py`, wired into pipeline and decision overrides |
-| **Payment scam dataset tooling** — ignored local dataset scaffold, synthetic bank-detail-change seed set, redaction/audit path for real samples, ML JSONL export, and payment-decision eval reports. | `src/eval/payment_dataset.py`, `src/eval/payment_decision_eval.py`, `scripts/payment_dataset.py`, `scripts/payment_eval.py` |
+| **Payment scam dataset and ML tooling** — ignored local dataset scaffold, synthetic bank-detail-change seed set, redaction/audit path for real samples, ML JSONL export, payment-decision eval reports, and a TF-IDF + logistic regression train/test baseline. | `src/eval/payment_dataset.py`, `src/eval/payment_decision_eval.py`, `src/ml/payment_classifier.py`, `scripts/payment_dataset.py`, `scripts/payment_eval.py`, `scripts/payment_train.py` |
 | Docker Compose deployment (single orchestrator container today; multi-container split planned) | `docker-compose.yml`                            |
-| 1001 tests (44 modules) | unit + integration |
+| 1005 tests (45 modules) | unit + integration |
 
 ---
 

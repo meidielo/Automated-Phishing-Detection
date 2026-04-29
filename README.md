@@ -2,7 +2,7 @@
 
 Analyzes phishing emails through a 7-stage async pipeline with concurrent threat intelligence lookups, MITRE ATT&CK mapping across 12 sub-techniques, Sigma rule export, and STIX 2.1 IOC generation. Designed as analyst tooling, not autonomous detection.
 
-**Current eval (live APIs):** 0.90 recall, 1.00 precision, 0.95 F1 (permissive scoring) on a 22-sample corpus. TP=9, FP=0, TN=12, FN=1. Strict recall is 0.00: all phishing detections cluster in the SUSPICIOUS band (0.30-0.60), none crossing the LIKELY_PHISHING threshold. This is a score calibration problem, not a detection gap. 1001 automated tests. Per-sample data in [`eval_runs/`](eval_runs/). The corpus is project-curated and small; these numbers are a directional baseline, not production metrics. External corpus preparation now supports Nazario phishing plus Enron and SpamAssassin ham; public-corpus eval results should be generated locally from ignored data.
+**Current eval (live APIs):** 0.90 recall, 1.00 precision, 0.95 F1 (permissive scoring) on a 22-sample corpus. TP=9, FP=0, TN=12, FN=1. Strict recall is 0.00: all phishing detections cluster in the SUSPICIOUS band (0.30-0.60), none crossing the LIKELY_PHISHING threshold. This is a score calibration problem, not a detection gap. 1005 automated tests. Per-sample data in [`eval_runs/`](eval_runs/). The corpus is project-curated and small; these numbers are a directional baseline, not production metrics. External corpus preparation now supports Nazario phishing plus Enron and SpamAssassin ham; public-corpus eval results should be generated locally from ignored data.
 
 **What makes this project different** is not the detection numbers. It is the engineering arc documented in [`HISTORY.md`](HISTORY.md): fourteen disciplined audit cycles, seven stacked discipline gaps that took four audits to surface, a mechanical pre-cycle gate that enforces reading outcomes before narrative, and honest eval data that includes the cycles where the numbers were bad. The full story -- including how a 0.20 recall baseline was misdiagnosed for two cycles before the real cause was found -- is in the [writeup](docs/WRITEUP.md).
 
@@ -127,11 +127,13 @@ python scripts/payment_dataset.py validate --dataset data/payment_scam_dataset
 python scripts/payment_dataset.py export-eval-labels --dataset data/payment_scam_dataset
 python scripts/payment_dataset.py export-ml-jsonl --dataset data/payment_scam_dataset
 python scripts/payment_eval.py --dataset data/payment_scam_dataset
+python scripts/payment_train.py --dataset data/payment_scam_dataset
 ```
 
 The payment dataset records both the generic label (`PAYMENT_SCAM`, `LEGITIMATE_PAYMENT`, `NON_PAYMENT`) and the expected business decision (`SAFE`, `VERIFY`, `DO_NOT_PAY`). The synthetic seed set is for repeatable development only; replace or supplement it with redacted real examples before claiming product metrics.
 The redaction tool pseudonymizes email and URL domains, normalizes obvious payment identifiers, removes non-text attachments, and audits the result using non-sensitive fingerprints. Manually review the redacted `.eml` before labeling because names and business context can still need human cleanup.
 `scripts/payment_eval.py` writes JSON, CSV, and Markdown reports that compare expected vs predicted `SAFE`, `VERIFY`, and `DO_NOT_PAY` decisions.
+`scripts/payment_train.py` trains and tests a TF-IDF + logistic regression baseline from the ML JSONL export, writing ignored model artifacts under `models/payment_classifier/`.
 
 ## Quick Start
 
@@ -291,7 +293,7 @@ The static Sigma rule library in [`sigma_rules/`](sigma_rules/) ships hand-writt
 
 ## Testing
 
-The test suite has **1001 tests across 44 modules** (unit + integration), exercising every analyzer, the decision engine override rules (including the cycle 7 ordering fix that catches pure-text BEC), the cross-analyzer calibration pass (ADR 0001) with explicit cap-ceiling tests, the persistent email_id lookup index (ADR 0002) with cross-restart smoking-gun tests, scoring confidence capping, IOC export, the Sigma exporter, the URL reputation dead-domain confidence downgrade, credential encryption migration, the LLM determinism contract, the payment-fraud dataset/eval workflow, the body_html sanitizer with hostile XSS payloads, the data retention purge, and the web security middleware (bearer auth, SSRF guard, security headers). CI runs the full suite on every push and PR against a fresh checkout from the hash-pinned lock file. CI-bites verified by deliberate-red sanity check on a throwaway branch.
+The test suite has **1005 tests across 45 modules** (unit + integration), exercising every analyzer, the decision engine override rules (including the cycle 7 ordering fix that catches pure-text BEC), the cross-analyzer calibration pass (ADR 0001) with explicit cap-ceiling tests, the persistent email_id lookup index (ADR 0002) with cross-restart smoking-gun tests, scoring confidence capping, IOC export, the Sigma exporter, the URL reputation dead-domain confidence downgrade, credential encryption migration, the LLM determinism contract, the payment-fraud dataset/eval/train workflow, the body_html sanitizer with hostile XSS payloads, the data retention purge, and the web security middleware (bearer auth, SSRF guard, security headers). CI runs the full suite on every push and PR against a fresh checkout from the hash-pinned lock file. CI-bites verified by deliberate-red sanity check on a throwaway branch.
 
 ```bash
 # Run all tests
