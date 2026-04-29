@@ -105,10 +105,34 @@ def _reservoir_sample(
 
 
 def _message_as_bytes(message: mailbox.mboxMessage) -> bytes:
+    utf8_policy = policy.default.clone(utf8=True)
+    for email_policy in (policy.SMTPUTF8, utf8_policy, policy.compat32):
+        try:
+            return message.as_bytes(policy=email_policy)
+        except (AttributeError, TypeError, UnicodeEncodeError):
+            continue
     try:
-        return message.as_bytes(policy=policy.default)
-    except TypeError:
         return message.as_bytes()
+    except (AttributeError, TypeError, UnicodeEncodeError):
+        return _fallback_message_bytes(message)
+
+
+def _fallback_message_bytes(message: mailbox.mboxMessage) -> bytes:
+    lines = [f"{key}: {value}" for key, value in message.items()]
+    lines.append("")
+    payload = message.get_payload()
+    if isinstance(payload, list):
+        for part in payload:
+            if hasattr(part, "as_bytes"):
+                try:
+                    lines.append(part.as_bytes(policy=policy.SMTPUTF8).decode("utf-8", "replace"))
+                except Exception:
+                    lines.append(str(part.get_payload() if hasattr(part, "get_payload") else part))
+            else:
+                lines.append(str(part))
+    elif payload is not None:
+        lines.append(str(payload))
+    return "\n".join(lines).encode("utf-8", "surrogateescape")
 
 
 def iter_nazario_candidates(corpora_dir: Path, max_bytes: int = DEFAULT_MAX_BYTES) -> Iterator[CorpusCandidate]:

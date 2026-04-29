@@ -5,7 +5,7 @@ import mailbox
 from email.message import EmailMessage
 from pathlib import Path
 
-from src.eval.corpus_prepare import prepare_corpus
+from src.eval.corpus_prepare import _message_as_bytes, prepare_corpus
 
 
 def _message(subject: str, body: str, sender: str = "sender@example.com") -> EmailMessage:
@@ -159,3 +159,17 @@ def test_prepare_corpus_clean_output_removes_stale_files(tmp_path: Path):
     )
 
     assert not stale.exists()
+
+
+def test_mbox_message_serializer_handles_utf8_payload_edge_case():
+    msg = mailbox.mboxMessage()
+    msg["From"] = "phish@example.com"
+    msg["To"] = "victim@example.com"
+    msg["Subject"] = "Verification"
+    msg.set_type("multipart/mixed")
+    msg.set_payload(["non-ascii payload: akun diverifikasi \u2713"])
+
+    payload = _message_as_bytes(msg)
+
+    assert isinstance(payload, bytes)
+    assert b"non-ascii payload" in payload
