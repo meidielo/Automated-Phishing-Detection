@@ -104,6 +104,7 @@ Validate and export generic eval labels:
 python scripts/payment_dataset.py validate --dataset data/payment_scam_dataset
 python scripts/payment_dataset.py export-eval-labels --dataset data/payment_scam_dataset
 python scripts/payment_dataset.py export-ml-jsonl --dataset data/payment_scam_dataset
+python scripts/payment_dataset.py readiness --dataset data/payment_scam_dataset
 python scripts/payment_eval.py --dataset data/payment_scam_dataset
 python scripts/payment_train.py --dataset data/payment_scam_dataset
 ```
@@ -120,6 +121,10 @@ experiments.
 the exported ML JSONL. It writes ignored model artifacts and metrics under
 `models/payment_classifier/`. Treat synthetic-only accuracy as a plumbing check,
 not a production metric.
+
+`readiness` is the honesty check. It reports whether the dataset is still
+synthetic-only and whether non-synthetic samples are PII-free, balanced across
+payment decisions, and assigned to train, validation, and test splits.
 
 Seed the first reproducible development set:
 

@@ -50,6 +50,8 @@ class URLDetonationAnalyzer:
         timeout_ms: int = PAGE_TIMEOUT_MS,
         max_urls: int = MAX_URLS_TO_DETONATE,
         user_agent: Optional[str] = None,
+        browser_ws_endpoint: Optional[str] = None,
+        browser_cdp_endpoint: Optional[str] = None,
     ):
         self.timeout_ms = timeout_ms
         self.max_urls = max_urls
@@ -58,6 +60,8 @@ class URLDetonationAnalyzer:
             "AppleWebKit/537.36 (KHTML, like Gecko) "
             "Chrome/120.0.0.0 Safari/537.36"
         )
+        self.browser_ws_endpoint = browser_ws_endpoint or os.getenv("PLAYWRIGHT_WS_ENDPOINT", "").strip()
+        self.browser_cdp_endpoint = browser_cdp_endpoint or os.getenv("BROWSER_CDP_ENDPOINT", "").strip()
         self._browser = None
         self._playwright = None
 
@@ -69,19 +73,32 @@ class URLDetonationAnalyzer:
         try:
             from playwright.async_api import async_playwright
             self._playwright = await async_playwright().start()
-            self._browser = await self._playwright.chromium.launch(
-                headless=True,
-                args=[
-                    "--no-sandbox",
-                    "--disable-dev-shm-usage",
-                    "--disable-gpu",
-                    "--disable-extensions",
-                    "--disable-background-networking",
-                    "--disable-default-apps",
-                    "--disable-sync",
-                ],
-            )
-            logger.info("URL detonation browser launched (Chromium headless)")
+            if self.browser_ws_endpoint:
+                self._browser = await self._playwright.chromium.connect(
+                    self.browser_ws_endpoint,
+                    timeout=self.timeout_ms,
+                )
+                logger.info("URL detonation connected to remote Playwright browser sandbox")
+            elif self.browser_cdp_endpoint:
+                self._browser = await self._playwright.chromium.connect_over_cdp(
+                    self.browser_cdp_endpoint,
+                    timeout=self.timeout_ms,
+                )
+                logger.info("URL detonation connected to remote CDP browser sandbox")
+            else:
+                self._browser = await self._playwright.chromium.launch(
+                    headless=True,
+                    args=[
+                        "--no-sandbox",
+                        "--disable-dev-shm-usage",
+                        "--disable-gpu",
+                        "--disable-extensions",
+                        "--disable-background-networking",
+                        "--disable-default-apps",
+                        "--disable-sync",
+                    ],
+                )
+                logger.info("URL detonation browser launched locally (Chromium headless)")
         except Exception as e:
             logger.error(f"Failed to launch browser: {e}")
             raise

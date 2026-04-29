@@ -3,11 +3,11 @@ Web security primitives for the FastAPI dashboard and API surface in main.py.
 
 Three independent pieces, all importable separately:
 
-1. `verify_bearer_token` — FastAPI dependency that enforces a bearer token
-   from the Authorization header against `PipelineConfig.analyst_api_token`.
-   Mirrors the same dependency in `src/feedback/feedback_api.py` (which
-   already protects the feedback router) so the perimeter is consistent
-   across both code paths.
+1. `TokenVerifier` - FastAPI dependency that enforces either
+   `Authorization: Bearer <token>` or a signed browser session cookie
+   created by `/login`. Session-cookie requests use SameSite cookies,
+   a double-submit CSRF token, and Origin/Referer checks for
+   state-changing methods.
 
 2. `add_security_headers_middleware` — installs middleware that attaches
    CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy,
@@ -22,17 +22,12 @@ These are the P0 items from the security audit. The threat model
 (`THREAT_MODEL.md` §6 R1, R3) tracks which residual risks they close.
 
 ═══════════════════════════════════════════════════════════════════════════
-CSRF TRIGGER CONDITION — read this before adding any browser session auth
+CSRF SESSION-AUTH CONTRACT
 ═══════════════════════════════════════════════════════════════════════════
 
-The current TokenVerifier accepts only `Authorization: Bearer <token>`.
-Browsers do NOT auto-attach Authorization headers to cross-origin requests,
-which is why the current perimeter is not exploitable via CSRF.
-
-If you EVER add cookie/session auth (the planned dashboard browser-session
-feature in ROADMAP.md), the CSRF threat reappears immediately because
-browsers DO auto-attach cookies to cross-origin requests. In that PR you
-must also ship CSRF protection in the same commit:
+TokenVerifier accepts cookie/session auth for browser dashboard users.
+Because browsers auto-attach cookies to cross-origin requests, session auth
+must keep these controls together:
 
     [ ] SameSite=Strict on the session cookie
     [ ] Secure flag on the session cookie
@@ -42,23 +37,34 @@ must also ship CSRF protection in the same commit:
     [ ] Origin / Referer header check on POST routes as defense in depth
     [ ] Tests that prove a forged cross-origin POST is rejected
 
-This checklist is the contract. Reviewers: block the session-auth PR until
-every box is ticked. Future-self: do not split this work across PRs — the
-session cookie and the CSRF middleware ship together or not at all.
+This checklist is the contract. Reviewers: block any future session-auth
+change that removes one of these controls.
 """
 from __future__ import annotations
 
 import ipaddress
+import base64
+import hashlib
+import hmac
+import json
 import logging
+import secrets
 import socket
+import time
 from typing import Optional
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, Header, HTTPException, status
+from fastapi import FastAPI, Header, HTTPException, Request, status
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
 logger = logging.getLogger(__name__)
+
+SESSION_COOKIE_NAME = "phishdetect_session"
+CSRF_COOKIE_NAME = "phishdetect_csrf"
+CSRF_HEADER_NAME = "x-csrf-token"
+SESSION_MAX_AGE_SECONDS = 8 * 60 * 60
+SAFE_METHODS = {"GET", "HEAD", "OPTIONS", "TRACE"}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -83,13 +89,61 @@ class TokenVerifier:
         """True iff a token is configured and enforcement is active."""
         return bool(self.expected_token)
 
-    async def __call__(self, authorization: Optional[str] = Header(None)) -> str:
+    def create_session_cookie(
+        self,
+        *,
+        now: Optional[int] = None,
+        max_age_seconds: int = SESSION_MAX_AGE_SECONDS,
+    ) -> str:
+        """Create a signed, expiring session cookie value."""
+        if not self.enabled:
+            raise RuntimeError("cannot create a session cookie without ANALYST_API_TOKEN")
+        issued_at = int(now if now is not None else time.time())
+        payload = {
+            "iat": issued_at,
+            "exp": issued_at + max_age_seconds,
+            "nonce": secrets.token_urlsafe(16),
+        }
+        payload_bytes = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        payload_b64 = _b64url_encode(payload_bytes)
+        signature = _sign(payload_b64.encode("ascii"), self.expected_token or "")
+        return f"{payload_b64}.{signature}"
+
+    def verify_session_cookie(self, value: Optional[str], *, now: Optional[int] = None) -> bool:
+        """Return True if a signed session cookie is valid and unexpired."""
+        if not self.enabled or not value or "." not in value:
+            return False
+        payload_b64, signature = value.rsplit(".", 1)
+        expected = _sign(payload_b64.encode("ascii"), self.expected_token or "")
+        if not hmac.compare_digest(signature, expected):
+            return False
+        try:
+            payload = json.loads(_b64url_decode(payload_b64).decode("utf-8"))
+        except (ValueError, json.JSONDecodeError):
+            return False
+        expires_at = payload.get("exp")
+        if not isinstance(expires_at, int):
+            return False
+        current = int(now if now is not None else time.time())
+        return current <= expires_at
+
+    @staticmethod
+    def create_csrf_token() -> str:
+        return secrets.token_urlsafe(32)
+
+    async def __call__(
+        self,
+        request: Request,
+        authorization: Optional[str] = Header(None),
+    ) -> str:
         """
         FastAPI dependency. Raises 401 on any failure.
 
         The behaviour is intentionally identical to
         `src/feedback/feedback_api.py::verify_bearer_token` so an analyst
-        configures one token and it works against both routers.
+        configures one token and it works against both routers. Browser
+        session-cookie auth is accepted too, with CSRF validation for
+        state-changing requests.
         """
         if not self.enabled:
             # If no token is configured, the caller must have explicitly
@@ -100,35 +154,98 @@ class TokenVerifier:
                 detail="API authentication is not configured on this server",
             )
 
-        if not authorization:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing authorization header",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+        if authorization:
+            parts = authorization.split()
+            if len(parts) != 2 or parts[0].lower() != "bearer":
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid authorization header format",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
 
-        parts = authorization.split()
-        if len(parts) != 2 or parts[0].lower() != "bearer":
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid authorization header format",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+            token = parts[1]
+            if token != self.expected_token:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid token",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
 
-        token = parts[1]
-        if token != self.expected_token:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+            return token
 
-        return token
+        session_cookie = request.cookies.get(SESSION_COOKIE_NAME)
+        if self.verify_session_cookie(session_cookie):
+            if request.method.upper() not in SAFE_METHODS:
+                _verify_csrf(request)
+            return "session"
+
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing authorization header or valid session cookie",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 2. Security headers middleware
 # ─────────────────────────────────────────────────────────────────────────────
+
+
+def _b64url_encode(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+
+def _b64url_decode(value: str) -> bytes:
+    padding = "=" * (-len(value) % 4)
+    return base64.urlsafe_b64decode((value + padding).encode("ascii"))
+
+
+def _sign(data: bytes, secret: str) -> str:
+    digest = hmac.new(secret.encode("utf-8"), data, hashlib.sha256).digest()
+    return _b64url_encode(digest)
+
+
+def _request_origin_tuple(request: Request) -> tuple[str, str]:
+    forwarded_proto = request.headers.get("x-forwarded-proto", "")
+    forwarded_host = request.headers.get("x-forwarded-host", "")
+    scheme = (forwarded_proto.split(",")[0].strip() or request.url.scheme).lower()
+    host = (
+        forwarded_host.split(",")[0].strip()
+        or request.headers.get("host")
+        or request.url.netloc
+    ).lower()
+    return scheme, host
+
+
+def _same_origin(request: Request, value: str) -> bool:
+    parsed = urlparse(value)
+    if not parsed.scheme or not parsed.netloc:
+        return False
+    expected_scheme, expected_host = _request_origin_tuple(request)
+    return parsed.scheme.lower() == expected_scheme and parsed.netloc.lower() == expected_host
+
+
+def _verify_csrf(request: Request) -> None:
+    header_token = request.headers.get(CSRF_HEADER_NAME)
+    cookie_token = request.cookies.get(CSRF_COOKIE_NAME)
+    if not header_token or not cookie_token or not hmac.compare_digest(header_token, cookie_token):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Missing or invalid CSRF token",
+        )
+
+    origin = request.headers.get("origin")
+    referer = request.headers.get("referer")
+    if origin:
+        if _same_origin(request, origin):
+            return
+    elif referer and _same_origin(request, referer):
+        return
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Missing or invalid Origin/Referer header",
+    )
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):

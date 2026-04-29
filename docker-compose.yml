@@ -1,9 +1,25 @@
 services:
+  browser-sandbox:
+    image: mcr.microsoft.com/playwright:v1.58.0-noble
+    container_name: phishing-browser-sandbox
+    command: ["npx", "playwright", "run-server", "--host", "0.0.0.0", "--port", "3000"]
+    init: true
+    shm_size: "1gb"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: unless-stopped
+    networks:
+      - browser-sandbox
+
   orchestrator:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: phishing-orchestrator
+    depends_on:
+      - browser-sandbox
     ports:
       - "8000:8000"
     env_file:
@@ -14,9 +30,13 @@ services:
       - DASHBOARD_PORT=8000
       - MAX_CONCURRENT_ANALYZERS=${MAX_CONCURRENT_ANALYZERS:-10}
       - ANALYSIS_PIPELINE_TIMEOUT_SECONDS=${ANALYSIS_PIPELINE_TIMEOUT_SECONDS:-120}
+      - PLAYWRIGHT_WS_ENDPOINT=ws://browser-sandbox:3000/
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
+    networks:
+      - default
+      - browser-sandbox
     restart: unless-stopped
     logging:
       driver: "json-file"
@@ -33,3 +53,7 @@ services:
       timeout: 10s
       start_period: 15s
       retries: 3
+
+networks:
+  browser-sandbox:
+    driver: bridge

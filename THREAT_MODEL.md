@@ -63,8 +63,8 @@ Four archetypes shape every other section.
                              │ IMAP/OAuth
                              ▼
    ┌─────────────────────────────────────────────────────┐
-   │ Pipeline host (Docker compose: single `orchestrator`│
-   │ container today; multi-container split planned)     │
+   │ Pipeline host (Docker compose: orchestrator plus     │
+   │ isolated browser-sandbox service)                   │
    │                                                     │
    │  TB2: Ingestion → Extraction → Analysis             │
    │                                                     │
@@ -139,7 +139,7 @@ Ordered by severity-given-likelihood. Each one is something the project delibera
 ### R1 — Feedback API authentication
 **Severity:** high (was high). **Likelihood:** low (was high if exposed).
 **Status: MITIGATED.**
-**Description:** All state-changing and information-disclosing endpoints in `main.py` (`/api/feedback`, `/api/feedback/retrain`, `/api/accounts/*`, `/api/detonate-url`, `/api/diagnose`, `/api/system-status`, `/api/monitor/email/{id}`) now require a bearer token via `Depends(TokenVerifier)` from `src/security/web_security.py`. The same token (`ANALYST_API_TOKEN` env var) is enforced by the existing `src/feedback/feedback_api.py` router, so the perimeter is consistent across both code paths. Additionally, `run_server()` now defaults to `127.0.0.1` and **refuses to start** if the operator binds to a non-loopback host without setting `ANALYST_API_TOKEN`. Residual: HTML pages (`/`, `/monitor`, `/accounts`, `/dashboard`) are still loadable without auth — the API behind them is protected, but the templates load. Cookie/session auth for browser users is a roadmap item.
+**Description:** All state-changing and information-disclosing endpoints in `main.py` (`/api/feedback`, `/api/feedback/retrain`, `/api/accounts/*`, `/api/detonate-url`, `/api/diagnose`, `/api/system-status`, `/api/monitor/email/{id}`, `/api/analyze/upload`, `/api/config`, `/api/monitor/alerts`) require `TokenVerifier`. API clients use bearer auth. Browser users authenticate through `/login`, which sets a signed HttpOnly session cookie plus a CSRF cookie; state-changing session-cookie requests require a matching `X-CSRF-Token` and same-origin Origin/Referer. The same token (`ANALYST_API_TOKEN` env var) is enforced by the existing `src/feedback/feedback_api.py` router. Additionally, `run_server()` defaults to `127.0.0.1` and refuses to start on a non-loopback host without `ANALYST_API_TOKEN`.
 
 ### R2 — Analyst is a single trust principal
 **Severity:** high. **Likelihood:** low (depends on operator).

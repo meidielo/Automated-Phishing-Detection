@@ -15,10 +15,13 @@ from pathlib import Path
 import pytest
 
 from src.automation.retention import (
+    FeedbackRetentionStats,
     RetentionStats,
     _parse_timestamp,
+    purge_feedback_db,
     purge_results_jsonl,
 )
+from src.feedback.database import DatabaseManager, FeedbackRecord, create_sqlite_url
 
 
 # ─── helpers ─────────────────────────────────────────────────────────────────
@@ -267,3 +270,112 @@ class TestStatsObject:
             bytes_before=100, bytes_after=50,
         )
         assert stats.total_seen == 10
+
+    def test_feedback_total_seen(self):
+        stats = FeedbackRetentionStats(
+            path="x",
+            cutoff=datetime.now(timezone.utc),
+            kept=3,
+            dropped=2,
+            keep_recent=1,
+            dry_run=False,
+        )
+        assert stats.total_seen == 5
+
+
+class TestFeedbackDbRetention:
+    async def _seed_feedback_db(self, db_path: Path, rows: list[tuple[str, datetime]]):
+        db = DatabaseManager(create_sqlite_url(str(db_path)), echo=False)
+        await db.initialize()
+        await db.create_tables()
+        async with db.async_session_maker() as session:
+            for email_id, submitted_at in rows:
+                session.add(FeedbackRecord(
+                    email_id=email_id,
+                    original_verdict="SUSPICIOUS",
+                    correct_label="CLEAN",
+                    analyst_notes="unit test",
+                    feature_vector="{}",
+                    submitted_at=submitted_at,
+                ))
+            await session.commit()
+        await db.close()
+
+    async def _feedback_ids(self, db_path: Path) -> list[str]:
+        from sqlalchemy import select
+
+        db = DatabaseManager(create_sqlite_url(str(db_path)), echo=False)
+        await db.initialize()
+        async with db.async_session_maker() as session:
+            result = await session.execute(
+                select(FeedbackRecord).order_by(FeedbackRecord.email_id)
+            )
+            ids = [record.email_id for record in result.scalars().all()]
+        await db.close()
+        return ids
+
+    @pytest.mark.asyncio
+    async def test_missing_feedback_db_returns_zero_stats(self, tmp_path):
+        path = tmp_path / "feedback.db"
+
+        stats = await purge_feedback_db(path, max_age_days=30)
+
+        assert stats.kept == 0
+        assert stats.dropped == 0
+        assert not path.exists()
+
+    @pytest.mark.asyncio
+    async def test_drops_old_feedback_records(self, tmp_path):
+        now = datetime(2026, 4, 14, 12, 0, 0)
+        db_path = tmp_path / "feedback.db"
+        await self._seed_feedback_db(db_path, [
+            ("old-1", now - timedelta(days=60)),
+            ("old-2", now - timedelta(days=31)),
+            ("new-1", now - timedelta(days=2)),
+        ])
+
+        stats = await purge_feedback_db(db_path, max_age_days=30, now=now)
+
+        assert stats.kept == 1
+        assert stats.dropped == 2
+        assert await self._feedback_ids(db_path) == ["new-1"]
+
+    @pytest.mark.asyncio
+    async def test_keep_recent_preserves_newest_old_feedback(self, tmp_path):
+        now = datetime(2026, 4, 14, 12, 0, 0)
+        db_path = tmp_path / "feedback.db"
+        await self._seed_feedback_db(db_path, [
+            ("oldest", now - timedelta(days=90)),
+            ("middle", now - timedelta(days=60)),
+            ("newest-old", now - timedelta(days=45)),
+        ])
+
+        stats = await purge_feedback_db(
+            db_path,
+            max_age_days=30,
+            now=now,
+            keep_recent=1,
+        )
+
+        assert stats.kept == 1
+        assert stats.dropped == 2
+        assert await self._feedback_ids(db_path) == ["newest-old"]
+
+    @pytest.mark.asyncio
+    async def test_dry_run_does_not_delete_feedback(self, tmp_path):
+        now = datetime(2026, 4, 14, 12, 0, 0)
+        db_path = tmp_path / "feedback.db"
+        await self._seed_feedback_db(db_path, [
+            ("old", now - timedelta(days=90)),
+            ("new", now - timedelta(days=1)),
+        ])
+
+        stats = await purge_feedback_db(
+            db_path,
+            max_age_days=30,
+            now=now,
+            dry_run=True,
+        )
+
+        assert stats.dropped == 1
+        assert await self._feedback_ids(db_path) == ["new", "old"]

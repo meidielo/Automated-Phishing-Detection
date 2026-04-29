@@ -140,21 +140,21 @@ The unit tests in `tests/unit/` use a small set of hand-crafted emails that exis
 
 ## 4. Current honest answer
 
-As of this commit:
+As of commit `c459237`:
 
-- **External corpus preparation is implemented.** Nazario phishing mboxes, Enron sent-mail ham, and SpamAssassin ham can now be staged into a labeled `.eml` corpus with reproducible sampling.
-- **No full public-corpus evaluation number is committed.** The numbers above are *targets*, not reported results.
+- **External corpus preparation is implemented.** Nazario phishing mboxes, Enron sent-mail ham, and SpamAssassin ham can be staged into a labeled `.eml` corpus with reproducible sampling.
+- **A public-corpus smoke baseline has been run.** A 15-sample remote run used 5 Nazario phishing emails, 5 Enron ham emails, and 5 SpamAssassin ham emails. It produced permissive TP=5, FP=2, TN=8, FN=0, precision=0.714, recall=1.000, F1=0.833, accuracy=0.867. Strict scoring produced TP=0, FP=0, TN=10, FN=5, F1=0.000, accuracy=0.667.
+- **Failure reports exist for that smoke run.** Permissive failures: 2 false positives. Strict failures: 5 false negatives caused by phishing detections staying below the strict LIKELY_PHISHING threshold.
+- **This is not a production metric.** A 125-sample run was attempted but exceeded 30 minutes with live analysis enabled. The 15-sample run is a reproducibility and plumbing baseline, not evidence of deployment-quality precision or recall.
 - **Unit tests measure code correctness, not detection quality.** They are necessary, not sufficient.
-- **Manual verification** has been done on the small sample set in `tests/real_world_samples/` and `tests/sample_emails/`. Those are smoke tests, not evaluation.
-- **The eval harness is built, but corpus results must be regenerated locally.** Until a generated run exists for the chosen public-corpus slice, any precision/recall claim from that corpus is suspect and should be challenged.
 
-This is the right answer to give a reviewer: "we have a methodology, a preparation script, and an eval harness, but corpus metrics need a fresh run from the raw ignored data." It is wrong to publish made-up numbers and worse to publish numbers from a corpus that overlaps the test set.
+The right reviewer answer is now: "we have the methodology, corpus prep, eval harness, failure inspection, and a small public-corpus smoke baseline. Larger public-corpus metrics still need a longer controlled run from ignored raw data."
 
 ---
 
-## 5. When numbers exist
+## 5. Next Evaluation Pass
 
-When public-corpus runs produce stable real numbers, this section will be filled in with:
+The next public-corpus run should capture:
 
 - Date of evaluation run
 - Commit SHA
@@ -163,6 +163,4 @@ When public-corpus runs produce stable real numbers, this section will be filled
 - Per-analyzer metrics table
 - ATT&CK technique recall table
 - Latency percentiles
-- Diff vs. previous baseline (regressions called out by name)
-
-Until then, it is intentionally blank. **Do not fill this section in with synthetic numbers.**
+- Diff vs. previous baseline, with regressions called out by name

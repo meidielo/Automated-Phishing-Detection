@@ -7,6 +7,7 @@ fraud and BEC need business-decision labels, not only PHISHING/CLEAN.
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import csv
 import hashlib
 import json
@@ -134,6 +135,25 @@ class RedactionSummary:
 class MLExportSummary:
     output_path: Path
     row_count: int
+
+
+@dataclass(frozen=True)
+class DatasetReadinessReport:
+    dataset_dir: Path
+    row_count: int
+    by_source_type: dict[str, int]
+    by_label: dict[str, int]
+    by_payment_decision: dict[str, int]
+    by_split: dict[str, int]
+    realish_count: int
+    pii_free_realish_count: int
+    errors: list[str]
+    warnings: list[str]
+    recommendations: list[str]
+
+    @property
+    def ready_for_product_metrics(self) -> bool:
+        return not self.errors and self.realish_count > 0 and not self.recommendations
 
 
 def _sha256(path: Path) -> str:
@@ -524,6 +544,82 @@ def validate_dataset(dataset_dir: Path = DEFAULT_DATASET_DIR) -> ValidationResul
         warnings.append("dataset has no labeled samples yet")
 
     return ValidationResult(errors=errors, warnings=warnings, row_count=len(rows))
+
+
+def summarize_dataset_readiness(
+    dataset_dir: Path = DEFAULT_DATASET_DIR,
+    *,
+    min_realish_samples: int = 20,
+) -> DatasetReadinessReport:
+    """
+    Summarize whether the payment dataset is credible beyond synthetic tests.
+
+    Synthetic samples are useful for ML plumbing and regression tests, but
+    they are not enough for product claims. This report makes that visible
+    without committing private emails or raw corpora.
+    """
+    dataset_dir = Path(dataset_dir)
+    validation = validate_dataset(dataset_dir)
+    rows = _read_labels(dataset_dir / LABELS_CSV) if (dataset_dir / LABELS_CSV).exists() else []
+
+    by_source_type = Counter(row.get("source_type", "") or "missing" for row in rows)
+    by_label = Counter(row.get("label", "") or "missing" for row in rows)
+    by_payment_decision = Counter(row.get("payment_decision", "") or "missing" for row in rows)
+    by_split = Counter(row.get("split", "") or "missing" for row in rows)
+
+    realish_source_types = {"real", "redacted", "internal", "public"}
+    realish_rows = [
+        row for row in rows
+        if row.get("source_type") in realish_source_types
+    ]
+    pii_free_realish_count = sum(
+        1
+        for row in realish_rows
+        if row.get("contains_real_pii", "").strip().lower() == "no"
+    )
+
+    recommendations: list[str] = []
+    if not rows:
+        recommendations.append("Add labeled payment samples before training ML baselines.")
+    if not realish_rows:
+        recommendations.append(
+            "Add redacted real/public/internal payment examples before reporting product metrics."
+        )
+    elif len(realish_rows) < min_realish_samples:
+        recommendations.append(
+            f"Add at least {min_realish_samples - len(realish_rows)} more non-synthetic samples "
+            f"to reach the minimum review set of {min_realish_samples}."
+        )
+    if realish_rows and pii_free_realish_count != len(realish_rows):
+        recommendations.append(
+            "Mark non-synthetic samples contains_real_pii=no only after redaction audit passes."
+        )
+
+    missing_decisions = sorted(ALLOWED_DECISIONS - set(by_payment_decision))
+    if missing_decisions:
+        recommendations.append(
+            "Add examples for missing payment decisions: " + ", ".join(missing_decisions)
+        )
+
+    missing_splits = sorted({"train", "validation", "test"} - set(by_split))
+    if rows and missing_splits:
+        recommendations.append(
+            "Assign at least one sample to each core split: " + ", ".join(missing_splits)
+        )
+
+    return DatasetReadinessReport(
+        dataset_dir=dataset_dir,
+        row_count=len(rows),
+        by_source_type=dict(sorted(by_source_type.items())),
+        by_label=dict(sorted(by_label.items())),
+        by_payment_decision=dict(sorted(by_payment_decision.items())),
+        by_split=dict(sorted(by_split.items())),
+        realish_count=len(realish_rows),
+        pii_free_realish_count=pii_free_realish_count,
+        errors=validation.errors,
+        warnings=validation.warnings,
+        recommendations=recommendations,
+    )
 
 
 def _collect_value_error(
@@ -969,6 +1065,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ml_parser.add_argument("--output", type=Path, default=None)
     ml_parser.add_argument("--allow-pii", action="store_true", help="Allow export of rows not marked PII-free")
 
+    readiness_parser = subparsers.add_parser(
+        "readiness",
+        help="Summarize dataset balance, source quality, and real-sample readiness",
+    )
+    readiness_parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET_DIR)
+    readiness_parser.add_argument("--min-realish-samples", type=int, default=20)
+    readiness_parser.add_argument("--json", action="store_true", help="Print machine-readable JSON")
+
     return parser
 
 
@@ -1066,6 +1170,45 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(f"Wrote ML JSONL: {summary.output_path}")
         print(f"  rows: {summary.row_count}")
         return 0
+
+    if args.command == "readiness":
+        report = summarize_dataset_readiness(
+            args.dataset,
+            min_realish_samples=args.min_realish_samples,
+        )
+        if args.json:
+            payload = {
+                "dataset_dir": str(report.dataset_dir),
+                "row_count": report.row_count,
+                "by_source_type": report.by_source_type,
+                "by_label": report.by_label,
+                "by_payment_decision": report.by_payment_decision,
+                "by_split": report.by_split,
+                "realish_count": report.realish_count,
+                "pii_free_realish_count": report.pii_free_realish_count,
+                "errors": report.errors,
+                "warnings": report.warnings,
+                "recommendations": report.recommendations,
+                "ready_for_product_metrics": report.ready_for_product_metrics,
+            }
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        else:
+            print(f"Dataset: {report.dataset_dir}")
+            print(f"Rows: {report.row_count}")
+            print(f"Source types: {report.by_source_type}")
+            print(f"Labels: {report.by_label}")
+            print(f"Payment decisions: {report.by_payment_decision}")
+            print(f"Splits: {report.by_split}")
+            print(f"Non-synthetic samples: {report.realish_count}")
+            print(f"PII-free non-synthetic samples: {report.pii_free_realish_count}")
+            for warning in report.warnings:
+                print(f"WARN: {warning}")
+            for error in report.errors:
+                print(f"ERROR: {error}")
+            for recommendation in report.recommendations:
+                print(f"RECOMMEND: {recommendation}")
+            print(f"Ready for product metrics: {report.ready_for_product_metrics}")
+        return 0 if not report.errors else 1
 
     parser.error(f"unknown command: {args.command}")
     return 2

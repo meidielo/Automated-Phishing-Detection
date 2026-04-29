@@ -136,27 +136,41 @@
 <script>
   // ── Auth: patch fetch for /api/ calls ─────────────────────────
   (function() {
-    var API_TOKEN = '{{API_TOKEN}}';
-    if (!API_TOKEN) return;
+    function readCookie(name) {
+      var parts = document.cookie ? document.cookie.split('; ') : [];
+      for (var i = 0; i < parts.length; i++) {
+        var pair = parts[i].split('=');
+        if (decodeURIComponent(pair[0]) === name) {
+          return decodeURIComponent(pair.slice(1).join('='));
+        }
+      }
+      return '';
+    }
 
     var _origFetch = window.fetch;
     window.fetch = function(url, opts) {
       opts = opts || {};
-      // Only add auth header for same-origin /api/ calls
       if (typeof url === 'string' && url.startsWith('/api/')) {
+        opts.credentials = opts.credentials || 'same-origin';
         opts.headers = opts.headers || {};
-        // Handle both Headers object and plain object
-        if (opts.headers instanceof Headers) {
-          if (!opts.headers.has('Authorization')) {
-            opts.headers.set('Authorization', 'Bearer ' + API_TOKEN);
-          }
-        } else {
-          if (!opts.headers['Authorization']) {
-            opts.headers['Authorization'] = 'Bearer ' + API_TOKEN;
+        var method = (opts.method || 'GET').toUpperCase();
+        if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+          var csrf = readCookie('phishdetect_csrf');
+          if (csrf) {
+            if (opts.headers instanceof Headers) {
+              opts.headers.set('X-CSRF-Token', csrf);
+            } else {
+              opts.headers['X-CSRF-Token'] = csrf;
+            }
           }
         }
       }
-      return _origFetch.call(window, url, opts);
+      return _origFetch.call(window, url, opts).then(function(response) {
+        if (response.status === 401 && typeof url === 'string' && url.startsWith('/api/')) {
+          window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname);
+        }
+        return response;
+      });
     };
   })();
 

@@ -8,6 +8,7 @@ Supports two modes:
 """
 import argparse
 import asyncio
+import html
 import json
 import logging
 import sys
@@ -18,7 +19,7 @@ from dotenv import load_dotenv
 load_dotenv(override=True)  # override=True so .env values win over empty system env vars
 
 from fastapi import Depends, FastAPI, HTTPException, UploadFile, File, Request, Query
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from uvicorn import run
 
 from src.config import PipelineConfig
@@ -29,6 +30,9 @@ from src.reporting.ioc_exporter import IOCExporter
 from src.reporting.sigma_exporter import SigmaExporter
 from src.reporting.dashboard import PhishingDashboard
 from src.security.web_security import (
+    CSRF_COOKIE_NAME,
+    SESSION_COOKIE_NAME,
+    SESSION_MAX_AGE_SECONDS,
     SSRFBlockedError,
     TokenVerifier,
     add_security_headers_middleware,
@@ -249,15 +253,129 @@ class PhishingDetectionApp:
         # without re-reading self.token_verifier on every request.
         require_token = self.token_verifier
 
+        def _has_valid_html_session(request: Request) -> bool:
+            if not self.token_verifier.enabled:
+                return True
+            return self.token_verifier.verify_session_cookie(
+                request.cookies.get(SESSION_COOKIE_NAME)
+            )
+
+        def _login_redirect(request: Request) -> RedirectResponse:
+            from urllib.parse import quote
+
+            target = request.url.path
+            if request.url.query:
+                target += "?" + request.url.query
+            return RedirectResponse(
+                url=f"/login?next={quote(target, safe='/?:=&')}",
+                status_code=303,
+            )
+
+        from starlette.middleware.base import BaseHTTPMiddleware
+
+        class HTMLAuthRedirectMiddleware(BaseHTTPMiddleware):
+            async def dispatch(self, request, call_next):
+                path = request.url.path
+                html_path = (
+                    path in {"/", "/status", "/monitor", "/accounts"}
+                    or path == "/dashboard"
+                    or path.startswith("/dashboard/")
+                )
+                if (
+                    request.method.upper() == "GET"
+                    and html_path
+                    and not path.startswith("/dashboard/api/")
+                    and not _has_valid_html_session(request)
+                ):
+                    return _login_redirect(request)
+                return await call_next(request)
+
+        app.add_middleware(HTMLAuthRedirectMiddleware)
+
         # ── Shared HTML fragment (auth, theme, scrollbar) ─────────
         # Loaded once at startup, token placeholder replaced per-request.
         _shared_html_raw = Path("./templates/_shared.html").read_text(encoding="utf-8")
 
         def _inject_shared(html: str) -> str:
             """Inject shared CSS/JS (auth, theme) before </head> in any page."""
-            token = self.token_verifier.expected_token or ""
-            fragment = _shared_html_raw.replace("{{API_TOKEN}}", token)
-            return html.replace("</head>", fragment + "\n</head>", 1)
+            return html.replace("</head>", _shared_html_raw + "\n</head>", 1)
+
+        def _login_success_redirect(next_path: str) -> RedirectResponse:
+            if not next_path.startswith("/") or next_path.startswith("//"):
+                next_path = "/dashboard"
+            return RedirectResponse(url=next_path, status_code=303)
+
+        def _render_login(next_path: str, error_message: str = "") -> HTMLResponse:
+            login_path = Path("./templates/login.html")
+            html_content = (
+                login_path.read_text(encoding="utf-8")
+                .replace("{{NEXT_PATH}}", html.escape(next_path, quote=True))
+                .replace("{{ERROR_MESSAGE}}", html.escape(error_message, quote=True))
+            )
+            status_code = 401 if error_message else 200
+            return HTMLResponse(content=_inject_shared(html_content), status_code=status_code)
+
+        def _is_secure_request(request: Request) -> bool:
+            forwarded_proto = request.headers.get("x-forwarded-proto", "")
+            scheme = (forwarded_proto.split(",")[0].strip() or request.url.scheme).lower()
+            return scheme == "https"
+
+        def _set_auth_cookies(response, request: Request) -> None:
+            session_cookie = self.token_verifier.create_session_cookie()
+            csrf_token = self.token_verifier.create_csrf_token()
+            secure_cookie = _is_secure_request(request)
+            response.set_cookie(
+                SESSION_COOKIE_NAME,
+                session_cookie,
+                max_age=SESSION_MAX_AGE_SECONDS,
+                httponly=True,
+                secure=secure_cookie,
+                samesite="strict",
+            )
+            response.set_cookie(
+                CSRF_COOKIE_NAME,
+                csrf_token,
+                max_age=SESSION_MAX_AGE_SECONDS,
+                httponly=False,
+                secure=secure_cookie,
+                samesite="strict",
+            )
+
+        @app.get("/login", response_class=HTMLResponse)
+        async def login_page(request: Request, next: str = "/dashboard"):
+            """Serve the dashboard login page."""
+            if _has_valid_html_session(request):
+                return _login_success_redirect(next)
+            return _render_login(next)
+
+        @app.post("/login")
+        async def login_submit(request: Request):
+            """Accept the analyst token and set browser session cookies."""
+            form = await request.form()
+            token = str(form.get("token", ""))
+            next_path = str(form.get("next", "/dashboard"))
+            if not self.token_verifier.enabled or token != self.token_verifier.expected_token:
+                return _render_login(next_path, "Invalid analyst token")
+            response = _login_success_redirect(next_path)
+            _set_auth_cookies(response, request)
+            return response
+
+        @app.post("/api/auth/login")
+        async def api_login(request: Request):
+            payload = await request.json()
+            token = str(payload.get("token", ""))
+            if not self.token_verifier.enabled or token != self.token_verifier.expected_token:
+                raise HTTPException(status_code=401, detail="Invalid analyst token")
+            response = JSONResponse({"status": "ok"})
+            _set_auth_cookies(response, request)
+            return response
+
+        @app.post("/api/auth/logout", dependencies=[Depends(require_token)])
+        async def api_logout():
+            response = JSONResponse({"status": "ok"})
+            response.delete_cookie(SESSION_COOKIE_NAME)
+            response.delete_cookie(CSRF_COOKIE_NAME)
+            return response
 
         @app.get("/", response_class=HTMLResponse)
         async def index():
@@ -267,7 +385,7 @@ class PhishingDetectionApp:
                 index_path.read_text(encoding="utf-8")
             ))
 
-        @app.post("/api/analyze/upload")
+        @app.post("/api/analyze/upload", dependencies=[Depends(require_token)])
         async def analyze_upload(file: UploadFile = File(...)):
             """
             Analyze an uploaded .eml file.
@@ -498,7 +616,7 @@ class PhishingDetectionApp:
                 status_path.read_text(encoding="utf-8")
             ))
 
-        @app.get("/api/config")
+        @app.get("/api/config", dependencies=[Depends(require_token)])
         async def get_config():
             """Get pipeline configuration (sanitized)."""
             return {
@@ -617,7 +735,7 @@ class PhishingDetectionApp:
                 logger.error(f"URL detonation failed: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail=str(e))
 
-        @app.get("/api/monitor/alerts")
+        @app.get("/api/monitor/alerts", dependencies=[Depends(require_token)])
         async def monitor_alerts(limit: int = 50):
             """Return recent alerts from the alert log file."""
             alert_path = Path("data/alerts.jsonl")
@@ -1225,8 +1343,10 @@ class PhishingDetectionApp:
                 "improvement": result.get("model_improvement"),
             }
 
-        # Include dashboard routes
-        app.include_router(self.dashboard.router)
+        # Include dashboard routes. The HTMLAuthRedirectMiddleware turns
+        # unauthenticated browser page loads into /login redirects, while
+        # the dependency protects JSON endpoints and direct requests.
+        app.include_router(self.dashboard.router, dependencies=[Depends(require_token)])
 
         # ── Middleware: inject shared fragment into all HTML responses ──
         # This catches dashboard (Jinja-rendered) and any other HTML pages
@@ -1594,7 +1714,13 @@ Quick Start:
     # ── purge ────────────────────────────────────────────────────
     purge_parser = subparsers.add_parser(
         "purge",
-        help="Purge old rows from data/results.jsonl per the retention policy.",
+        help="Purge old rows from stored analysis and feedback data.",
+    )
+    purge_parser.add_argument(
+        "--target",
+        choices=["jsonl", "feedback", "all"],
+        default="jsonl",
+        help="Data store to purge. Default preserves the legacy JSONL-only behavior.",
     )
     purge_parser.add_argument(
         "--older-than",
@@ -1607,6 +1733,17 @@ Quick Start:
         "--path",
         default="data/results.jsonl",
         help="Path to the JSONL file to purge (default: data/results.jsonl).",
+    )
+    purge_parser.add_argument(
+        "--feedback-db",
+        default="data/feedback.db",
+        help="Path to the feedback SQLite DB to purge.",
+    )
+    purge_parser.add_argument(
+        "--keep-recent-feedback",
+        type=int,
+        default=0,
+        help="Always keep this many newest feedback labels even if older than the cutoff.",
     )
     purge_parser.add_argument(
         "--strict",
@@ -1680,22 +1817,23 @@ Quick Start:
         app.run_server(host=args.host, port=args.port)
 
     elif args.command == "purge":
-        from src.automation.retention import purge_results_jsonl
+        from src.automation.retention import purge_feedback_db, purge_results_jsonl
         config = PipelineConfig.from_env()
         max_age = args.older_than if args.older_than is not None else config.data_retention_days
 
-        if args.dry_run:
+        if args.target in ("jsonl", "all") and args.dry_run:
             # Dry run: copy the file to a tempfile, purge that, report stats
             import shutil, tempfile
             src_path = Path(args.path)
             if not src_path.exists():
-                print(f"No file at {src_path} — nothing to purge.")
-                return
+                print(f"No file at {src_path} - nothing to purge.")
+                src_path = None
             with tempfile.NamedTemporaryFile(
                 mode="w", suffix=".jsonl", delete=False
             ) as tmp:
                 tmp_path = Path(tmp.name)
-            shutil.copy2(src_path, tmp_path)
+            if src_path is not None:
+                shutil.copy2(src_path, tmp_path)
             try:
                 stats = purge_results_jsonl(
                     tmp_path,
@@ -1710,7 +1848,7 @@ Quick Start:
                 print(f"  bytes:       {stats.bytes_before} -> {stats.bytes_after}")
             finally:
                 tmp_path.unlink(missing_ok=True)
-        else:
+        elif args.target in ("jsonl", "all"):
             stats = purge_results_jsonl(
                 args.path,
                 max_age_days=max_age,
@@ -1722,6 +1860,20 @@ Quick Start:
             print(f"  dropped:     {stats.dropped}")
             print(f"  unparseable: {stats.unparseable}")
             print(f"  bytes:       {stats.bytes_before} -> {stats.bytes_after}")
+
+        if args.target in ("feedback", "all"):
+            feedback_stats = asyncio.run(purge_feedback_db(
+                args.feedback_db,
+                max_age_days=max_age,
+                keep_recent=args.keep_recent_feedback,
+                dry_run=args.dry_run,
+            ))
+            prefix = "[DRY RUN] " if args.dry_run else ""
+            print(f"{prefix}Feedback DB {feedback_stats.path}")
+            print(f"  cutoff:      {feedback_stats.cutoff.isoformat()}")
+            print(f"  keep recent: {feedback_stats.keep_recent}")
+            print(f"  kept:        {feedback_stats.kept}")
+            print(f"  dropped:     {feedback_stats.dropped}")
 
     else:
         if len(sys.argv) == 1:

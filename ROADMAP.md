@@ -55,8 +55,12 @@ Status is one of:
 | **Eval harness with per-sample JSONL storage** — corpus-agnostic `src/eval/harness.py` and `scripts/run_eval.py`. Each run produces one JSONL row per sample (sample_id, true_label, predicted_verdict, per_analyzer_scores, calibration outcome, model_id, commit_sha, TP/FP/TN/FN) plus an aggregate `.summary.json` under `eval_runs/`. Two binary projections (permissive/strict) computed and stored separately. The first baseline against `tests/real_world_samples/` is committed. The harness is the deliverable; numbers are data. | `src/eval/harness.py`, `scripts/run_eval.py`, `eval_runs/` (27 tests covering schema, projection, aggregate arithmetic) |
 | **Payment Fraud Firewall** — payment-specific analyzer that turns invoice, supplier, BEC, and bank-detail-change email signals into `SAFE`, `VERIFY`, or `DO_NOT_PAY` business decisions. | `src/analyzers/payment_fraud.py`, wired into pipeline and decision overrides |
 | **Payment scam dataset and ML tooling** — ignored local dataset scaffold, synthetic bank-detail-change seed set, redaction/audit path for real samples, ML JSONL export, payment-decision eval reports, and a TF-IDF + logistic regression train/test baseline. | `src/eval/payment_dataset.py`, `src/eval/payment_decision_eval.py`, `src/ml/payment_classifier.py`, `scripts/payment_dataset.py`, `scripts/payment_eval.py`, `scripts/payment_train.py` |
-| Docker Compose deployment (single orchestrator container today; multi-container split planned) | `docker-compose.yml`                            |
-| 1005 tests (45 modules) | unit + integration |
+| **Payment dataset readiness report** - counts source types, labels, payment decisions, and splits, and warns when metrics are synthetic-only. | `scripts/payment_dataset.py readiness`, `src/eval/payment_dataset.py` |
+| **Public-corpus smoke eval baseline** - 15-sample Nazario/Enron/SpamAssassin run on commit `c459237`, with permissive and strict failure reports generated from ignored corpora. | `docs/EVALUATION.md`, `scripts/eval_inspect_failures.py` |
+| **Feedback DB retention policy** - `purge --target feedback|all` purges old SQLAlchemy feedback labels by age while optionally keeping N newest records. | `src/automation/retention.py`, `main.py purge` |
+| **Browser session auth for dashboard** - `/login` sets signed session and CSRF cookies; the same `TokenVerifier` accepts bearer or browser session auth. | `src/security/web_security.py`, `main.py`, `templates/login.html`, `templates/_shared.html` |
+| **Multi-container Docker Compose browser split** - URL detonation connects to a separate `browser-sandbox` Playwright service via `PLAYWRIGHT_WS_ENDPOINT`. | `docker-compose.yml`, `docker-compose.production.yml`, `src/analyzers/url_detonation.py` |
+| 1025 tests (47 test modules) | unit + integration |
 
 ---
 
@@ -64,23 +68,14 @@ Status is one of:
 
 Ordered by intended sequence, not priority.
 
-### Feedback DB retention policy
-The `purge` subcommand (shipped) handles `data/results.jsonl`. The SQLAlchemy feedback DB (`data/feedback.db`) still accumulates analyst labels indefinitely. Add equivalent purge logic for it — keep N most recent labels OR purge by date — and wire it into the same `purge` command via `--target=jsonl|feedback|all`. Tracked separately because the feedback DB is the audit trail of analyst decisions and dropping rows there has different semantics from dropping log rows.
-
 ### Per-data-subject erasure (`purge --by-address`)
 GDPR Art. 17 right-to-erasure. Today, deleting a specific subject's data requires manual `grep` + edit. Add `python main.py purge --by-address <addr>` that walks both `results.jsonl` and the feedback DB and removes any row mentioning the address. Documented as P3 in `THREAT_MODEL.md` §6a.
 
-### Multi-container Docker Compose split
-Today the `docker-compose.yml` runs a single `orchestrator` container that holds the pipeline, dashboard, and Playwright headless browser. The threat model assumes (and `SECURITY.md` recommends) a separate `browser-sandbox` container on its own network namespace so a Chromium 0-day can't escape into the orchestrator. Splitting the compose file is a tracked hardening item — closes the gap between the threat model's stated isolation posture and what the compose actually deploys today.
-
-### Browser session auth for the HTML dashboard
-HTML pages (`/`, `/monitor`, `/accounts`, `/dashboard`) load without auth even though their `/api/*` calls are bearer-token protected. A browser user therefore sees an empty dashboard until they manually inject a token. Add cookie/session auth so a `/login` POST sets a session cookie that's accepted by the same `TokenVerifier`. Tracked partial — bearer auth shipped, session layer not.
+### Real redacted payment samples
+The payment dataset has tooling, synthetic seed data, readiness reporting, redaction, eval, and ML training. It still needs real redacted invoice, bank-change, remittance, and supplier-update samples before product metrics are credible. Target: 20 to 50 non-synthetic examples across `SAFE`, `VERIFY`, and `DO_NOT_PAY`.
 
 ### Audit trail for feedback labels
 Append-only log of who relabeled what. Closes residual risk **R2**. Required before the project is honest about being multi-analyst.
-
-### Public-corpus eval baseline
-The eval harness and corpus prep are shipped. The remaining work is to run the ignored public-corpus workflow from `docs/EVALUATION.md`, inspect failures, and record a fresh baseline summary without committing raw corpora.
 
 ### Sigma converter integration
 Pipe the static rule library through `sigmac` / `pysigma` in CI to validate rules against multiple SIEM backends (Splunk SPL, Elastic EQL, Sentinel KQL). Currently rules are hand-written and untested against a converter.

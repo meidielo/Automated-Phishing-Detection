@@ -59,7 +59,8 @@ docker compose -f docker-compose.production.yml up -d --build
 Check it's healthy:
 ```bash
 docker compose -f docker-compose.production.yml ps
-# Both containers should show "healthy" / "running"
+# cloudflared, orchestrator, and browser-sandbox should show "running";
+# orchestrator should become healthy.
 
 # Test locally
 docker exec phishing-orchestrator python -c \
@@ -67,6 +68,7 @@ docker exec phishing-orchestrator python -c \
 ```
 
 Visit your domain. You should see the dashboard.
+Use `/login` with `ANALYST_API_TOKEN` for browser access.
 
 ## Step 4: Verify API Keys Work
 

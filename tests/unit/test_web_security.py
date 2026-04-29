@@ -18,7 +18,10 @@ from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
 from src.security.web_security import (
+    CSRF_COOKIE_NAME,
+    CSRF_HEADER_NAME,
     DENY_NETWORKS,
+    SESSION_COOKIE_NAME,
     SSRFBlockedError,
     SSRFGuard,
     SecurityHeadersMiddleware,
@@ -31,6 +34,23 @@ from src.security.web_security import (
 
 
 class TestTokenVerifier:
+    @staticmethod
+    def _request(method: str = "GET", cookie: str = "", host: str = "testserver"):
+        from starlette.requests import Request
+
+        headers = [(b"host", host.encode("ascii"))]
+        if cookie:
+            headers.append((b"cookie", cookie.encode("ascii")))
+        return Request({
+            "type": "http",
+            "method": method,
+            "path": "/protected",
+            "headers": headers,
+            "scheme": "http",
+            "server": (host, 80),
+            "client": ("127.0.0.1", 12345),
+        })
+
     def test_disabled_when_no_token(self):
         v = TokenVerifier(None)
         assert not v.enabled
@@ -45,37 +65,122 @@ class TestTokenVerifier:
     def test_disabled_dependency_returns_503(self):
         v = TokenVerifier(None)
         with pytest.raises(Exception) as exc_info:
-            asyncio.run(v(authorization="Bearer secret"))
+            asyncio.run(v(self._request(), authorization="Bearer secret"))
         assert getattr(exc_info.value, "status_code", None) == 503
 
     def test_missing_header_rejected(self):
         v = TokenVerifier("secret")
         with pytest.raises(Exception) as exc_info:
-            asyncio.run(v(authorization=None))
+            asyncio.run(v(self._request(), authorization=None))
         assert getattr(exc_info.value, "status_code", None) == 401
 
     def test_malformed_header_rejected(self):
         v = TokenVerifier("secret")
         for bad in ("secret", "Basic secret", "Bearer", "Bearer  extra parts"):
             with pytest.raises(Exception) as exc_info:
-                asyncio.run(v(authorization=bad))
+                asyncio.run(v(self._request(), authorization=bad))
             assert getattr(exc_info.value, "status_code", None) == 401, f"failed for {bad!r}"
 
     def test_wrong_token_rejected(self):
         v = TokenVerifier("secret")
         with pytest.raises(Exception) as exc_info:
-            asyncio.run(v(authorization="Bearer wrong"))
+            asyncio.run(v(self._request(), authorization="Bearer wrong"))
         assert getattr(exc_info.value, "status_code", None) == 401
 
     def test_correct_token_accepted(self):
         v = TokenVerifier("secret")
-        result = asyncio.run(v(authorization="Bearer secret"))
+        result = asyncio.run(v(self._request(), authorization="Bearer secret"))
         assert result == "secret"
 
     def test_case_insensitive_bearer(self):
         v = TokenVerifier("secret")
-        result = asyncio.run(v(authorization="bearer secret"))
+        result = asyncio.run(v(self._request(), authorization="bearer secret"))
         assert result == "secret"
+
+    def test_session_cookie_accepted_for_get(self):
+        v = TokenVerifier("secret")
+        session_cookie = v.create_session_cookie()
+        request = self._request(cookie=f"{SESSION_COOKIE_NAME}={session_cookie}")
+
+        result = asyncio.run(v(request, authorization=None))
+
+        assert result == "session"
+
+    def test_expired_session_cookie_rejected(self):
+        v = TokenVerifier("secret")
+        session_cookie = v.create_session_cookie(now=1000, max_age_seconds=10)
+
+        assert not v.verify_session_cookie(session_cookie, now=1011)
+
+    def test_session_post_requires_csrf(self):
+        v = TokenVerifier("secret")
+        session_cookie = v.create_session_cookie()
+        request = self._request(
+            method="POST",
+            cookie=f"{SESSION_COOKIE_NAME}={session_cookie}",
+        )
+
+        with pytest.raises(Exception) as exc_info:
+            asyncio.run(v(request, authorization=None))
+
+        assert getattr(exc_info.value, "status_code", None) == 403
+
+    def test_session_post_accepts_csrf_and_same_origin(self):
+        v = TokenVerifier("secret")
+        session_cookie = v.create_session_cookie()
+        csrf_token = v.create_csrf_token()
+        from starlette.requests import Request
+
+        request = Request({
+            "type": "http",
+            "method": "POST",
+            "path": "/protected",
+            "headers": [
+                (b"host", b"testserver"),
+                (b"origin", b"http://testserver"),
+                (CSRF_HEADER_NAME.encode("ascii"), csrf_token.encode("ascii")),
+                (
+                    b"cookie",
+                    f"{SESSION_COOKIE_NAME}={session_cookie}; {CSRF_COOKIE_NAME}={csrf_token}".encode("ascii"),
+                ),
+            ],
+            "scheme": "http",
+            "server": ("testserver", 80),
+            "client": ("127.0.0.1", 12345),
+        })
+
+        result = asyncio.run(v(request, authorization=None))
+
+        assert result == "session"
+
+    def test_session_post_rejects_cross_origin(self):
+        v = TokenVerifier("secret")
+        session_cookie = v.create_session_cookie()
+        csrf_token = v.create_csrf_token()
+        from starlette.requests import Request
+
+        request = Request({
+            "type": "http",
+            "method": "POST",
+            "path": "/protected",
+            "headers": [
+                (b"host", b"testserver"),
+                (b"origin", b"http://evil.example"),
+                (CSRF_HEADER_NAME.encode("ascii"), csrf_token.encode("ascii")),
+                (
+                    b"cookie",
+                    f"{SESSION_COOKIE_NAME}={session_cookie}; {CSRF_COOKIE_NAME}={csrf_token}".encode("ascii"),
+                ),
+            ],
+            "scheme": "http",
+            "server": ("testserver", 80),
+            "client": ("127.0.0.1", 12345),
+        })
+
+        with pytest.raises(Exception) as exc_info:
+            asyncio.run(v(request, authorization=None))
+
+        assert getattr(exc_info.value, "status_code", None) == 403
 
 
 # ─── TokenVerifier integration with FastAPI ──────────────────────────────────

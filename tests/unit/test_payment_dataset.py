@@ -14,6 +14,7 @@ from src.eval.payment_dataset import (
     redact_eml,
     scan_redaction_findings,
     seed_synthetic_bank_change_dataset,
+    summarize_dataset_readiness,
     validate_dataset,
 )
 
@@ -287,3 +288,43 @@ def test_export_ml_jsonl_refuses_rows_not_marked_pii_free(tmp_path: Path):
 
     with pytest.raises(ValueError, match="contains_real_pii=no"):
         export_ml_jsonl(dataset)
+
+
+def test_readiness_flags_synthetic_only_dataset(tmp_path: Path):
+    dataset = tmp_path / "payment_scam_dataset_seed"
+    seed_synthetic_bank_change_dataset(
+        dataset_dir=dataset,
+        scam_count=2,
+        legit_count=2,
+        seed=7,
+        clean=True,
+    )
+
+    report = summarize_dataset_readiness(dataset, min_realish_samples=2)
+
+    assert report.row_count == 4
+    assert report.by_source_type == {"synthetic": 4}
+    assert report.realish_count == 0
+    assert not report.ready_for_product_metrics
+    assert any("redacted real/public/internal" in item for item in report.recommendations)
+
+
+def test_readiness_counts_redacted_realish_samples(tmp_path: Path):
+    dataset = init_dataset(tmp_path / "payment")
+    sample = _write_eml(tmp_path / "invoice.eml")
+    add_sample(
+        dataset_dir=dataset,
+        source=sample,
+        label="LEGITIMATE_PAYMENT",
+        payment_decision="SAFE",
+        scenario="legitimate_invoice",
+        source_type="redacted",
+        split="train",
+        contains_real_pii="no",
+    )
+
+    report = summarize_dataset_readiness(dataset, min_realish_samples=1)
+
+    assert report.realish_count == 1
+    assert report.pii_free_realish_count == 1
+    assert report.by_source_type["redacted"] == 1

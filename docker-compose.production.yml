@@ -1,4 +1,18 @@
 services:
+  browser-sandbox:
+    image: mcr.microsoft.com/playwright:v1.58.0-noble
+    container_name: phishing-browser-sandbox
+    command: ["npx", "playwright", "run-server", "--host", "0.0.0.0", "--port", "3000"]
+    init: true
+    shm_size: "1gb"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: unless-stopped
+    networks:
+      - browser-sandbox
+
   orchestrator:
     build:
       context: .
@@ -8,12 +22,15 @@ services:
     # to the Docker network. Nothing is exposed on the host's public IP.
     expose:
       - "8000"
+    depends_on:
+      - browser-sandbox
     env_file:
       - .env
     environment:
       - LOG_LEVEL=WARNING
       - DASHBOARD_PORT=8000
       - MAX_CONCURRENT_ANALYZERS=5
+      - PLAYWRIGHT_WS_ENDPOINT=ws://browser-sandbox:3000/
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
@@ -32,6 +49,7 @@ services:
       retries: 3
     networks:
       - tunnel
+      - browser-sandbox
 
   cloudflared:
     image: cloudflare/cloudflared:latest
@@ -48,4 +66,6 @@ services:
 
 networks:
   tunnel:
+    driver: bridge
+  browser-sandbox:
     driver: bridge

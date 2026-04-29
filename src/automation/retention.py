@@ -64,6 +64,22 @@ class RetentionStats:
         return self.kept + self.dropped + self.unparseable
 
 
+@dataclass
+class FeedbackRetentionStats:
+    """Summary of one feedback DB purge run."""
+
+    path: str
+    cutoff: datetime
+    kept: int
+    dropped: int
+    keep_recent: int
+    dry_run: bool
+
+    @property
+    def total_seen(self) -> int:
+        return self.kept + self.dropped
+
+
 def _parse_timestamp(value) -> Optional[datetime]:
     """
     Parse the `timestamp` field from a results.jsonl row.
@@ -217,4 +233,105 @@ def purge_results_jsonl(
         unparseable=unparseable,
         bytes_before=bytes_before,
         bytes_after=bytes_after,
+    )
+
+
+def _as_utc_naive(dt: datetime) -> datetime:
+    """Normalize a datetime for SQLite DateTime comparisons."""
+    if dt.tzinfo is not None:
+        return dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
+
+
+async def purge_feedback_db(
+    db_path: Union[str, Path],
+    max_age_days: int,
+    *,
+    now: Optional[datetime] = None,
+    keep_recent: int = 0,
+    dry_run: bool = False,
+) -> FeedbackRetentionStats:
+    """
+    Purge old analyst feedback labels from the SQLAlchemy feedback DB.
+
+    Only `feedback_records` are purged. Blocklists, allowlists, and retrain
+    history are operational audit state and are intentionally left alone.
+    """
+    if max_age_days < 0:
+        raise ValueError(f"max_age_days must be >= 0, got {max_age_days}")
+    if keep_recent < 0:
+        raise ValueError(f"keep_recent must be >= 0, got {keep_recent}")
+
+    target = Path(db_path)
+    cutoff = (now or datetime.now(timezone.utc)) - timedelta(days=max_age_days)
+    cutoff_for_db = _as_utc_naive(cutoff)
+
+    if not target.exists():
+        return FeedbackRetentionStats(
+            path=str(target),
+            cutoff=cutoff,
+            kept=0,
+            dropped=0,
+            keep_recent=keep_recent,
+            dry_run=dry_run,
+        )
+
+    from sqlalchemy import delete, desc, func, select
+
+    from src.feedback.database import (
+        DatabaseManager,
+        FeedbackRecord,
+        create_sqlite_url,
+    )
+
+    db = DatabaseManager(create_sqlite_url(str(target)), echo=False)
+    await db.initialize()
+    try:
+        async with db.async_session_maker() as session:
+            total = (
+                await session.execute(select(func.count(FeedbackRecord.id)))
+            ).scalar() or 0
+
+            keep_ids = []
+            if keep_recent:
+                keep_result = await session.execute(
+                    select(FeedbackRecord.id)
+                    .order_by(desc(FeedbackRecord.submitted_at), desc(FeedbackRecord.id))
+                    .limit(keep_recent)
+                )
+                keep_ids = list(keep_result.scalars().all())
+
+            old_filter = FeedbackRecord.submitted_at < cutoff_for_db
+            if keep_ids:
+                old_filter = old_filter & FeedbackRecord.id.not_in(keep_ids)
+
+            drop_count = (
+                await session.execute(
+                    select(func.count(FeedbackRecord.id)).where(old_filter)
+                )
+            ).scalar() or 0
+
+            if not dry_run and drop_count:
+                await session.execute(delete(FeedbackRecord).where(old_filter))
+                await session.commit()
+            elif not dry_run:
+                await session.commit()
+
+            kept = total - drop_count
+    finally:
+        await db.close()
+
+    action = "Scanned" if dry_run else "Purged"
+    logger.info(
+        "%s feedback DB %s: kept=%d dropped=%d keep_recent=%d dry_run=%s cutoff=%s",
+        action, target, kept, drop_count, keep_recent, dry_run, cutoff.isoformat(),
+    )
+
+    return FeedbackRetentionStats(
+        path=str(target),
+        cutoff=cutoff,
+        kept=kept,
+        dropped=drop_count,
+        keep_recent=keep_recent,
+        dry_run=dry_run,
     )
