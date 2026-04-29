@@ -5,10 +5,12 @@ This analyzer turns the phishing pipeline into a business decision guard:
 SAFE, VERIFY, or DO_NOT_PAY before money leaves the business.
 """
 import logging
+import os
 import re
 from dataclasses import asdict
 from email.utils import parseaddr
 from html import unescape
+from pathlib import Path
 from typing import Optional
 
 from src.extractors.header_analyzer import HeaderAnalyzer
@@ -24,6 +26,16 @@ from src.models import (
 
 
 logger = logging.getLogger(__name__)
+
+
+try:
+    from src.ml.payment_classifier import (
+        DEFAULT_MODEL_DIR as DEFAULT_PAYMENT_MODEL_DIR,
+        predict_payment_decision,
+    )
+except Exception:  # pragma: no cover - defensive fallback for minimal installs
+    DEFAULT_PAYMENT_MODEL_DIR = None
+    predict_payment_decision = None
 
 
 class PaymentFraudAnalyzer:
@@ -174,6 +186,15 @@ class PaymentFraudAnalyzer:
     )
     ABN_RE = re.compile(r"\babn\s*[:#-]?\s*((?:\d\s*){11})\b", re.IGNORECASE)
 
+    def __init__(self, payment_model_path: Optional[Path] = None) -> None:
+        default_model = (
+            DEFAULT_PAYMENT_MODEL_DIR / "payment_decision_model.joblib"
+            if DEFAULT_PAYMENT_MODEL_DIR is not None
+            else Path("models/payment_classifier/payment_decision_model.joblib")
+        )
+        configured = os.getenv("PAYMENT_DECISION_MODEL_PATH")
+        self.payment_model_path = Path(payment_model_path or configured or default_model)
+
     async def analyze(
         self,
         email: EmailObject,
@@ -248,6 +269,7 @@ class PaymentFraudAnalyzer:
                 invoice_attachments=invoice_attachments,
             )
             decision = self._decision_from_risk(risk_score, signals)
+            ml_decision = self._ml_decision(email, decision)
             verification_steps = self._verification_steps(decision, signals, fields)
             summary = self._summary(decision, signals, fields)
 
@@ -272,7 +294,7 @@ class PaymentFraudAnalyzer:
                 analyzer_name=analyzer_name,
                 risk_score=risk_score,
                 confidence=confidence,
-                details=self._analysis_to_details(analysis),
+                details=self._analysis_to_details(analysis, ml_decision=ml_decision),
             )
 
         except Exception as exc:
@@ -297,6 +319,55 @@ class PaymentFraudAnalyzer:
                 html_text,
             ])
         ).lower()
+
+    def _ml_text(self, email: EmailObject) -> str:
+        sections = [
+            f"Subject: {email.subject or ''}",
+            f"From: {email.from_display_name or ''} <{email.from_address or ''}>",
+        ]
+        if email.reply_to:
+            sections.append(f"Reply-To: {email.reply_to}")
+        if email.to_addresses:
+            sections.append("To: " + ", ".join(email.to_addresses))
+        body = "\n".join(
+            chunk.strip()
+            for chunk in [email.body_plain or "", re.sub(r"<[^>]+>", " ", email.body_html or "")]
+            if chunk.strip()
+        )
+        if body:
+            sections.append(f"Body:\n{body}")
+        return "\n\n".join(sections)
+
+    def _ml_decision(self, email: EmailObject, rules_decision: PaymentDecision) -> dict:
+        if predict_payment_decision is None:
+            return {"available": False, "reason": "payment_ml_not_importable"}
+        if not self.payment_model_path.exists():
+            return {
+                "available": False,
+                "reason": "model_not_found",
+                "model_path": str(self.payment_model_path),
+            }
+        try:
+            prediction = predict_payment_decision(
+                self._ml_text(email),
+                model_path=self.payment_model_path,
+            )
+        except Exception as exc:
+            logger.warning("Payment ML prediction failed: %s", exc)
+            return {
+                "available": False,
+                "reason": "prediction_failed",
+                "model_path": str(self.payment_model_path),
+            }
+        return {
+            "available": True,
+            "model_path": str(self.payment_model_path),
+            "prediction": prediction.decision,
+            "confidence": prediction.confidence,
+            "class_probabilities": prediction.class_probabilities,
+            "rules_decision": rules_decision.value,
+            "disagrees_with_rules": prediction.decision != rules_decision.value,
+        }
 
     def _extract_payment_fields(self, text: str) -> dict:
         amounts = self._unique(self.AMOUNT_RE.findall(text))
@@ -609,8 +680,13 @@ class PaymentFraudAnalyzer:
             return "Invoice context detected with low-risk signals only."
         return "No material payment scam indicators found."
 
-    def _analysis_to_details(self, analysis: PaymentFraudAnalysis) -> dict:
-        return {
+    def _analysis_to_details(
+        self,
+        analysis: PaymentFraudAnalysis,
+        *,
+        ml_decision: Optional[dict] = None,
+    ) -> dict:
+        details = {
             "decision": analysis.decision.value,
             "risk_score": analysis.risk_score,
             "confidence": analysis.confidence,
@@ -625,6 +701,9 @@ class PaymentFraudAnalyzer:
             "extracted_payment_fields": analysis.extracted_payment_fields,
             "verification_steps": analysis.verification_steps,
         }
+        if ml_decision is not None:
+            details["ml_decision"] = ml_decision
+        return details
 
     def _signal(
         self,

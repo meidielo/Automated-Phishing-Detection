@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 import pytest
 
 from src.analyzers.payment_fraud import PaymentFraudAnalyzer
+from src.eval.payment_dataset import seed_synthetic_bank_change_dataset
+from src.ml.payment_classifier import train_payment_classifier
 from src.models import AttachmentObject, EmailObject
 
 
@@ -164,3 +166,32 @@ async def test_risky_invoice_attachment_blocks_payment():
 
     assert result.details["decision"] == "DO_NOT_PAY"
     assert any(s["name"] == "dangerous_invoice_attachment" for s in result.details["signals"])
+
+
+@pytest.mark.asyncio
+async def test_payment_ml_decision_is_reported_when_model_exists(tmp_path):
+    dataset = tmp_path / "payment_scam_dataset_seed"
+    seed_synthetic_bank_change_dataset(
+        dataset_dir=dataset,
+        scam_count=10,
+        legit_count=10,
+        safe_count=10,
+        seed=1337,
+        clean=True,
+    )
+    metrics = train_payment_classifier(dataset_dir=dataset, output_dir=tmp_path / "model")
+    analyzer = PaymentFraudAnalyzer(payment_model_path=metrics.model_path)
+    email = make_email(
+        subject="Invoice INV-221",
+        body=(
+            "Invoice INV-221 matches purchase order PO-44. "
+            "No payment details have changed. Please process through normal approval."
+        ),
+    )
+
+    result = await analyzer.analyze(email)
+
+    assert result.details["ml_decision"]["available"] is True
+    assert result.details["ml_decision"]["prediction"] in {"DO_NOT_PAY", "SAFE", "VERIFY"}
+    assert result.details["ml_decision"]["rules_decision"] == result.details["decision"]
+    assert "class_probabilities" in result.details["ml_decision"]

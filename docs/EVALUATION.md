@@ -98,13 +98,16 @@ python scripts/eval_prepare_corpus.py \
   --seed 1337 \
   --clean-output
 
-# 2. Run the pipeline against every staged email.
+# 2. Train the generic public-corpus ML baseline.
+python scripts/phishing_train.py --corpus data/eval_corpus
+
+# 3. Run the pipeline against every staged email.
 python scripts/run_eval.py \
   --corpus data/eval_corpus \
   --labels data/eval_corpus/labels.json \
   --output eval_runs
 
-# 3. Inspect false positives, false negatives, and errors.
+# 4. Inspect false positives, false negatives, and errors.
 python scripts/eval_inspect_failures.py \
   --results eval_runs/RUN_ID.jsonl \
   --manifest data/eval_corpus/manifest.jsonl \
@@ -118,7 +121,7 @@ python scripts/eval_inspect_failures.py \
   --output data/eval_corpus/failure_report_strict
 ```
 
-`scripts/eval_prepare_corpus.py` writes a flat `.eml` directory, `labels.json` for `scripts/run_eval.py`, `labels.csv` for ML workflows, `manifest.jsonl` for source provenance, and `summary.json` for reproducibility. `scripts/run_eval.py` writes per-sample JSONL and an aggregate `.summary.json` under `eval_runs/`.
+`scripts/eval_prepare_corpus.py` writes a flat `.eml` directory, `labels.json` for `scripts/run_eval.py`, `labels.csv` for ML workflows, `manifest.jsonl` for source provenance, and `summary.json` for reproducibility. `scripts/phishing_train.py` trains the ignored generic phishing ML baseline under `models/phishing_classifier/`. `scripts/run_eval.py` writes per-sample JSONL and an aggregate `.summary.json` under `eval_runs/`.
 
 `scripts/eval_inspect_failures.py` writes JSON, CSV, and Markdown reports that rank each failure by top analyzer signal. Use the permissive report to reduce false positives and the strict report to find phishing samples stuck in `SUSPICIOUS`.
 

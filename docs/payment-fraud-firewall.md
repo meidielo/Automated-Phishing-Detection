@@ -119,8 +119,11 @@ experiments.
 
 `payment_train.py` trains and tests a TF-IDF + logistic regression baseline on
 the exported ML JSONL. It writes ignored model artifacts and metrics under
-`models/payment_classifier/`. Treat synthetic-only accuracy as a plumbing check,
-not a production metric.
+`models/payment_classifier/`. When the payment-decision model exists, the
+payment analyzer includes an `ml_decision` sidecar so analysts can compare the
+rules decision against the model prediction without letting synthetic-only ML
+override payment release. Treat synthetic-only accuracy as a plumbing check, not
+a production metric.
 
 `readiness` is the honesty check. It reports whether the dataset is still
 synthetic-only and whether non-synthetic samples are PII-free, balanced across
@@ -133,14 +136,15 @@ python scripts/payment_dataset.py seed-synthetic \
   --dataset data/payment_scam_dataset \
   --scam-count 50 \
   --legit-count 50 \
+  --safe-count 50 \
   --seed 1337 \
   --clean
 ```
 
-This creates 50 synthetic bank-detail-change scams and 50 synthetic legitimate
-bank-detail-change notices with train, validation, and test splits. Use it to
-exercise the analyzer and future ML code. Do not treat synthetic-only results
-as production-quality evidence.
+This creates 50 synthetic bank-detail-change scams, 50 synthetic verified
+bank-detail-change notices, and 50 synthetic `SAFE` invoice notices with train,
+validation, and test splits. Use it to exercise the analyzer and future ML code.
+Do not treat synthetic-only results as production-quality evidence.
 
 Recommended minimum collection:
 

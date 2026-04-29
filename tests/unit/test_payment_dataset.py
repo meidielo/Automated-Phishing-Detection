@@ -163,6 +163,29 @@ def test_seed_synthetic_bank_change_dataset_creates_balanced_seed(tmp_path: Path
     assert all((dataset / "samples" / row["filename"]).exists() for row in rows)
 
 
+def test_seed_synthetic_can_add_safe_invoice_class(tmp_path: Path):
+    dataset = tmp_path / "payment_scam_dataset_seed"
+
+    summary = seed_synthetic_bank_change_dataset(
+        dataset_dir=dataset,
+        scam_count=4,
+        legit_count=4,
+        safe_count=4,
+        seed=7,
+        clean=True,
+    )
+
+    assert summary.safe_count == 4
+    assert summary.total_count == 12
+
+    with (dataset / "labels.csv").open("r", encoding="utf-8", newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    assert {row["payment_decision"] for row in rows} == {"DO_NOT_PAY", "SAFE", "VERIFY"}
+    safe_rows = [row for row in rows if row["payment_decision"] == "SAFE"]
+    assert {row["scenario"] for row in safe_rows} == {"legitimate_invoice"}
+    assert {row["label"] for row in safe_rows} == {"LEGITIMATE_PAYMENT"}
+
+
 def test_seed_synthetic_clean_requires_payment_dataset_name(tmp_path: Path):
     unsafe_dataset = tmp_path / "not_the_dataset"
     unsafe_dataset.mkdir()

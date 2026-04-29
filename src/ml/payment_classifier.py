@@ -52,6 +52,13 @@ class PaymentMLMetrics:
     classification_report: dict
 
 
+@dataclass(frozen=True)
+class PaymentMLPrediction:
+    decision: str
+    confidence: float
+    class_probabilities: dict[str, float]
+
+
 def load_payment_ml_records(path: Path) -> list[PaymentMLRecord]:
     records: list[PaymentMLRecord] = []
     with Path(path).open("r", encoding="utf-8") as fh:
@@ -154,6 +161,29 @@ def _build_pipeline() -> Pipeline:
                 ),
             ),
         ]
+    )
+
+
+def predict_payment_decision(
+    text: str,
+    *,
+    model_path: Path = DEFAULT_MODEL_DIR / "payment_decision_model.joblib",
+) -> PaymentMLPrediction:
+    model = joblib.load(model_path)
+    prediction = str(model.predict([text])[0])
+    probabilities: dict[str, float] = {}
+    if hasattr(model, "predict_proba"):
+        classes = [str(item) for item in model.classes_]
+        values = model.predict_proba([text])[0]
+        probabilities = {
+            label: round(float(probability), 3)
+            for label, probability in zip(classes, values)
+        }
+    confidence = probabilities.get(prediction, 0.0) if probabilities else 0.0
+    return PaymentMLPrediction(
+        decision=prediction,
+        confidence=round(float(confidence), 3),
+        class_probabilities=probabilities,
     )
 
 

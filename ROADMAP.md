@@ -56,11 +56,14 @@ Status is one of:
 | **Payment Fraud Firewall** — payment-specific analyzer that turns invoice, supplier, BEC, and bank-detail-change email signals into `SAFE`, `VERIFY`, or `DO_NOT_PAY` business decisions. | `src/analyzers/payment_fraud.py`, wired into pipeline and decision overrides |
 | **Payment scam dataset and ML tooling** — ignored local dataset scaffold, synthetic bank-detail-change seed set, redaction/audit path for real samples, ML JSONL export, payment-decision eval reports, and a TF-IDF + logistic regression train/test baseline. | `src/eval/payment_dataset.py`, `src/eval/payment_decision_eval.py`, `src/ml/payment_classifier.py`, `scripts/payment_dataset.py`, `scripts/payment_eval.py`, `scripts/payment_train.py` |
 | **Payment dataset readiness report** - counts source types, labels, payment decisions, and splits, and warns when metrics are synthetic-only. | `scripts/payment_dataset.py readiness`, `src/eval/payment_dataset.py` |
+| **Generic public-corpus ML baseline** - trains a TF-IDF + logistic regression classifier from prepared Nazario/Enron/SpamAssassin corpora and writes ignored model metrics. | `src/ml/phishing_classifier.py`, `scripts/phishing_train.py` |
+| **Payment ML decision sidecar** - payment analyzer reports model prediction, confidence, probabilities, and rules disagreement without letting synthetic-only ML override payment release. | `src/analyzers/payment_fraud.py`, `src/ml/payment_classifier.py` |
+| **Synthetic SAFE invoice seed class** - payment dataset generator can add routine invoice examples so `SAFE`, `VERIFY`, and `DO_NOT_PAY` all train and evaluate. | `src/eval/payment_dataset.py` |
 | **Public-corpus smoke eval baseline** - 15-sample Nazario/Enron/SpamAssassin run on commit `c459237`, with permissive and strict failure reports generated from ignored corpora. | `docs/EVALUATION.md`, `scripts/eval_inspect_failures.py` |
 | **Feedback DB retention policy** - `purge --target feedback|all` purges old SQLAlchemy feedback labels by age while optionally keeping N newest records. | `src/automation/retention.py`, `main.py purge` |
 | **Browser session auth for dashboard** - `/login` sets signed session and CSRF cookies; the same `TokenVerifier` accepts bearer or browser session auth. | `src/security/web_security.py`, `main.py`, `templates/login.html`, `templates/_shared.html` |
 | **Multi-container Docker Compose browser split** - URL detonation connects to a separate `browser-sandbox` Playwright service via `PLAYWRIGHT_WS_ENDPOINT`. | `docker-compose.yml`, `docker-compose.production.yml`, `src/analyzers/url_detonation.py` |
-| 1025 tests (47 test modules) | unit + integration |
+| 1030 tests (48 test modules) | unit + integration |
 
 ---
 

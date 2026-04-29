@@ -39,6 +39,7 @@ models/**/*.pkl
 models/**/*.joblib
 models/**/*.h5
 models/payment_classifier/
+models/phishing_classifier/
 
 # ===== Runtime Artifacts =====
 *.log

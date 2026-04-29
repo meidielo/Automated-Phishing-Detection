@@ -9,6 +9,7 @@ import pytest
 from src.eval.payment_dataset import init_dataset, seed_synthetic_bank_change_dataset
 from src.ml.payment_classifier import (
     load_payment_ml_records,
+    predict_payment_decision,
     split_records,
     train_payment_classifier,
 )
@@ -70,6 +71,29 @@ def test_train_payment_classifier_requires_rows(tmp_path: Path):
 
     with pytest.raises(ValueError, match="no rows"):
         train_payment_classifier(dataset_dir=dataset, output_dir=tmp_path / "model")
+
+
+def test_train_payment_classifier_supports_safe_class(tmp_path: Path):
+    dataset = tmp_path / "payment_scam_dataset_seed"
+    seed_synthetic_bank_change_dataset(
+        dataset_dir=dataset,
+        scam_count=10,
+        legit_count=10,
+        safe_count=10,
+        seed=1337,
+        clean=True,
+    )
+
+    metrics = train_payment_classifier(dataset_dir=dataset, output_dir=tmp_path / "model")
+
+    assert metrics.classes == ["DO_NOT_PAY", "SAFE", "VERIFY"]
+    assert metrics.confusion_matrix["SAFE"]["SAFE"] >= 1
+    prediction = predict_payment_decision(
+        "invoice matches purchase order and does not change any payment details",
+        model_path=metrics.model_path,
+    )
+    assert prediction.decision in {"DO_NOT_PAY", "SAFE", "VERIFY"}
+    assert set(prediction.class_probabilities) == {"DO_NOT_PAY", "SAFE", "VERIFY"}
 
 
 def test_split_records_falls_back_when_no_explicit_test(tmp_path: Path):

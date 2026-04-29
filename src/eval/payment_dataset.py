@@ -110,6 +110,7 @@ class SeedSummary:
     dataset_dir: Path
     scam_count: int
     legitimate_count: int
+    safe_count: int
     total_count: int
     labels_path: Path
     eval_labels_path: Path
@@ -950,15 +951,45 @@ def _synthetic_legitimate_email(index: int) -> tuple[bytes, str]:
     return payload, supplier
 
 
+def _synthetic_safe_invoice_email(index: int) -> tuple[bytes, str]:
+    suppliers = [
+        "Metro Office Supplies",
+        "Southern Print Works",
+        "Collins Street Cleaning",
+        "Docklands Courier Service",
+        "Northside Maintenance",
+    ]
+    supplier = suppliers[index % len(suppliers)]
+    amount = 220 + index * 41
+    domain = supplier.lower().replace(" ", "-") + ".example.com"
+    body = (
+        f"Hi accounts payable,\n\n"
+        f"Please find invoice INV-{7100 + index} for AUD ${amount:,.2f} attached to the portal record.\n"
+        f"This invoice matches purchase order PO-{3100 + index} and does not change any payment details.\n"
+        f"Please process it through the normal approval queue when it is due.\n\n"
+        f"If anything looks different, contact us using the supplier profile already saved in your system.\n\n"
+        f"Regards,\n{supplier} Accounts"
+    )
+    payload = _synthetic_message(
+        subject=f"Invoice INV-{7100 + index} for normal approval",
+        body=body,
+        from_address=f"{supplier} Accounts <accounts@{domain}>",
+        auth_results="mx.demo-business.example; spf=pass dkim=pass dmarc=pass",
+        message_id=f"<synthetic-safe-invoice-{index}@dataset.example>",
+    )
+    return payload, supplier
+
+
 def seed_synthetic_bank_change_dataset(
     dataset_dir: Path = DEFAULT_DATASET_DIR,
     scam_count: int = 50,
     legit_count: int = 50,
+    safe_count: int = 0,
     seed: int = 1337,
     clean: bool = False,
 ) -> SeedSummary:
     dataset_dir = Path(dataset_dir)
-    if scam_count < 0 or legit_count < 0:
+    if scam_count < 0 or legit_count < 0 or safe_count < 0:
         raise ValueError("sample counts must be non-negative")
     if clean and dataset_dir.exists():
         _assert_safe_clean_target(dataset_dir)
@@ -1003,12 +1034,30 @@ def seed_synthetic_bank_change_dataset(
             notes=f"Synthetic legitimate bank-detail-change notice for {supplier}",
         )
 
+    for index in range(safe_count):
+        payload, supplier = _synthetic_safe_invoice_email(index)
+        source = generated_dir / f"safe_invoice_{index:03d}.eml"
+        source.write_bytes(payload)
+        add_sample(
+            dataset_dir=dataset_dir,
+            source=source,
+            label="LEGITIMATE_PAYMENT",
+            payment_decision="SAFE",
+            scenario="legitimate_invoice",
+            source_type="synthetic",
+            split=_split_for_index(index, safe_count),
+            verified_by="synthetic-generator",
+            contains_real_pii="no",
+            notes=f"Synthetic routine invoice with no bank-detail change for {supplier}",
+        )
+
     eval_labels = export_eval_labels(dataset_dir)
     return SeedSummary(
         dataset_dir=dataset_dir,
         scam_count=scam_count,
         legitimate_count=legit_count,
-        total_count=scam_count + legit_count,
+        safe_count=safe_count,
+        total_count=scam_count + legit_count + safe_count,
         labels_path=dataset_dir / LABELS_CSV,
         eval_labels_path=eval_labels,
     )
@@ -1047,6 +1096,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     seed_parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET_DIR)
     seed_parser.add_argument("--scam-count", type=int, default=50)
     seed_parser.add_argument("--legit-count", type=int, default=50)
+    seed_parser.add_argument("--safe-count", type=int, default=0)
     seed_parser.add_argument("--seed", type=int, default=1337)
     seed_parser.add_argument("--clean", action="store_true", help="Remove the dataset before seeding")
 
@@ -1120,12 +1170,14 @@ def main(argv: Optional[list[str]] = None) -> int:
             dataset_dir=args.dataset,
             scam_count=args.scam_count,
             legit_count=args.legit_count,
+            safe_count=args.safe_count,
             seed=args.seed,
             clean=args.clean,
         )
         print(f"Seeded synthetic payment dataset at {summary.dataset_dir}")
         print(f"  payment scams:       {summary.scam_count}")
-        print(f"  legitimate payments: {summary.legitimate_count}")
+        print(f"  verified changes:    {summary.legitimate_count}")
+        print(f"  safe invoices:       {summary.safe_count}")
         print(f"  total:               {summary.total_count}")
         print(f"  labels:              {summary.labels_path}")
         print(f"  eval labels:         {summary.eval_labels_path}")
