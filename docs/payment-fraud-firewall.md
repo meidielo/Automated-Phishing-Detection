@@ -65,6 +65,23 @@ Initialize it locally:
 python scripts/payment_dataset.py init --dataset data/payment_scam_dataset
 ```
 
+Redact raw payment emails before labeling:
+
+```bash
+python scripts/payment_dataset.py redact \
+  --source path/to/raw-payment-email.eml \
+  --output data/payment_scam_dataset/incoming/redacted/vendor-update.eml
+
+python scripts/payment_dataset.py audit-pii \
+  --sample data/payment_scam_dataset/incoming/redacted/vendor-update.eml
+```
+
+The redactor pseudonymizes email and URL domains, normalizes obvious payment
+identifiers such as BSBs and account numbers, removes non-text attachments, and
+reports possible leaks by fingerprint instead of echoing sensitive values. It is
+a safety rail, not a privacy guarantee, so manually review every redacted sample
+before adding it.
+
 Add a labeled `.eml`:
 
 ```bash
@@ -86,7 +103,12 @@ Validate and export generic eval labels:
 ```bash
 python scripts/payment_dataset.py validate --dataset data/payment_scam_dataset
 python scripts/payment_dataset.py export-eval-labels --dataset data/payment_scam_dataset
+python scripts/payment_dataset.py export-ml-jsonl --dataset data/payment_scam_dataset
 ```
+
+`export-ml-jsonl` refuses samples that are not marked `contains_real_pii=no`
+unless `--allow-pii` is explicitly passed. Keep the default refusal for normal
+experiments.
 
 Seed the first reproducible development set:
 

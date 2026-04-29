@@ -20,9 +20,16 @@ from src.eval.harness import (
 from src.eval.corpus_prepare import PreparedCorpus, prepare_corpus
 from src.eval.failure_inspector import FailureReport, FailureRow, build_report
 from src.eval.payment_dataset import (
+    MLExportSummary,
+    RedactionFinding,
+    RedactionSummary,
     SeedSummary,
     ValidationResult,
+    audit_dataset_pii,
+    export_ml_jsonl,
     init_dataset,
+    redact_eml,
+    scan_redaction_findings,
     seed_synthetic_bank_change_dataset,
     validate_dataset,
 )
@@ -32,14 +39,21 @@ __all__ = [
     "EvalRun",
     "FailureReport",
     "FailureRow",
+    "MLExportSummary",
     "PerSampleRow",
     "PreparedCorpus",
+    "RedactionFinding",
+    "RedactionSummary",
     "SeedSummary",
     "ValidationResult",
+    "audit_dataset_pii",
     "build_report",
+    "export_ml_jsonl",
     "init_dataset",
     "prepare_corpus",
+    "redact_eml",
     "run_eval",
+    "scan_redaction_findings",
     "seed_synthetic_bank_change_dataset",
     "validate_dataset",
 ]

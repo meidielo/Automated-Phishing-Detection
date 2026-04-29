@@ -8,8 +8,11 @@ import pytest
 
 from src.eval.payment_dataset import (
     add_sample,
+    export_ml_jsonl,
     export_eval_labels,
     init_dataset,
+    redact_eml,
+    scan_redaction_findings,
     seed_synthetic_bank_change_dataset,
     validate_dataset,
 )
@@ -170,3 +173,117 @@ def test_seed_synthetic_clean_requires_payment_dataset_name(tmp_path: Path):
             legit_count=1,
             clean=True,
         )
+
+
+def test_redact_eml_removes_obvious_payment_pii(tmp_path: Path):
+    source = tmp_path / "raw_payment.eml"
+    source.write_text(
+        "\n".join(
+            [
+                "From: Jane Supplier <jane@supplier-real.com>",
+                "To: Alex AP <alex@buyer-real.com>",
+                "Reply-To: payment-team@gmail.com",
+                "Subject: Invoice INV-98231 bank details",
+                "",
+                "Please pay AUD $18,750.00 for invoice INV-98231.",
+                "New BSB: 123-456",
+                "Account number: 987654321",
+                "Call +61 412 345 678 if needed.",
+                "Portal: https://supplier-real.com/pay?id=secret",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    output = tmp_path / "redacted.eml"
+
+    summary = redact_eml(source, output)
+
+    text = output.read_text(encoding="utf-8")
+    assert summary.findings_after == 0
+    assert "supplier-real.com" not in text
+    assert "buyer-real.com" not in text
+    assert "gmail.com" not in text
+    assert "123-456" not in text
+    assert "987654321" not in text
+    assert "+61 412 345 678" not in text
+    assert "mailbox1@domain1.example" in text
+    assert "mailbox3@domain3.example" in text
+    assert "000-000" in text
+    assert "account number: 00000000" in text.lower()
+    assert scan_redaction_findings(output) == []
+
+
+def test_validate_flags_redacted_sample_with_obvious_pii(tmp_path: Path):
+    dataset = init_dataset(tmp_path / "payment")
+    sample = _write_eml(tmp_path / "invoice.eml")
+    sample.write_text(
+        "\n".join(
+            [
+                "From: Jane <jane@real-supplier.com>",
+                "To: ap@example.com",
+                "Subject: Bank details",
+                "",
+                "Use BSB 123-456 and account number 123456789.",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    add_sample(
+        dataset_dir=dataset,
+        source=sample,
+        label="PAYMENT_SCAM",
+        payment_decision="DO_NOT_PAY",
+        scenario="bank_detail_change",
+        source_type="redacted",
+        split="train",
+        contains_real_pii="no",
+    )
+
+    result = validate_dataset(dataset)
+
+    assert not result.ok
+    assert any("PII audit found" in error for error in result.errors)
+
+
+def test_export_ml_jsonl_writes_redacted_training_rows(tmp_path: Path):
+    dataset = tmp_path / "payment_scam_dataset_seed"
+    seed_synthetic_bank_change_dataset(
+        dataset_dir=dataset,
+        scam_count=2,
+        legit_count=2,
+        seed=7,
+        clean=True,
+    )
+
+    summary = export_ml_jsonl(dataset)
+
+    rows = [
+        json.loads(line)
+        for line in summary.output_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert summary.row_count == 4
+    assert len(rows) == 4
+    assert {row["binary_label"] for row in rows} == {"PHISHING", "CLEAN"}
+    assert {row["payment_decision"] for row in rows} == {"DO_NOT_PAY", "VERIFY"}
+    assert all(row["text"] for row in rows)
+
+
+def test_export_ml_jsonl_refuses_rows_not_marked_pii_free(tmp_path: Path):
+    dataset = init_dataset(tmp_path / "payment")
+    sample = _write_eml(tmp_path / "invoice.eml")
+    add_sample(
+        dataset_dir=dataset,
+        source=sample,
+        label="LEGITIMATE_PAYMENT",
+        payment_decision="VERIFY",
+        scenario="legitimate_invoice",
+        source_type="real",
+        split="train",
+        contains_real_pii="unknown",
+    )
+
+    with pytest.raises(ValueError, match="contains_real_pii=no"):
+        export_ml_jsonl(dataset)
