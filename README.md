@@ -300,7 +300,7 @@ The static Sigma rule library in [`sigma_rules/`](sigma_rules/) ships hand-writt
 
 ## Testing
 
-The test suite has **1069 tests across 50 test modules** (unit + integration), exercising every analyzer, the decision engine override rules (including the cycle 7 ordering fix that catches pure-text BEC), the cross-analyzer calibration pass (ADR 0001) with explicit cap-ceiling tests, the persistent email_id lookup index (ADR 0002) with cross-restart smoking-gun tests, scoring confidence capping, IOC export, the Sigma exporter, the URL reputation dead-domain confidence downgrade, credential encryption migration, the LLM determinism contract, the generic phishing ML baseline, the payment-fraud dataset/eval/train/demo workflow, the body_html sanitizer with hostile XSS payloads, retention and per-subject erasure across results, alerts, feedback, and sender profiles, dashboard self-hosted chart assets/fallback rendering under a strict dashboard CSP, operational backup/health scripts, and the web security middleware (bearer auth, browser session auth with CSRF, SSRF guard, security headers). CI runs the full suite plus a Playwright dashboard chart smoke check on every push and PR against a fresh checkout from the hash-pinned lock file. CI-bites verified by deliberate-red sanity check on a throwaway branch.
+The test suite has **1071 tests across 50 test modules** (unit + integration), exercising every analyzer, the decision engine override rules (including the cycle 7 ordering fix that catches pure-text BEC), the cross-analyzer calibration pass (ADR 0001) with explicit cap-ceiling tests, the persistent email_id lookup index (ADR 0002) with cross-restart smoking-gun tests, scoring confidence capping, IOC export, the Sigma exporter, the URL reputation dead-domain confidence downgrade, credential encryption migration, the LLM determinism contract, the generic phishing ML baseline, the payment-fraud dataset/eval/train/demo workflow, the body_html sanitizer with hostile XSS payloads, retention and per-subject erasure across results, alerts, feedback, and sender profiles, dashboard self-hosted chart assets/fallback rendering under a strict dashboard CSP, operational backup/health scripts, and the web security middleware (bearer auth, browser session auth with CSRF, SSRF guard, security headers). CI runs the full suite plus a Playwright dashboard chart smoke check on every push and PR against a fresh checkout from the hash-pinned lock file. CI-bites verified by deliberate-red sanity check on a throwaway branch.
 
 ```bash
 # Run all tests
@@ -362,8 +362,10 @@ The current `docker-compose.yml` runs the dashboard/pipeline in `orchestrator` a
 
 The image:
 - Installs from `requirements.lock` with `pip install --require-hashes` so any dependency tampering fails the build.
-- Uses a `urllib.request`-based healthcheck (no `curl` package).
+- Uses `urllib.request`-based healthchecks (no `curl` package), waits for the browser sandbox to be healthy before starting the app, and gives the app a longer startup window before judging it unhealthy.
 - Runs `docker-entrypoint.sh` as root briefly to chown the `/app/data` and `/app/logs` bind mounts to UID 1000, then `gosu`s to the non-root `phishing` user before exec'ing the pipeline. This closes the bind-mount UID-mismatch issue that previously broke `results.jsonl` writes on Linux hosts where the host bind-mount source is root-owned.
+- Production compose binds `127.0.0.1:8000:8000` for host-local health probes while keeping the service off public and Tailscale interfaces. Cloudflare Tunnel still reaches `http://orchestrator:8000` on the Docker network.
+- `scripts/docker_deploy.sh` pulls, rebuilds, and waits for a healthy orchestrator. `scripts/docker_self_heal.sh` is intended for host cron/systemd to restart containers that Docker marks `unhealthy` but does not restart automatically.
 
 ## DNS Automation
 

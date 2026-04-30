@@ -115,6 +115,20 @@ class URLDetonationAnalyzer:
         except Exception:
             pass
 
+    @staticmethod
+    def _should_reconnect_browser(error: Exception) -> bool:
+        message = str(error).lower()
+        return any(
+            marker in message
+            for marker in (
+                "targetclosederror",
+                "has been closed",
+                "browser has been closed",
+                "browser closed",
+                "connection closed",
+            )
+        )
+
     async def detonate_url(self, url: str) -> dict:
         """
         Visit a single URL and capture results.
@@ -206,6 +220,8 @@ class URLDetonationAnalyzer:
 
             except Exception as nav_error:
                 result["error"] = f"Navigation failed: {str(nav_error)[:200]}"
+                if self._should_reconnect_browser(nav_error):
+                    await self._close_browser()
                 # Still try to capture whatever loaded
                 try:
                     screenshot_bytes = await page.screenshot(
@@ -221,6 +237,8 @@ class URLDetonationAnalyzer:
 
         except Exception as e:
             result["error"] = str(e)[:300]
+            if self._should_reconnect_browser(e):
+                await self._close_browser()
             logger.error(f"URL detonation failed for {url}: {e}")
 
         return result

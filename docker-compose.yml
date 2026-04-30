@@ -10,6 +10,12 @@ services:
     cap_drop:
       - ALL
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"const net=require('net'); const s=net.connect(3000,'127.0.0.1',()=>{s.destroy();process.exit(0)}); s.on('error',()=>process.exit(1)); setTimeout(()=>{s.destroy();process.exit(1)},2000);\""]
+      interval: 20s
+      timeout: 5s
+      start_period: 15s
+      retries: 6
     networks:
       - browser-sandbox
 
@@ -18,8 +24,10 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: phishing-orchestrator
+    init: true
     depends_on:
-      - browser-sandbox
+      browser-sandbox:
+        condition: service_healthy
     ports:
       - "8000:8000"
     env_file:
@@ -48,11 +56,11 @@ services:
       # curl but only touched the Dockerfile; this file kept the curl
       # reference until the cycle 12 audit caught it). Uses stdlib urllib
       # so there is no curl dependency anywhere in the image.
-      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health', timeout=5).status == 200 else 1)"]
-      interval: 30s
-      timeout: 10s
-      start_period: 15s
-      retries: 3
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health', timeout=2).status == 200 else 1)"]
+      interval: 20s
+      timeout: 5s
+      start_period: 45s
+      retries: 6
 
 networks:
   browser-sandbox:

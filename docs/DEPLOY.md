@@ -45,6 +45,11 @@ At minimum, fill in:
 - `GOOGLE_SAFE_BROWSING_API_KEY`
 - `ANALYST_API_TOKEN` (generate one: `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`)
 
+Avoid `$` in `.env` values unless you know how to escape Docker Compose
+interpolation. If `docker compose config` prints warnings about a variable that
+looks like part of a secret, regenerate that secret with `secrets.token_urlsafe`
+or quote/escape it before deploying.
+
 Add the Cloudflare tunnel token:
 ```bash
 echo "CLOUDFLARE_TUNNEL_TOKEN=eyJ..." >> .env
@@ -53,7 +58,7 @@ echo "CLOUDFLARE_TUNNEL_TOKEN=eyJ..." >> .env
 ## Step 3: Deploy
 
 ```bash
-docker compose -f docker-compose.production.yml up -d --build
+bash scripts/docker_deploy.sh
 ```
 
 Check it's healthy:
@@ -69,6 +74,10 @@ docker exec phishing-orchestrator python -c \
 
 Visit your domain. You should see the dashboard.
 Use `/login` with `ANALYST_API_TOKEN` for browser access.
+
+The production stack also binds `127.0.0.1:8000:8000` on the host. This is
+only for SSH/cron health probes on the deployment machine; it is not exposed on
+the public interface or the Tailscale IP.
 
 ## Step 4: Verify API Keys Work
 
@@ -94,12 +103,12 @@ for name, env_var in keys.items():
 
 ```bash
 cd Automated-Phishing-Detection
-git pull
-docker compose -f docker-compose.production.yml up -d --build
+bash scripts/docker_deploy.sh
 ```
 
-The `--build` flag rebuilds the image with the new code.
-The tunnel reconnects automatically.
+The deploy script fast-forwards git, rebuilds the app image with the new code,
+pulls the browser/tunnel images when possible, removes orphaned old containers,
+and waits for the orchestrator container to become healthy.
 
 ## Operations
 
@@ -117,14 +126,16 @@ Usually a bad token. Regenerate in the Cloudflare dashboard.
 **App unhealthy:**
 ```bash
 docker logs phishing-orchestrator --tail 50
+bash scripts/docker_self_heal.sh
 ```
-Check that .env exists and has the required ANALYST_API_TOKEN.
+Check that `.env` exists and has the required `ANALYST_API_TOKEN`. If the app
+stays unhealthy after self-heal, rebuild with `bash scripts/docker_deploy.sh`.
 
 **Cloudflare shows 502:**
-The app hasn't started yet (15s start period) or crashed. Check orchestrator logs.
+The app has not finished its startup health window yet or crashed. Check
+orchestrator logs.
 
 **From Tailscale:**
-You can still access the app directly via Tailscale IP at port 8000
-if you add `ports: ["8000:8000"]` back to the orchestrator service
-in docker-compose.production.yml. Useful for debugging without
-going through the tunnel.
+The production compose file only publishes the app on host loopback:
+`http://127.0.0.1:8000`. To debug from another machine, SSH into the host or use
+Cloudflare Tunnel rather than exposing port 8000 directly.

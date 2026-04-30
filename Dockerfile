@@ -57,9 +57,9 @@ ENV PYTHONUNBUFFERED=1 \
 # Healthcheck without curl — uses Python's urllib (already in stdlib).
 # Smaller image, smaller attack surface, no extra package to track for
 # CVEs. Audit #18.
-HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+HEALTHCHECK --interval=20s --timeout=5s --start-period=45s --retries=6 \
     CMD python -c "import urllib.request,sys; \
-        sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health', timeout=5).status == 200 else 1)" \
+        sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health', timeout=2).status == 200 else 1)" \
         || exit 1
 
 EXPOSE 8000

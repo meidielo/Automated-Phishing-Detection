@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 # ~15 points across the test corpus. See lessons-learned.md "Dead Domain
 # Confidence Inflation".
 _DEAD_DOMAIN_CLEAN_CONFIDENCE = 0.3
+_DNS_RESOLUTION_TIMEOUT_SECONDS = 2.0
 
 
 class URLReputationAnalyzer:
@@ -77,6 +78,29 @@ class URLReputationAnalyzer:
             socket.getaddrinfo(hostname, None)
             return True
         except (socket.gaierror, socket.herror, OSError):
+            return False
+
+    @classmethod
+    async def _hostname_resolves_async(
+        cls,
+        url: str,
+        *,
+        timeout: float = _DNS_RESOLUTION_TIMEOUT_SECONDS,
+    ) -> bool:
+        """
+        Async wrapper around the blocking resolver with a hard timeout.
+
+        Docker healthchecks share the same event loop as analysis requests.
+        A slow system resolver can otherwise block the whole process long
+        enough for `/api/health` to time out under mailbox-monitor load.
+        """
+        try:
+            return await asyncio.wait_for(
+                asyncio.to_thread(cls._hostname_resolves, url),
+                timeout=timeout,
+            )
+        except (asyncio.TimeoutError, OSError):
+            logger.warning("DNS resolution timed out for %s", url)
             return False
 
     async def _check_virustotal(self, url: str) -> tuple[float, float, dict]:
@@ -163,7 +187,10 @@ class URLReputationAnalyzer:
             if not hostname:
                 return 0.0, 0.0, {}
             try:
-                ip = socket.gethostbyname(hostname)
+                ip = await asyncio.wait_for(
+                    asyncio.to_thread(socket.gethostbyname, hostname),
+                    timeout=_DNS_RESOLUTION_TIMEOUT_SECONDS,
+                )
             except Exception:
                 return 0.0, 0.0, {"abuseipdb": "dns_resolution_failed"}
 
@@ -245,7 +272,7 @@ class URLReputationAnalyzer:
                     # See _DEAD_DOMAIN_CLEAN_CONFIDENCE rationale at top of file.
                     dead_domain = False
                     if per_url_risk < 0.3 and per_url_confidence > _DEAD_DOMAIN_CLEAN_CONFIDENCE:
-                        if not self._hostname_resolves(extracted_url.url):
+                        if not await self._hostname_resolves_async(extracted_url.url):
                             logger.info(
                                 "Downgrading confidence for non-resolving URL %s "
                                 "(was %.2f, now %.2f) — clean verdict from a vendor "

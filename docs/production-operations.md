@@ -119,7 +119,27 @@ Operational checks:
 - Rotate `ANALYST_API_TOKEN` if it has been shared in chat, logs, or tickets.
 - Keep Cloudflare Access or Tailscale in front of the dashboard for demos.
 - Do not expose port `8000` publicly. The production compose file uses
-  `expose`, not host `ports`.
+  a loopback-only host port, `127.0.0.1:8000:8000`, for local health probes.
+
+## Docker Self-Healing
+
+Docker restart policies do not restart a container that is still running but
+marked `unhealthy`. Run the host-level self-heal script from cron so unhealthy
+containers are restarted without mounting the Docker socket into a privileged
+helper container:
+
+```cron
+* * * * * cd /srv/Automated-Phishing-Detection && /usr/bin/bash scripts/docker_self_heal.sh >> logs/docker-self-heal.log 2>&1
+```
+
+For code updates, use:
+
+```bash
+bash scripts/docker_deploy.sh
+```
+
+That script fast-forwards git, rebuilds the production stack, removes orphaned
+old containers, and waits for `phishing-orchestrator` to become healthy.
 
 ## Load And Error Probe
 

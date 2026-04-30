@@ -68,9 +68,10 @@ Status is one of:
 | **CI dashboard browser smoke test** - GitHub Actions installs Playwright Chromium and runs the dashboard chart smoke check under strict CSP. | `.github/workflows/ci.yml`, `scripts/dashboard_browser_check.py` |
 | **Formal vendored Chart.js process** - update/check script validates version, SHA256s, and local dashboard reference. | `scripts/vendor_chartjs.py`, `static/vendor/README.md` |
 | **Production operations hardening** - backup, health/alert, load/error probe scripts plus cron/logrotate runbook. | `scripts/backup_runtime_data.py`, `scripts/production_health_check.py`, `scripts/monitor_load_test.py`, `docs/production-operations.md` |
+| **Docker production health hardening** - browser-sandbox healthcheck, loopback-only host probe port, deploy/self-heal scripts, and non-blocking URL reputation DNS fallbacks keep mailbox-monitor load from making the dashboard falsely unhealthy. | `docker-compose.production.yml`, `scripts/docker_deploy.sh`, `scripts/docker_self_heal.sh`, `src/analyzers/url_reputation.py` |
 | **Redacted Gmail-derived payment samples** - local ignored payment dataset now includes redacted real Gmail search-summary examples plus 25 full-body invoice/receipt/payment examples and fresh decision eval/ML exports. Raw mail is not committed. | `data/payment_scam_dataset/` (ignored), `scripts/payment_dataset.py readiness` |
 | **Multi-container Docker Compose browser split** - URL detonation connects to a separate `browser-sandbox` Playwright service via `PLAYWRIGHT_WS_ENDPOINT`. | `docker-compose.yml`, `docker-compose.production.yml`, `src/analyzers/url_detonation.py` |
-| 1069 tests (50 test modules) | unit + integration |
+| 1071 tests (50 test modules) | unit + integration |
 
 ---
 

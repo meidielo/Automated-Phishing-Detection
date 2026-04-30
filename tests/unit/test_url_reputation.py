@@ -45,6 +45,19 @@ class TestHostnameResolves:
         for bad in ("", "https://", "not a url", "://example.com"):
             assert URLReputationAnalyzer._hostname_resolves(bad) is False
 
+    @pytest.mark.asyncio
+    async def test_async_wrapper_times_out_blocking_resolver(self):
+        def slow_resolver(_url):
+            import time
+            time.sleep(0.2)
+            return True
+
+        with patch.object(URLReputationAnalyzer, "_hostname_resolves", staticmethod(slow_resolver)):
+            assert await URLReputationAnalyzer._hostname_resolves_async(
+                "https://slow.example/",
+                timeout=0.01,
+            ) is False
+
 
 # ─── Dead-domain confidence downgrade ────────────────────────────────────────
 
@@ -76,7 +89,7 @@ class TestDeadDomainConfidenceDowngrade:
             self.analyzer, "_check_virustotal",
             new=AsyncMock(return_value=(0.0, 0.8, {"vendors": "0/85"})),
         ), patch.object(
-            URLReputationAnalyzer, "_hostname_resolves", staticmethod(lambda u: False),
+            URLReputationAnalyzer, "_hostname_resolves_async", AsyncMock(return_value=False),
         ):
             result = await self.analyzer.analyze([_make_extracted_url()])
             assert result.confidence == _DEAD_DOMAIN_CLEAN_CONFIDENCE
@@ -90,7 +103,7 @@ class TestDeadDomainConfidenceDowngrade:
             self.analyzer, "_check_virustotal",
             new=AsyncMock(return_value=(0.0, 0.8, {"vendors": "0/85"})),
         ), patch.object(
-            URLReputationAnalyzer, "_hostname_resolves", staticmethod(lambda u: True),
+            URLReputationAnalyzer, "_hostname_resolves_async", AsyncMock(return_value=True),
         ):
             result = await self.analyzer.analyze([_make_extracted_url()])
             assert result.confidence == 0.8
@@ -104,7 +117,7 @@ class TestDeadDomainConfidenceDowngrade:
             self.analyzer, "_check_virustotal",
             new=AsyncMock(return_value=(0.95, 0.9, {"vendors": "82/85"})),
         ), patch.object(
-            URLReputationAnalyzer, "_hostname_resolves", staticmethod(lambda u: False),
+            URLReputationAnalyzer, "_hostname_resolves_async", AsyncMock(return_value=False),
         ):
             result = await self.analyzer.analyze([_make_extracted_url()])
             # High-risk verdicts are evidence regardless of DNS state
@@ -118,7 +131,7 @@ class TestDeadDomainConfidenceDowngrade:
             self.analyzer, "_check_virustotal",
             new=AsyncMock(return_value=(0.0, 0.2, {})),
         ), patch.object(
-            URLReputationAnalyzer, "_hostname_resolves", staticmethod(lambda u: False),
+            URLReputationAnalyzer, "_hostname_resolves_async", AsyncMock(return_value=False),
         ):
             result = await self.analyzer.analyze([_make_extracted_url()])
             assert result.confidence == 0.2  # not raised to 0.3
@@ -133,7 +146,7 @@ class TestDeadDomainConfidenceDowngrade:
             self.analyzer, "_check_virustotal",
             new=AsyncMock(return_value=(0.5, 0.8, {})),
         ), patch.object(
-            URLReputationAnalyzer, "_hostname_resolves",
+            URLReputationAnalyzer, "_hostname_resolves_async",
         ) as mock_resolves:
             await self.analyzer.analyze([_make_extracted_url()])
             mock_resolves.assert_not_called()

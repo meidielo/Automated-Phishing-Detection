@@ -89,3 +89,15 @@ async def test_real_detonator_uses_remote_cdp_endpoint(monkeypatch):
 
     assert fake.chromium.cdp_connected == ("http://browser-sandbox:9222/", 4321)
     assert not fake.chromium.launched
+
+
+def test_real_detonator_reconnects_after_closed_browser_errors():
+    assert URLDetonationAnalyzer._should_reconnect_browser(
+        RuntimeError("TargetClosedError: Browser.new_context: Target page, context or browser has been closed")
+    )
+    assert URLDetonationAnalyzer._should_reconnect_browser(
+        RuntimeError("WebSocket connection closed")
+    )
+    assert not URLDetonationAnalyzer._should_reconnect_browser(
+        RuntimeError("navigation timeout")
+    )
