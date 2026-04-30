@@ -109,6 +109,9 @@ instance/
 feedback/exports/
 reports/generated/
 
+# ===== Generated / Local Marketing Media =====
+docs/linkedin_post_media/
+
 # ===== Sample Emails (contain PII — do not commit) =====
 tests/sample_emails/*.eml
 tests/sample_emails/*.msg
