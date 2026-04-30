@@ -5,7 +5,11 @@ import mailbox
 from email.message import EmailMessage
 from pathlib import Path
 
-from src.eval.corpus_prepare import _message_as_bytes, prepare_corpus
+from src.eval.corpus_prepare import (
+    _message_as_bytes,
+    iter_spamassassin_spam_candidates,
+    prepare_corpus,
+)
 
 
 def _message(subject: str, body: str, sender: str = "sender@example.com") -> EmailMessage:
@@ -199,3 +203,14 @@ def test_prepare_corpus_handles_non_ascii_mbox_separator(tmp_path: Path):
     assert prepared.written_counts == {"PHISHING": 1, "CLEAN": 0}
     [filename] = prepared.labels.keys()
     assert (tmp_path / "prepared" / filename).read_bytes().startswith(b"From: phish@example.com")
+
+
+def test_iter_spamassassin_spam_candidates_reads_spam_folders_only(tmp_path: Path):
+    corpora = _build_fake_corpora(tmp_path)
+
+    candidates = list(iter_spamassassin_spam_candidates(corpora))
+
+    assert len(candidates) == 1
+    assert candidates[0].source_corpus == "spamassassin_spam"
+    assert candidates[0].label == "PHISHING"
+    assert "/spam/" in candidates[0].source_path

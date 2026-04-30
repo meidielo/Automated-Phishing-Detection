@@ -163,6 +163,87 @@ async def test_no_bank_details_changed_language_stays_safe():
 
 
 @pytest.mark.asyncio
+async def test_payment_portal_action_link_requires_verify():
+    analyzer = PaymentFraudAnalyzer()
+    email = make_email(
+        subject="Incoming payment transfer pending",
+        body=(
+            "A business customer issued a payment to you. "
+            "Click the payment link to review the transaction details and confirm receipt."
+        ),
+        auth_results="mx.example.com; spf=pass dkim=pass dmarc=pass",
+    )
+
+    result = await analyzer.analyze(email)
+
+    assert result.details["decision"] == "VERIFY"
+    assert any(s["name"] == "payment_portal_link" for s in result.details["signals"])
+
+
+@pytest.mark.asyncio
+async def test_payment_authorization_document_action_requires_verify():
+    analyzer = PaymentFraudAnalyzer()
+    email = make_email(
+        subject="Your signature is needed",
+        body=(
+            "Action requested. Review and sign the Payment Authorization "
+            "document from Account Payable."
+        ),
+        auth_results="mx.example.com; spf=pass dkim=pass dmarc=pass",
+    )
+
+    result = await analyzer.analyze(email)
+
+    assert result.details["decision"] == "VERIFY"
+    assert any(s["name"] == "payment_portal_link" for s in result.details["signals"])
+
+
+@pytest.mark.asyncio
+async def test_billing_ach_esign_action_requires_verify():
+    analyzer = PaymentFraudAnalyzer()
+    email = make_email(
+        subject="Complete with Docusign: eSign required for progress billing ACH",
+        body="You have a billing ACH document to review and sign.",
+        auth_results="mx.example.com; spf=pass dkim=pass dmarc=pass",
+    )
+
+    result = await analyzer.analyze(email)
+
+    assert result.details["decision"] == "VERIFY"
+    assert any(s["name"] == "payment_portal_link" for s in result.details["signals"])
+
+
+@pytest.mark.asyncio
+async def test_redacted_invoice_docsign_action_requires_verify():
+    analyzer = PaymentFraudAnalyzer()
+    email = make_email(
+        subject="DocSign sent you a file for sign and approval",
+        body="Please review and sign an inv REDACTED using the secure DocSign document link.",
+        auth_results="mx.example.com; spf=pass dkim=pass dmarc=pass",
+    )
+
+    result = await analyzer.analyze(email)
+
+    assert result.details["decision"] == "VERIFY"
+    assert any(s["name"] == "payment_portal_link" for s in result.details["signals"])
+
+
+@pytest.mark.asyncio
+async def test_payroll_secure_link_requires_verify():
+    analyzer = PaymentFraudAnalyzer()
+    email = make_email(
+        subject="HRM payroll alert",
+        body="HRM would like you to click the secure link below to receive a payroll update.",
+        auth_results="mx.example.com; spf=pass dkim=pass dmarc=pass",
+    )
+
+    result = await analyzer.analyze(email)
+
+    assert result.details["decision"] == "VERIFY"
+    assert any(s["name"] == "payment_portal_link" for s in result.details["signals"])
+
+
+@pytest.mark.asyncio
 async def test_payment_redirection_with_reply_mismatch_blocks_payment():
     analyzer = PaymentFraudAnalyzer()
     email = make_email(

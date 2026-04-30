@@ -13,6 +13,7 @@ Instead of only answering "is this email phishing?", it also answers:
 - Fake invoice emails
 - Supplier impersonation
 - Changed bank detail requests
+- Payment-themed portal/action links
 - Urgent payment pressure
 - Approval bypass or secrecy language
 - CEO/CFO style transfer requests
@@ -180,6 +181,26 @@ They are not copied from private mail and should be used as reproducible
 coverage for decision handling. They improve the development dataset, but real
 redacted inbox/client examples remain the better evidence before publishing
 external product metrics.
+
+Mine real public phishing/spam corpora for payment-language examples:
+
+```bash
+python scripts/payment_dataset.py seed-public-corpus \
+  --dataset data/payment_scam_dataset \
+  --corpora-dir data/corpora \
+  --do-not-pay-count 0 \
+  --verify-count 20 \
+  --replace-existing
+```
+
+This reads downloaded Nazario phishing and SpamAssassin spam corpora, keeps
+strict invoice/payment/wire/bank/account cases, redacts and neutralizes
+domains, URLs, and payment identifiers, and labels the retained samples as
+PII-free public examples. The default is conservative: raw public corpora are
+mostly useful for `VERIFY` payment-link/payment-notification language. Official
+advisory-derived examples should remain in the dataset because raw public
+corpora rarely contain clean `DO_NOT_PAY` BEC/payment-redirection cases with
+full context.
 
 Recommended minimum collection:
 

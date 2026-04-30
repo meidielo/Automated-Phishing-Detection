@@ -38,6 +38,23 @@ except Exception:  # pragma: no cover - defensive fallback for minimal installs
     predict_payment_decision = None
 
 
+def _load_payment_predictor():
+    """Retry the optional ML import after module import cycles have settled."""
+    global DEFAULT_PAYMENT_MODEL_DIR, predict_payment_decision
+    if predict_payment_decision is not None:
+        return predict_payment_decision
+    try:
+        from src.ml.payment_classifier import (  # noqa: WPS433 - deliberate lazy import
+            DEFAULT_MODEL_DIR,
+            predict_payment_decision as predictor,
+        )
+    except Exception:  # pragma: no cover - defensive fallback for minimal installs
+        return None
+    DEFAULT_PAYMENT_MODEL_DIR = DEFAULT_MODEL_DIR
+    predict_payment_decision = predictor
+    return predictor
+
+
 class PaymentFraudAnalyzer:
     """
     Detect payment-specific fraud patterns.
@@ -75,6 +92,11 @@ class PaymentFraudAnalyzer:
         "account change",
         "supplier portal",
         "remittance contact",
+        "purchase order",
+        "po contract",
+        "inv redacted",
+        "accounts payable",
+        "payroll",
     ]
 
     BANK_CHANGE_PATTERNS = [
@@ -161,6 +183,24 @@ class PaymentFraudAnalyzer:
         r"normal\s+supplier\s+master-data\s+workflow",
         r"without\s+portal\s+verification",
         r"do\s+not\s+use\s+bank\s+details\s+sent\s+over\s+email",
+    ]
+
+    PAYMENT_PORTAL_LINK_PATTERNS = [
+        r"\b(?:view|accept|approve|confirm|verify|review|click)\b.{0,100}"
+        r"\b(?:payment|transaction|deposit|payroll|remittance)\b",
+        r"\b(?:payment|transaction|deposit|payroll|remittance)\b.{0,100}"
+        r"\b(?:view|accept|approve|confirm|verify|review|click|link)\b",
+        r"\b(?:review|sign|approve)\b.{0,120}"
+        r"\b(?:payment authorization|account payable|payment document)\b",
+        r"\b(?:payment authorization|account payable|payment document)\b.{0,120}"
+        r"\b(?:review|sign|approve)\b",
+        r"\b(?:docsign|docusign|esign|required for|review and sign|document to review and sign)\b.{0,140}"
+        r"\b(?:billing|ach|invoice|inv redacted|payment|purchase order|po contract)\b",
+        r"\b(?:billing|ach|invoice|inv redacted|payment|purchase order|po contract)\b.{0,140}"
+        r"\b(?:docsign|docusign|esign|required for|review and sign|document to review and sign)\b",
+        r"\bpayroll\b.{0,160}\b(?:secure link|click|update)\b",
+        r"\b(?:secure link|click|update)\b.{0,160}\bpayroll\b",
+        r"\b(?:purchase order|po contract|accounts payable)\b.{0,160}\breview and confirm\b",
     ]
 
     FREE_EMAIL_DOMAINS = {
@@ -286,6 +326,7 @@ class PaymentFraudAnalyzer:
             self._add_bank_change_signals(text, signals)
             self._add_mandatory_verification_signal(text, signals)
             self._add_urgency_signal(text, signals)
+            self._add_payment_portal_link_signal(text, signals)
             self._add_bypass_signal(text, signals)
             self._add_sender_signals(
                 email=email,
@@ -378,7 +419,8 @@ class PaymentFraudAnalyzer:
         return "\n\n".join(sections)
 
     def _ml_decision(self, email: EmailObject, rules_decision: PaymentDecision) -> dict:
-        if predict_payment_decision is None:
+        predictor = _load_payment_predictor()
+        if predictor is None:
             return {"available": False, "reason": "payment_ml_not_importable"}
         if not self.payment_model_path.exists():
             return {
@@ -387,7 +429,7 @@ class PaymentFraudAnalyzer:
                 "model_path": str(self.payment_model_path),
             }
         try:
-            prediction = predict_payment_decision(
+            prediction = predictor(
                 self._ml_text(email),
                 model_path=self.payment_model_path,
             )
@@ -471,6 +513,22 @@ class PaymentFraudAnalyzer:
                 evidence=f"Urgency language found around a payment request: {matches[0]}",
                 recommendation="Route the payment through normal approval instead of acting on urgency.",
                 risk_weight=0.16,
+            ))
+
+    def _add_payment_portal_link_signal(self, text: str, signals: list[PaymentFraudSignal]) -> None:
+        if (
+            self._matched_patterns(text, self.POSITIVE_VERIFICATION_PATTERNS)
+            or self._matched_patterns(text, self.MANDATORY_VERIFICATION_PATTERNS)
+        ):
+            return
+        matches = self._matched_patterns(text, self.PAYMENT_PORTAL_LINK_PATTERNS)
+        if matches:
+            signals.append(self._signal(
+                name="payment_portal_link",
+                severity=PaymentSignalSeverity.MEDIUM,
+                evidence=f"Payment-themed link or action language found: {matches[0]}",
+                recommendation="Verify the payment notification through a saved portal or known contact.",
+                risk_weight=0.24,
             ))
 
     def _add_bypass_signal(self, text: str, signals: list[PaymentFraudSignal]) -> None:

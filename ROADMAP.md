@@ -55,6 +55,7 @@ Status is one of:
 | **Eval harness with per-sample JSONL storage** — corpus-agnostic `src/eval/harness.py` and `scripts/run_eval.py`. Each run produces one JSONL row per sample (sample_id, true_label, predicted_verdict, per_analyzer_scores, calibration outcome, model_id, commit_sha, TP/FP/TN/FN) plus an aggregate `.summary.json` under `eval_runs/`. Two binary projections (permissive/strict) computed and stored separately. The first baseline against `tests/real_world_samples/` is committed. The harness is the deliverable; numbers are data. | `src/eval/harness.py`, `scripts/run_eval.py`, `eval_runs/` (27 tests covering schema, projection, aggregate arithmetic) |
 | **Payment Fraud Firewall** — payment-specific analyzer that turns invoice, supplier, BEC, and bank-detail-change email signals into `SAFE`, `VERIFY`, or `DO_NOT_PAY` business decisions. | `src/analyzers/payment_fraud.py`, wired into pipeline and decision overrides |
 | **Payment scam dataset and ML tooling** — ignored local dataset scaffold, synthetic bank-detail-change seed set, public-advisory-derived payment-risk and holdout seed sets, redaction/audit path for real samples, ML JSONL export, payment-decision eval reports, and a TF-IDF + logistic regression train/test/holdout baseline. | `src/eval/payment_dataset.py`, `src/eval/payment_decision_eval.py`, `src/ml/payment_classifier.py`, `scripts/payment_dataset.py`, `scripts/payment_eval.py`, `scripts/payment_train.py` |
+| **Public-corpus payment scam miner** - mines Nazario phishing and SpamAssassin spam corpora for invoice/payment/wire/bank/account language, redacts and neutralizes domains/URLs/payment identifiers, and conservatively labels public payment-link/payment-notification samples for `VERIFY` while leaving clean `DO_NOT_PAY` BEC patterns to advisory seeds unless raw corpus evidence is explicit. | `scripts/payment_dataset.py seed-public-corpus`, `src/eval/payment_dataset.py`, `tests/unit/test_payment_dataset.py` |
 | **Payment dataset readiness report** - counts source types, labels, payment decisions, and splits, and warns when non-synthetic coverage is missing for a payment decision. | `scripts/payment_dataset.py readiness`, `src/eval/payment_dataset.py` |
 | **Generic public-corpus ML baseline** - trains a TF-IDF + logistic regression classifier from prepared Nazario/Enron/SpamAssassin corpora and writes ignored model metrics. | `src/ml/phishing_classifier.py`, `scripts/phishing_train.py` |
 | **Payment ML decision sidecar** - payment analyzer reports model prediction, confidence, probabilities, and rules disagreement without letting synthetic-only ML override payment release. | `src/analyzers/payment_fraud.py`, `src/ml/payment_classifier.py` |
@@ -64,7 +65,7 @@ Status is one of:
 | **Feedback DB retention policy** - `purge --target feedback|all` purges old SQLAlchemy feedback labels by age while optionally keeping N newest records. | `src/automation/retention.py`, `main.py purge` |
 | **Browser session auth for dashboard** - `/login` sets signed session and CSRF cookies; the same `TokenVerifier` accepts bearer or browser session auth. | `src/security/web_security.py`, `main.py`, `templates/login.html`, `templates/_shared.html` |
 | **Multi-container Docker Compose browser split** - URL detonation connects to a separate `browser-sandbox` Playwright service via `PLAYWRIGHT_WS_ENDPOINT`. | `docker-compose.yml`, `docker-compose.production.yml`, `src/analyzers/url_detonation.py` |
-| 1044 tests (49 test modules) | unit + integration |
+| 1052 tests (49 test modules) | unit + integration |
 
 ---
 
@@ -73,7 +74,7 @@ Status is one of:
 Ordered by intended sequence, not priority.
 
 ### Real redacted payment samples
-The payment dataset has tooling, synthetic seed data, public-advisory-derived `VERIFY`/`DO_NOT_PAY` seed and holdout data, readiness reporting, redaction, eval, demo, and ML training. It still needs real redacted invoice, bank-change, remittance, and supplier-update samples before external product metrics are credible. Target: 20 to 50 real redacted examples across `SAFE`, `VERIFY`, and `DO_NOT_PAY`.
+The payment dataset has tooling, synthetic seed data, public-advisory-derived `VERIFY`/`DO_NOT_PAY` seed and holdout data, public-corpus-mined payment scam language, readiness reporting, redaction, eval, demo, and ML training. It still needs real redacted invoice, bank-change, remittance, and supplier-update samples before external product metrics are credible. Target: 20 to 50 real redacted examples across `SAFE`, `VERIFY`, and `DO_NOT_PAY`.
 
 ### Audit trail for feedback labels
 Append-only log of who relabeled what. Closes residual risk **R2**. Required before the project is honest about being multi-analyst.

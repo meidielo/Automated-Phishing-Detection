@@ -21,6 +21,7 @@ from src.eval.corpus_prepare import PreparedCorpus, prepare_corpus
 from src.eval.failure_inspector import FailureReport, FailureRow, build_report
 from src.eval.payment_dataset import (
     MLExportSummary,
+    PublicCorpusPaymentSeedSummary,
     RedactionFinding,
     RedactionSummary,
     SeedSummary,
@@ -30,6 +31,7 @@ from src.eval.payment_dataset import (
     init_dataset,
     redact_eml,
     scan_redaction_findings,
+    seed_public_corpus_payment_examples,
     seed_synthetic_bank_change_dataset,
     validate_dataset,
 )
@@ -49,6 +51,7 @@ __all__ = [
     "PaymentDecisionEvalRow",
     "PaymentDecisionEvalSummary",
     "PreparedCorpus",
+    "PublicCorpusPaymentSeedSummary",
     "RedactionFinding",
     "RedactionSummary",
     "SeedSummary",
@@ -62,6 +65,7 @@ __all__ = [
     "redact_eml",
     "run_eval",
     "scan_redaction_findings",
+    "seed_public_corpus_payment_examples",
     "seed_synthetic_bank_change_dataset",
     "validate_dataset",
 ]

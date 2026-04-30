@@ -26,6 +26,7 @@ DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "data" / "eval_corpus"
 
 ENRON_HAM_FOLDERS = {"sent", "sent_items", "_sent_mail"}
 SPAMASSASSIN_HAM_FOLDERS = ("easy_ham", "easy_ham_2", "hard_ham")
+SPAMASSASSIN_SPAM_FOLDERS = ("spam", "spam_2")
 SKIP_SOURCE_NAMES = {"README.txt", "README.md", "LICENSE.txt"}
 SKIP_RAW_NAMES = {"cmds"}
 DEFAULT_MAX_BYTES = 2 * 1024 * 1024
@@ -238,6 +239,29 @@ def iter_spamassassin_ham_candidates(
                 source_corpus="spamassassin_ham",
                 source_path=path.relative_to(corpora_dir).as_posix(),
                 label="CLEAN",
+                path=path,
+            )
+
+
+def iter_spamassassin_spam_candidates(
+    corpora_dir: Path,
+    max_bytes: int = DEFAULT_MAX_BYTES,
+) -> Iterator[CorpusCandidate]:
+    """Yield PHISHING candidates from SpamAssassin spam folders."""
+
+    sa_dir = corpora_dir / "spamassassin"
+    if not sa_dir.exists():
+        return
+
+    for folder in SPAMASSASSIN_SPAM_FOLDERS:
+        root = sa_dir / folder
+        for path in _iter_files_sorted(root):
+            if not _is_reasonable_raw_message(path, max_bytes):
+                continue
+            yield CorpusCandidate(
+                source_corpus="spamassassin_spam",
+                source_path=path.relative_to(corpora_dir).as_posix(),
+                label="PHISHING",
                 path=path,
             )
 

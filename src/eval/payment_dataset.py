@@ -24,6 +24,14 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import urlsplit
 
+from src.eval.corpus_prepare import (
+    DEFAULT_CORPORA_DIR,
+    DEFAULT_MAX_BYTES,
+    CorpusCandidate,
+    iter_nazario_candidates,
+    iter_spamassassin_spam_candidates,
+)
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DATASET_DIR = PROJECT_ROOT / "data" / "payment_scam_dataset"
@@ -139,6 +147,22 @@ class MLExportSummary:
 
 
 @dataclass(frozen=True)
+class PublicCorpusPaymentSeedSummary:
+    dataset_dir: Path
+    corpora_dir: Path
+    requested_do_not_pay: int
+    requested_verify: int
+    do_not_pay_count: int
+    verify_count: int
+    available_do_not_pay: int
+    available_verify: int
+    total_count: int
+    labels_path: Path
+    eval_labels_path: Path
+    warnings: list[str]
+
+
+@dataclass(frozen=True)
 class DatasetReadinessReport:
     dataset_dir: Path
     row_count: int
@@ -217,6 +241,20 @@ These samples are not copied from private mail. They are redacted examples
 based on public BEC and payment-redirection warning patterns. They are useful
 for exercising `VERIFY` and `DO_NOT_PAY` handling, but real redacted inbox or
 client samples are still stronger evidence.
+
+Run this after downloading public corpora to mine real public phishing/spam
+messages for payment-language examples:
+
+```bash
+python scripts/payment_dataset.py seed-public-corpus --dataset data/payment_scam_dataset --corpora-dir data/corpora --do-not-pay-count 0 --verify-count 20 --replace-existing
+```
+
+The miner uses Nazario phishing and SpamAssassin spam only, filters for
+payment/invoice/wire/bank/account language, redacts and neutralizes domains and
+payment identifiers before labeling, and keeps the raw corpora out of git. Its
+default is conservative: public corpora mostly feed `VERIFY` payment-link and
+payment-notification examples, while public advisory seeds cover clearer
+`DO_NOT_PAY` BEC/payment-redirection patterns.
 """
 
 
@@ -356,6 +394,18 @@ def _set_header(message: EmailMessage, name: str, value: str) -> None:
         message[name] = value
 
 
+def _safe_message_header_value(message: EmailMessage, name: str) -> str:
+    try:
+        value = message.get(name)
+        return str(value or "")
+    except Exception:
+        name_lower = name.lower()
+        for raw_name, raw_value in message.raw_items():
+            if raw_name.lower() == name_lower:
+                return str(raw_value or "")
+    return ""
+
+
 def _redact_message_headers(message: EmailMessage, context: _RedactionContext) -> None:
     for header in list(message.keys()):
         header_lower = header.lower()
@@ -369,9 +419,12 @@ def _redact_message_headers(message: EmailMessage, context: _RedactionContext) -
             message.replace_header(header, "<redacted-message@dataset.example>")
             continue
         if header_lower in ADDRESS_HEADERS:
-            message.replace_header(header, _redact_address_header(str(message[header]), context))
+            message.replace_header(header, _redact_address_header(
+                _safe_message_header_value(message, header),
+                context,
+            ))
             continue
-        message.replace_header(header, _redact_text(str(message[header]), context))
+        message.replace_header(header, _redact_text(_safe_message_header_value(message, header), context))
 
     _set_header(message, "X-Redacted-For", "payment-scam-dataset")
 
@@ -1009,12 +1062,357 @@ PUBLIC_ADVISORY_SOURCE_URLS = (
     "https://sublime.security/blog/business-email-compromise-fake-invoice-16800",
 )
 
+PUBLIC_CORPUS_PAYMENT_KEYWORD_RE = re.compile(
+    r"\b("
+    r"invoice|payment|payable|payee|remittance|remit|wire transfer|wire|"
+    r"bank transfer|bank account|account number|routing number|routing|"
+    r"beneficiary|swift|iban|bsb|ach|eft|deposit|escrow|billing|"
+    r"credit card|debit card|card ending|paypal|western union|moneygram|"
+    r"money gram|gift card"
+    r")\b",
+    re.IGNORECASE,
+)
+
+PUBLIC_CORPUS_DO_NOT_PAY_PATTERNS = (
+    r"\b(?:new|updated|changed|replacement|alternate)\s+"
+    r"(?:bank|account|payment|routing|wire|remittance)\b",
+    r"\b(?:bank|account|payment)\s+details?\s+(?:have\s+)?(?:changed|updated)\b",
+    r"\b(?:pay|send|remit|release)\b.{0,120}"
+    r"\b(?:invoice|payment|settlement|remittance|payable)\b.{0,120}"
+    r"\b(?:bank details?|account number|routing number|iban|swift|bsb)\b",
+    r"\b(?:replacement|corrected|updated)\s+invoice\b.{0,120}"
+    r"\b(?:bank|account|payment)\b",
+    r"\b(?:ceo|cfo|director|managing director)\b.{0,100}"
+    r"\b(?:wire|transfer|payment|settlement)\b",
+)
+
+PUBLIC_CORPUS_VERIFY_PATTERNS = (
+    r"\b(?:invoice|payment|wire|transfer|remittance|payable)\b.{0,100}"
+    r"\b(?:urgent|asap|immediately|today|within 24 hours|final notice|overdue|past due)\b",
+    r"\b(?:urgent|asap|immediately|today|within 24 hours|final notice|overdue|past due)\b.{0,100}"
+    r"\b(?:invoice|payment|wire|transfer|remittance|payable)\b",
+    r"\b(?:view|accept|approve|confirm|verify|review|click)\b.{0,100}"
+    r"\b(?:payment|transaction|deposit|payroll|remittance)\b",
+    r"\b(?:payment|transaction|deposit|payroll|remittance)\b.{0,100}"
+    r"\b(?:view|accept|approve|confirm|verify|review|click|link)\b",
+    r"\b(?:review|sign|approve)\b.{0,120}"
+    r"\b(?:payment authorization|account payable|payment document)\b",
+    r"\b(?:payment authorization|account payable|payment document)\b.{0,120}"
+    r"\b(?:review|sign|approve)\b",
+    r"\b(?:docsign|docusign|esign|required for|review and sign|document to review and sign)\b.{0,140}"
+    r"\b(?:billing|ach|invoice|inv redacted|payment|purchase order|po contract)\b",
+    r"\b(?:billing|ach|invoice|inv redacted|payment|purchase order|po contract)\b.{0,140}"
+    r"\b(?:docsign|docusign|esign|required for|review and sign|document to review and sign)\b",
+    r"\bpayroll\b.{0,160}\b(?:secure link|click|update)\b",
+    r"\b(?:secure link|click|update)\b.{0,160}\bpayroll\b",
+    r"\b(?:purchase order|po contract|accounts payable)\b.{0,160}\breview and confirm\b",
+)
+
+PUBLIC_CORPUS_MINER_VERIFIED_BY = "public-corpus-miner"
+
+PUBLIC_CORPUS_BUSINESS_PAYMENT_CONTEXT_RE = re.compile(
+    r"\b("
+    r"invoice|inv redacted|payable|remittance|remit|wire transfer|payment authorization|"
+    r"bank transfer|settlement|purchase order|supplier|vendor|accounts payable|"
+    r"account payable|credit control|payroll|po contract"
+    r")\b",
+    re.IGNORECASE,
+)
+
+PUBLIC_CORPUS_EXCLUDED_SCAM_CONTEXT_RE = re.compile(
+    r"\b("
+    r"paypal account|ebay|netflix|account locked|account suspended|verification required|"
+    r"mailbox|storage limit|quota space|pending messages|"
+    r"personal account verification|online banking|online payment system|review your account|"
+    r"billing\s*/\s*payment issues|onedrive|share document|shared document|purchase_contract|"
+    r"purchase order contract|"
+    r"order confirmation|microsoft office|customer support|transaction id|class action settlement|"
+    r"microsoft invoice|signature is needed|"
+    r"federal court|settlement class|not an advertisement|"
+    r"deceased customer|inheritance|lottery|sweepstakes|foreign partner|partnership request|"
+    r"nigerian|nigeria|zimbabwe|million dollars|strictest confidentiality|fund transfer|next of kin"
+    r")\b",
+    re.IGNORECASE,
+)
+
 
 def _public_advisory_note() -> str:
     return (
         "Public-advisory-derived redacted example; not copied from source text; "
         "patterns informed by Scamwatch, cyber.gov.au, FBI, and Sublime "
         "Security BEC/payment-redirection guidance."
+    )
+
+
+def _public_corpus_note(source_corpus: str, source_path: str, decision: str) -> str:
+    return (
+        f"Real public corpus payment-language sample from {source_corpus}; "
+        f"redacted and URL/domain-neutralized locally; original source {source_path}; "
+        f"heuristic decision {decision}."
+    )
+
+
+def _message_text_from_payload(payload: bytes) -> str:
+    try:
+        message = BytesParser(policy=policy.default).parsebytes(payload)
+    except Exception:
+        return payload.decode("utf-8", errors="replace")
+
+    sections: list[str] = []
+    for header in ("Subject", "From", "Reply-To", "To"):
+        value = _safe_message_header_value(message, header)
+        if value:
+            sections.append(f"{header}: {value}")
+
+    body_chunks: list[str] = []
+    for part in message.walk():
+        if part.is_multipart() or part.get_content_maintype() != "text":
+            continue
+        try:
+            content = part.get_content()
+        except LookupError:
+            content = part.get_payload(decode=True).decode("utf-8", errors="replace")
+        if content:
+            body_chunks.append(str(content))
+
+    if body_chunks:
+        sections.append("\n".join(body_chunks))
+    return "\n\n".join(sections).strip()
+
+
+def _matched_any(text: str, patterns: tuple[str, ...]) -> bool:
+    return any(re.search(pattern, text, re.IGNORECASE | re.DOTALL) for pattern in patterns)
+
+
+def _public_corpus_payment_scenario(text: str, decision: str) -> str:
+    lower = text.lower()
+    if any(term in lower for term in ("ceo", "cfo", "director", "gift card", "private acquisition")):
+        return "executive_transfer"
+    if any(term in lower for term in (
+        "new bank",
+        "updated bank",
+        "changed bank",
+        "replacement account",
+        "alternate account",
+        "routing number",
+        "account number",
+        "swift",
+        "iban",
+        "bsb",
+        "beneficiary",
+        "wire transfer",
+    )):
+        return "bank_detail_change"
+    if any(term in lower for term in ("overdue", "past due", "final notice", "late fee")):
+        return "overdue_invoice"
+    if any(term in lower for term in ("attachment", "attached invoice", ".pdf", ".doc", "replacement invoice")):
+        return "fake_invoice_attachment"
+    if any(term in lower for term in ("portal", "click", "login", "log in", "paypal", "billing")):
+        return "payment_portal_link"
+    if decision == "VERIFY":
+        return "overdue_invoice"
+    return "other"
+
+
+def _classify_public_corpus_payment_text(text: str) -> Optional[dict[str, str]]:
+    squashed = " ".join(text.split())
+    if not PUBLIC_CORPUS_PAYMENT_KEYWORD_RE.search(squashed):
+        return None
+    if PUBLIC_CORPUS_EXCLUDED_SCAM_CONTEXT_RE.search(squashed):
+        return None
+    if not PUBLIC_CORPUS_BUSINESS_PAYMENT_CONTEXT_RE.search(squashed):
+        return None
+
+    scenario = _public_corpus_payment_scenario(squashed, "VERIFY")
+    if _matched_any(squashed, PUBLIC_CORPUS_DO_NOT_PAY_PATTERNS):
+        decision = "DO_NOT_PAY"
+        scenario = _public_corpus_payment_scenario(squashed, decision)
+        if scenario not in {"bank_detail_change", "executive_transfer"}:
+            decision = "VERIFY"
+            scenario = _public_corpus_payment_scenario(squashed, decision)
+    elif _matched_any(squashed, PUBLIC_CORPUS_VERIFY_PATTERNS):
+        decision = "VERIFY"
+    else:
+        return None
+
+    return {
+        "decision": decision,
+        "scenario": scenario,
+    }
+
+
+def _iter_public_corpus_payment_matches(
+    corpora_dir: Path,
+    max_bytes: int,
+) -> list[dict[str, object]]:
+    matches: list[dict[str, object]] = []
+    seen_digests: set[str] = set()
+    candidate_iterators = (
+        iter_nazario_candidates(corpora_dir, max_bytes=max_bytes),
+        iter_spamassassin_spam_candidates(corpora_dir, max_bytes=max_bytes),
+    )
+
+    for iterator in candidate_iterators:
+        for candidate in iterator:
+            try:
+                payload = candidate.read_bytes()
+            except OSError:
+                continue
+            digest = hashlib.sha256(payload).hexdigest()
+            if digest in seen_digests:
+                continue
+            seen_digests.add(digest)
+            classification = _classify_public_corpus_payment_text(
+                _message_text_from_payload(payload)
+            )
+            if classification is None:
+                continue
+            matches.append(
+                {
+                    "candidate": candidate,
+                    "payload": payload,
+                    "digest": digest,
+                    "decision": classification["decision"],
+                    "scenario": classification["scenario"],
+                }
+            )
+    return matches
+
+
+def _remove_samples_by_verified_by(dataset_dir: Path, verified_by: str) -> int:
+    dataset_dir = init_dataset(dataset_dir)
+    labels_path = dataset_dir / LABELS_CSV
+    manifest_path = dataset_dir / MANIFEST_JSONL
+    rows = _read_labels(labels_path)
+    removed_rows = [row for row in rows if row.get("verified_by") == verified_by]
+    if not removed_rows:
+        return 0
+
+    samples_dir = (dataset_dir / SAMPLES_DIR).resolve()
+    for row in removed_rows:
+        sample_path = (samples_dir / row.get("filename", "")).resolve()
+        if sample_path.parent != samples_dir:
+            raise ValueError(f"refusing to remove unexpected sample path: {sample_path}")
+        if sample_path.exists():
+            sample_path.unlink()
+
+    removed_filenames = {row["filename"] for row in removed_rows}
+    _write_labels(labels_path, [row for row in rows if row.get("filename") not in removed_filenames])
+    manifest_rows = [
+        row
+        for row in _read_manifest_rows(manifest_path)
+        if row.get("filename") not in removed_filenames
+    ]
+    _write_manifest_rows(manifest_path, manifest_rows)
+    return len(removed_rows)
+
+
+def seed_public_corpus_payment_examples(
+    dataset_dir: Path = DEFAULT_DATASET_DIR,
+    corpora_dir: Path = DEFAULT_CORPORA_DIR,
+    do_not_pay_count: int = 0,
+    verify_count: int = 20,
+    seed: int = 1337,
+    max_bytes: int = DEFAULT_MAX_BYTES,
+    replace_existing: bool = False,
+) -> PublicCorpusPaymentSeedSummary:
+    dataset_dir = Path(dataset_dir)
+    corpora_dir = Path(corpora_dir)
+    if do_not_pay_count < 0 or verify_count < 0:
+        raise ValueError("sample counts must be non-negative")
+    if not corpora_dir.exists():
+        raise FileNotFoundError(f"corpora directory not found: {corpora_dir}")
+    init_dataset(dataset_dir)
+    if replace_existing:
+        _remove_samples_by_verified_by(dataset_dir, PUBLIC_CORPUS_MINER_VERIFIED_BY)
+
+    generated_dir = dataset_dir / INCOMING_DIR / "public_corpus_examples"
+    raw_tmp_dir = generated_dir / "_raw_tmp"
+    redacted_dir = generated_dir / "redacted"
+    if raw_tmp_dir.exists():
+        resolved_tmp = raw_tmp_dir.resolve()
+        if generated_dir.resolve() not in resolved_tmp.parents:
+            raise ValueError(f"refusing to clean unexpected raw temp path: {resolved_tmp}")
+        shutil.rmtree(raw_tmp_dir)
+    raw_tmp_dir.mkdir(parents=True, exist_ok=True)
+    redacted_dir.mkdir(parents=True, exist_ok=True)
+
+    matches = _iter_public_corpus_payment_matches(corpora_dir, max_bytes=max_bytes)
+    by_decision = {
+        "DO_NOT_PAY": [match for match in matches if match["decision"] == "DO_NOT_PAY"],
+        "VERIFY": [match for match in matches if match["decision"] == "VERIFY"],
+    }
+    rng = random.Random(seed)
+    for decision_matches in by_decision.values():
+        rng.shuffle(decision_matches)
+
+    requested = {"DO_NOT_PAY": do_not_pay_count, "VERIFY": verify_count}
+    selected: list[dict[str, object]] = []
+    warnings: list[str] = []
+    for decision, count in requested.items():
+        available = len(by_decision[decision])
+        if available < count:
+            warnings.append(
+                f"requested {count} {decision} public-corpus samples but only {available} matched"
+            )
+        selected.extend(by_decision[decision])
+
+    written_counts = {"DO_NOT_PAY": 0, "VERIFY": 0}
+    try:
+        for index, match in enumerate(selected):
+            candidate = match["candidate"]
+            if not isinstance(candidate, CorpusCandidate):
+                continue
+            payload = match["payload"]
+            if not isinstance(payload, bytes):
+                continue
+            decision = str(match["decision"])
+            if written_counts[decision] >= requested[decision]:
+                continue
+            scenario = str(match["scenario"])
+            digest = str(match["digest"])
+            stem = f"{candidate.source_corpus}_{decision.lower()}_{index:03d}_{digest[:12]}"
+            raw_source = raw_tmp_dir / f"{stem}.eml"
+            redacted_source = redacted_dir / f"{stem}.eml"
+            raw_source.write_bytes(payload)
+            summary = redact_eml(raw_source, redacted_source, overwrite=True)
+            if summary.findings_after:
+                warnings.append(
+                    f"skipped {candidate.source_path}: redaction audit found "
+                    f"{summary.findings_after} possible leaks"
+                )
+                continue
+            add_sample(
+                dataset_dir=dataset_dir,
+                source=redacted_source,
+                label="PAYMENT_SCAM",
+                payment_decision=decision,
+                scenario=scenario,
+                source_type="public",
+                split=_split_for_index(written_counts[decision], max(1, requested[decision])),
+                verified_by=PUBLIC_CORPUS_MINER_VERIFIED_BY,
+                contains_real_pii="no",
+                notes=_public_corpus_note(candidate.source_corpus, candidate.source_path, decision),
+            )
+            written_counts[decision] += 1
+    finally:
+        if raw_tmp_dir.exists():
+            shutil.rmtree(raw_tmp_dir)
+
+    eval_labels = export_eval_labels(dataset_dir)
+    return PublicCorpusPaymentSeedSummary(
+        dataset_dir=dataset_dir,
+        corpora_dir=corpora_dir,
+        requested_do_not_pay=do_not_pay_count,
+        requested_verify=verify_count,
+        do_not_pay_count=written_counts["DO_NOT_PAY"],
+        verify_count=written_counts["VERIFY"],
+        available_do_not_pay=len(by_decision["DO_NOT_PAY"]),
+        available_verify=len(by_decision["VERIFY"]),
+        total_count=written_counts["DO_NOT_PAY"] + written_counts["VERIFY"],
+        labels_path=dataset_dir / LABELS_CSV,
+        eval_labels_path=eval_labels,
+        warnings=warnings,
     )
 
 
@@ -1478,6 +1876,22 @@ def build_arg_parser() -> argparse.ArgumentParser:
     public_seed_parser.add_argument("--holdout-do-not-pay-count", type=int, default=0)
     public_seed_parser.add_argument("--holdout-verify-count", type=int, default=0)
 
+    public_corpus_parser = subparsers.add_parser(
+        "seed-public-corpus",
+        help="Mine Nazario and SpamAssassin spam corpora for redacted payment-risk examples",
+    )
+    public_corpus_parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET_DIR)
+    public_corpus_parser.add_argument("--corpora-dir", type=Path, default=DEFAULT_CORPORA_DIR)
+    public_corpus_parser.add_argument("--do-not-pay-count", type=int, default=0)
+    public_corpus_parser.add_argument("--verify-count", type=int, default=20)
+    public_corpus_parser.add_argument("--seed", type=int, default=1337)
+    public_corpus_parser.add_argument("--max-bytes", type=int, default=DEFAULT_MAX_BYTES)
+    public_corpus_parser.add_argument(
+        "--replace-existing",
+        action="store_true",
+        help="Remove rows previously generated by this public-corpus miner first",
+    )
+
     redact_parser = subparsers.add_parser("redact", help="Create a redacted .eml copy for dataset review")
     redact_parser.add_argument("--source", type=Path, required=True)
     redact_parser.add_argument("--output", type=Path, default=None)
@@ -1580,6 +1994,29 @@ def main(argv: Optional[list[str]] = None) -> int:
         print("  sources:")
         for source_url in PUBLIC_ADVISORY_SOURCE_URLS:
             print(f"    - {source_url}")
+        return 0
+
+    if args.command == "seed-public-corpus":
+        summary = seed_public_corpus_payment_examples(
+            dataset_dir=args.dataset,
+            corpora_dir=args.corpora_dir,
+            do_not_pay_count=args.do_not_pay_count,
+            verify_count=args.verify_count,
+            seed=args.seed,
+            max_bytes=args.max_bytes,
+            replace_existing=args.replace_existing,
+        )
+        print(f"Seeded public-corpus payment examples at {summary.dataset_dir}")
+        print(f"  corpora:              {summary.corpora_dir}")
+        print(f"  do not pay written:   {summary.do_not_pay_count}/{summary.requested_do_not_pay}")
+        print(f"  verify written:       {summary.verify_count}/{summary.requested_verify}")
+        print(f"  available do not pay: {summary.available_do_not_pay}")
+        print(f"  available verify:     {summary.available_verify}")
+        print(f"  total:                {summary.total_count}")
+        print(f"  labels:               {summary.labels_path}")
+        print(f"  eval labels:          {summary.eval_labels_path}")
+        for warning in summary.warnings:
+            print(f"WARN: {warning}")
         return 0
 
     if args.command == "redact":

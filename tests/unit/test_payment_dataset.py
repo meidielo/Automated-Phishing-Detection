@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import csv
 import json
+import mailbox
+from email.message import EmailMessage
 from pathlib import Path
 
 import pytest
@@ -14,6 +16,7 @@ from src.eval.payment_dataset import (
     init_dataset,
     redact_eml,
     scan_redaction_findings,
+    seed_public_corpus_payment_examples,
     seed_public_advisory_payment_examples,
     seed_synthetic_bank_change_dataset,
     summarize_dataset_readiness,
@@ -36,6 +39,73 @@ def _write_eml(path: Path, subject: str = "Invoice") -> Path:
         encoding="utf-8",
     )
     return path
+
+
+def _mail(subject: str, body: str, sender: str = "sender@real-domain.test") -> EmailMessage:
+    msg = EmailMessage()
+    msg["From"] = sender
+    msg["To"] = "victim@buyer-real.test"
+    msg["Subject"] = subject
+    msg.set_content(body)
+    return msg
+
+
+def _write_public_payment_corpora(root: Path) -> Path:
+    corpora = root / "corpora"
+    nazario = corpora / "nazario"
+    nazario.mkdir(parents=True)
+    mbox = mailbox.mbox(str(nazario / "phishing0.mbox"))
+    try:
+        mbox.add(
+            _mail(
+                "Updated bank details for invoice",
+                "Please wire transfer invoice INV-5566 today.\n"
+                "New BSB: 123-456\n"
+                "Account number: 987654321\n"
+                "Reply to payments@attacker-real.test",
+                sender="billing@supplier-real.test",
+            )
+        )
+        mbox.add(
+            _mail(
+                "Invoice payment overdue today",
+                "The invoice payment is overdue today. Please send payment immediately.",
+                sender="credit@supplier-real.test",
+            )
+        )
+        mbox.add(
+            _mail(
+                "Unrelated account verification",
+                "Click to verify your account profile.",
+                sender="service@phish-real.test",
+            )
+        )
+        mbox.flush()
+    finally:
+        mbox.close()
+
+    spam = corpora / "spamassassin" / "spam"
+    spam.mkdir(parents=True)
+    (spam / "0001").write_text(
+        "\n".join(
+            [
+                "From: Supplier Accounts <agent@transfer-real.test>",
+                "To: victim@buyer-real.test",
+                "Subject: Updated invoice bank transfer instructions",
+                "",
+                "Please send payment for invoice INV-009 by bank transfer today.",
+                "Account number: 222333444",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (corpora / "spamassassin" / "easy_ham").mkdir(parents=True)
+    (corpora / "spamassassin" / "easy_ham" / "0001").write_text(
+        "From: friend@example.com\nSubject: lunch\n\nNo payment context.",
+        encoding="utf-8",
+    )
+    return corpora
 
 
 def test_init_dataset_creates_structure(tmp_path: Path):
@@ -213,6 +283,71 @@ def test_seed_public_advisory_payment_examples_adds_realish_decisions(tmp_path: 
     assert {row["payment_decision"] for row in rows} == {"DO_NOT_PAY", "VERIFY"}
     assert {row["label"] for row in rows} == {"LEGITIMATE_PAYMENT", "PAYMENT_SCAM"}
     assert {row["split"] for row in rows} == {"holdout", "train", "validation", "test"}
+
+
+def test_seed_public_corpus_payment_examples_mines_redacted_payment_language(tmp_path: Path):
+    dataset = tmp_path / "payment_scam_dataset_seed"
+    corpora = _write_public_payment_corpora(tmp_path)
+
+    summary = seed_public_corpus_payment_examples(
+        dataset_dir=dataset,
+        corpora_dir=corpora,
+        do_not_pay_count=2,
+        verify_count=1,
+        replace_existing=True,
+    )
+
+    assert summary.total_count == 3
+    assert summary.do_not_pay_count == 2
+    assert summary.verify_count == 1
+    assert summary.available_do_not_pay == 2
+    assert summary.available_verify == 1
+    assert summary.warnings == []
+    assert validate_dataset(dataset).ok
+    assert audit_dataset_pii(dataset) == []
+    assert not (dataset / "incoming" / "public_corpus_examples" / "_raw_tmp").exists()
+
+    with (dataset / "labels.csv").open("r", encoding="utf-8", newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    assert {row["source_type"] for row in rows} == {"public"}
+    assert {row["verified_by"] for row in rows} == {"public-corpus-miner"}
+    assert {row["contains_real_pii"] for row in rows} == {"no"}
+    assert {row["label"] for row in rows} == {"PAYMENT_SCAM"}
+    assert {row["payment_decision"] for row in rows} == {"DO_NOT_PAY", "VERIFY"}
+
+    sample_text = "\n".join(
+        (dataset / "samples" / row["filename"]).read_text(encoding="utf-8")
+        for row in rows
+    )
+    assert "supplier-real.test" not in sample_text
+    assert "buyer-real.test" not in sample_text
+    assert "attacker-real.test" not in sample_text
+    assert "123-456" not in sample_text
+    assert "987654321" not in sample_text
+
+
+def test_seed_public_corpus_replace_existing_is_idempotent(tmp_path: Path):
+    dataset = tmp_path / "payment_scam_dataset_seed"
+    corpora = _write_public_payment_corpora(tmp_path)
+
+    seed_public_corpus_payment_examples(
+        dataset_dir=dataset,
+        corpora_dir=corpora,
+        do_not_pay_count=2,
+        verify_count=1,
+        replace_existing=True,
+    )
+    second = seed_public_corpus_payment_examples(
+        dataset_dir=dataset,
+        corpora_dir=corpora,
+        do_not_pay_count=2,
+        verify_count=1,
+        replace_existing=True,
+    )
+
+    assert second.total_count == 3
+    with (dataset / "labels.csv").open("r", encoding="utf-8", newline="") as fh:
+        assert len(list(csv.DictReader(fh))) == 3
 
 
 def test_public_advisory_seed_can_satisfy_decision_readiness_with_safe_samples(tmp_path: Path):
