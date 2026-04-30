@@ -13,12 +13,12 @@ import csv
 import io
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -58,8 +58,8 @@ class FeedbackSubmissionRequest(BaseModel):
         description="Feature vector from original analysis (for retraining)",
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "email_id": "msg_abc123",
                 "original_verdict": "SUSPICIOUS",
@@ -71,6 +71,7 @@ class FeedbackSubmissionRequest(BaseModel):
                 },
             }
         }
+    )
 
 
 class FeedbackResponse(BaseModel):
@@ -83,8 +84,7 @@ class FeedbackResponse(BaseModel):
     submitted_at: datetime
     actions_taken: list[str]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class StatsResponse(BaseModel):
@@ -100,8 +100,8 @@ class StatsResponse(BaseModel):
     f1_score: float
     last_updated: datetime
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "total_feedback_records": 156,
                 "total_unique_emails": 142,
@@ -114,6 +114,7 @@ class StatsResponse(BaseModel):
                 "last_updated": "2026-03-08T15:30:00Z",
             }
         }
+    )
 
 
 class RetrainResponse(BaseModel):
@@ -126,8 +127,8 @@ class RetrainResponse(BaseModel):
     new_weights: Optional[dict[str, float]] = None
     message: str
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "run_id": "retrain_abc12345_1234567890",
                 "status": "completed",
@@ -140,6 +141,7 @@ class RetrainResponse(BaseModel):
                 "message": "Retraining completed successfully",
             }
         }
+    )
 
 
 class HealthResponse(BaseModel):
@@ -150,8 +152,8 @@ class HealthResponse(BaseModel):
     database_connected: bool
     scheduler_running: bool
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "status": "healthy",
                 "timestamp": "2026-03-08T15:30:00Z",
@@ -159,6 +161,7 @@ class HealthResponse(BaseModel):
                 "scheduler_running": True,
             }
         }
+    )
 
 
 class GapAnalysisResponse(BaseModel):
@@ -172,8 +175,8 @@ class GapAnalysisResponse(BaseModel):
     fp_percentage: float
     high_confidence_errors: int
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "analyzer": "url_reputation",
                 "false_negatives": 12,
@@ -184,6 +187,7 @@ class GapAnalysisResponse(BaseModel):
                 "high_confidence_errors": 8,
             }
         }
+    )
 
 
 def create_app(
@@ -276,7 +280,7 @@ def create_app(
         Raises:
             HTTPException: If rate limit exceeded
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         minute_ago = now - timedelta(minutes=1)
 
         # Clean old entries
@@ -325,7 +329,7 @@ def create_app(
 
         return HealthResponse(
             status=status_str,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             database_connected=db_connected,
             scheduler_running=scheduler_running,
         )
@@ -381,7 +385,7 @@ def create_app(
                 correct_label=feedback.correct_label,
                 analyst_notes=feedback.analyst_notes,
                 feature_vector=json.dumps(feedback.feature_vector),
-                submitted_at=datetime.utcnow(),
+                submitted_at=datetime.now(timezone.utc),
             )
             session.add(db_record)
             await session.flush()
@@ -403,7 +407,7 @@ def create_app(
                         indicator=domain,
                         indicator_type="domain",
                         added_by="analyst",
-                        added_at=datetime.utcnow(),
+                        added_at=datetime.now(timezone.utc),
                         reason=feedback.analyst_notes,
                     )
                     session.add(allowlist_entry)
@@ -419,7 +423,7 @@ def create_app(
                         indicator=domain,
                         indicator_type="domain",
                         added_by="analyst",
-                        added_at=datetime.utcnow(),
+                        added_at=datetime.now(timezone.utc),
                         reason=feedback.analyst_notes,
                     )
                     session.add(blocklist_entry)
@@ -536,7 +540,7 @@ def create_app(
                 precision=round(precision, 4),
                 recall=round(recall, 4),
                 f1_score=round(f1, 4),
-                last_updated=datetime.utcnow(),
+                last_updated=datetime.now(timezone.utc),
             )
 
         except Exception as e:
@@ -548,7 +552,7 @@ def create_app(
 
     @app.get("/api/v1/feedback/export")
     async def export_feedback(
-        format: str = Query("csv", regex="^(csv|jsonl)$"),
+        format: str = Query("csv", pattern="^(csv|jsonl)$"),
         token: str = Depends(verify_bearer_token),
         session: AsyncSession = Depends(get_db_session),
     ):

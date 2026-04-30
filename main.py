@@ -1755,6 +1755,11 @@ Quick Start:
         action="store_true",
         help="Report what would be dropped without modifying the file.",
     )
+    purge_parser.add_argument(
+        "--by-address",
+        default=None,
+        help="Erase rows mentioning this email address or email_id instead of purging by age.",
+    )
 
     # ── Legacy flags ─────────────────────────────────────────────
     parser.add_argument("--analyze", metavar="EMAIL_FILE", help=argparse.SUPPRESS)
@@ -1817,9 +1822,39 @@ Quick Start:
         app.run_server(host=args.host, port=args.port)
 
     elif args.command == "purge":
-        from src.automation.retention import purge_feedback_db, purge_results_jsonl
+        from src.automation.retention import (
+            erase_subject_from_feedback_db,
+            erase_subject_from_results_jsonl,
+            purge_feedback_db,
+            purge_results_jsonl,
+        )
         config = PipelineConfig.from_env()
         max_age = args.older_than if args.older_than is not None else config.data_retention_days
+
+        if args.by_address:
+            if args.target in ("jsonl", "all"):
+                erasure = erase_subject_from_results_jsonl(
+                    args.path,
+                    args.by_address,
+                    dry_run=args.dry_run,
+                )
+                prefix = "[DRY RUN] " if args.dry_run else ""
+                print(f"{prefix}Erased subject from {erasure.path}")
+                print(f"  subject: {erasure.subject}")
+                print(f"  kept:    {erasure.kept}")
+                print(f"  dropped: {erasure.dropped}")
+            if args.target in ("feedback", "all"):
+                feedback_erasure = asyncio.run(erase_subject_from_feedback_db(
+                    args.feedback_db,
+                    args.by_address,
+                    dry_run=args.dry_run,
+                ))
+                prefix = "[DRY RUN] " if args.dry_run else ""
+                print(f"{prefix}Erased subject from feedback DB {feedback_erasure.path}")
+                print(f"  subject: {feedback_erasure.subject}")
+                print(f"  kept:    {feedback_erasure.kept}")
+                print(f"  dropped: {feedback_erasure.dropped}")
+            return
 
         if args.target in ("jsonl", "all") and args.dry_run:
             # Dry run: copy the file to a tempfile, purge that, report stats

@@ -37,12 +37,19 @@ def main() -> int:
     print(f"  train rows:   {metrics.train_rows}")
     print(f"  val rows:     {metrics.validation_rows}")
     print(f"  test rows:    {metrics.test_rows}")
+    print(f"  holdout rows: {metrics.holdout_rows}")
     print(f"  classes:      {', '.join(metrics.classes)}")
     print(f"  test accuracy:{metrics.test_accuracy: .3f}")
     print("  matrix:")
     for expected, predictions in sorted(metrics.confusion_matrix.items()):
         for predicted, count in sorted(predictions.items()):
             print(f"    {expected} -> {predicted}: {count}")
+    if metrics.holdout_rows:
+        print(f"  holdout accuracy:{metrics.holdout_accuracy: .3f}")
+        print("  holdout matrix:")
+        for expected, predictions in sorted(metrics.holdout_confusion_matrix.items()):
+            for predicted, count in sorted(predictions.items()):
+                print(f"    {expected} -> {predicted}: {count}")
     print(f"  model:        {metrics.model_path}")
     print(f"  metrics:      {metrics.metrics_path}")
     return 0

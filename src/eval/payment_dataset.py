@@ -1005,13 +1005,16 @@ def _synthetic_safe_invoice_email(index: int) -> tuple[bytes, str]:
 PUBLIC_ADVISORY_SOURCE_URLS = (
     "https://www.scamwatch.gov.au/types-of-scams/business-email-compromise-scams",
     "https://www.cyber.gov.au/threats/types-threats/business-email-compromise",
+    "https://www.fbi.gov/contact-us/field-offices/denver/news/press-releases/business-e-mail-compromise-fraud-alert",
+    "https://sublime.security/blog/business-email-compromise-fake-invoice-16800",
 )
 
 
 def _public_advisory_note() -> str:
     return (
         "Public-advisory-derived redacted example; not copied from source text; "
-        "patterns informed by Scamwatch and cyber.gov.au BEC guidance."
+        "patterns informed by Scamwatch, cyber.gov.au, FBI, and Sublime "
+        "Security BEC/payment-redirection guidance."
     )
 
 
@@ -1250,9 +1253,11 @@ def seed_public_advisory_payment_examples(
     dataset_dir: Path = DEFAULT_DATASET_DIR,
     do_not_pay_count: int = 10,
     verify_count: int = 10,
+    holdout_do_not_pay_count: int = 0,
+    holdout_verify_count: int = 0,
 ) -> SeedSummary:
     dataset_dir = Path(dataset_dir)
-    if do_not_pay_count < 0 or verify_count < 0:
+    if min(do_not_pay_count, verify_count, holdout_do_not_pay_count, holdout_verify_count) < 0:
         raise ValueError("sample counts must be non-negative")
     init_dataset(dataset_dir)
 
@@ -1278,6 +1283,24 @@ def seed_public_advisory_payment_examples(
             notes=note,
         )
 
+    for index in range(holdout_do_not_pay_count):
+        case_index = do_not_pay_count + index
+        case = do_not_pay_cases[case_index % len(do_not_pay_cases)]
+        source = generated_dir / f"public_holdout_do_not_pay_{index:03d}.eml"
+        source.write_bytes(_public_advisory_message(case, case_index, "holdout-do-not-pay"))
+        add_sample(
+            dataset_dir=dataset_dir,
+            source=source,
+            label="PAYMENT_SCAM",
+            payment_decision="DO_NOT_PAY",
+            scenario=case["scenario"],
+            source_type="public",
+            split="holdout",
+            verified_by="public-advisory-seed",
+            contains_real_pii="no",
+            notes=note,
+        )
+
     for index in range(verify_count):
         case = verify_cases[index % len(verify_cases)]
         source = generated_dir / f"public_verify_{index:03d}.eml"
@@ -1295,13 +1318,31 @@ def seed_public_advisory_payment_examples(
             notes=note,
         )
 
+    for index in range(holdout_verify_count):
+        case_index = verify_count + index
+        case = verify_cases[case_index % len(verify_cases)]
+        source = generated_dir / f"public_holdout_verify_{index:03d}.eml"
+        source.write_bytes(_public_advisory_message(case, case_index, "holdout-verify"))
+        add_sample(
+            dataset_dir=dataset_dir,
+            source=source,
+            label="LEGITIMATE_PAYMENT",
+            payment_decision="VERIFY",
+            scenario=case["scenario"],
+            source_type="public",
+            split="holdout",
+            verified_by="public-advisory-seed",
+            contains_real_pii="no",
+            notes=note,
+        )
+
     eval_labels = export_eval_labels(dataset_dir)
     return SeedSummary(
         dataset_dir=dataset_dir,
-        scam_count=do_not_pay_count,
-        legitimate_count=verify_count,
+        scam_count=do_not_pay_count + holdout_do_not_pay_count,
+        legitimate_count=verify_count + holdout_verify_count,
         safe_count=0,
-        total_count=do_not_pay_count + verify_count,
+        total_count=do_not_pay_count + verify_count + holdout_do_not_pay_count + holdout_verify_count,
         labels_path=dataset_dir / LABELS_CSV,
         eval_labels_path=eval_labels,
     )
@@ -1434,6 +1475,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     public_seed_parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET_DIR)
     public_seed_parser.add_argument("--do-not-pay-count", type=int, default=10)
     public_seed_parser.add_argument("--verify-count", type=int, default=10)
+    public_seed_parser.add_argument("--holdout-do-not-pay-count", type=int, default=0)
+    public_seed_parser.add_argument("--holdout-verify-count", type=int, default=0)
 
     redact_parser = subparsers.add_parser("redact", help="Create a redacted .eml copy for dataset review")
     redact_parser.add_argument("--source", type=Path, required=True)
@@ -1523,10 +1566,14 @@ def main(argv: Optional[list[str]] = None) -> int:
             dataset_dir=args.dataset,
             do_not_pay_count=args.do_not_pay_count,
             verify_count=args.verify_count,
+            holdout_do_not_pay_count=args.holdout_do_not_pay_count,
+            holdout_verify_count=args.holdout_verify_count,
         )
         print(f"Seeded public-advisory payment examples at {summary.dataset_dir}")
-        print(f"  do not pay:          {summary.scam_count}")
-        print(f"  verify:              {summary.legitimate_count}")
+        print(f"  do not pay total:    {summary.scam_count}")
+        print(f"  verify total:        {summary.legitimate_count}")
+        print(f"  holdout do not pay:  {args.holdout_do_not_pay_count}")
+        print(f"  holdout verify:      {args.holdout_verify_count}")
         print(f"  total:               {summary.total_count}")
         print(f"  labels:              {summary.labels_path}")
         print(f"  eval labels:         {summary.eval_labels_path}")

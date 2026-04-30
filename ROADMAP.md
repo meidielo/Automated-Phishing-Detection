@@ -45,7 +45,7 @@ Status is one of:
 | **GitHub Actions CI** — full pytest on fresh checkout, flake8 lint, daily `pip-audit` against the lock file (fails on any advisory) | `.github/workflows/ci.yml`                      |
 | **`curl`-free Dockerfile healthcheck** using stdlib `urllib.request` — smaller image, smaller attack surface | `Dockerfile`                                    |
 | **Bind-mount UID fix** via `docker-entrypoint.sh` — chowns `/app/data` and `/app/logs` to runtime UID then `gosu`s to non-root before exec | `docker-entrypoint.sh`, `Dockerfile`            |
-| **Data retention / `purge` CLI subcommand** with `--older-than`, `--strict`, `--dry-run`. Closes Privacy Act / GDPR indefinite-retention risk. | `src/automation/retention.py`, `main.py purge` (17 tests) |
+| **Data retention / `purge` CLI subcommand** with `--older-than`, `--strict`, `--dry-run`, and `--by-address`. Closes Privacy Act / GDPR indefinite-retention and per-subject erasure risk. | `src/automation/retention.py`, `main.py purge` |
 | **Cross-analyzer calibration pass** (ADR 0001) — two-pass decision engine with corroboration-style calibration rules. Closes the LinkedIn FP that survived four cycles. | `src/scoring/calibration.py`, `src/scoring/social_platform_domains.py`, `src/scoring/decision_engine.py` (29 tests + ADR + rule registry doc) |
 | **Override-rule ordering fix (cycle 7 NEW-1)** — `_is_bec_threat` now runs BEFORE `_is_clean_email` so pure-text BEC with passing auth is no longer force-marked CLEAN. Closes a load-bearing accident discovered during cycle 6 implementation. | `src/scoring/decision_engine.py::_check_override_rules` (4 regression tests in `tests/unit/test_decision_engine_override_ordering.py`) |
 | **Calibration cap ceiling locked** — explicit tests proving the LinkedIn calibration rule caps verdicts AT SUSPICIOUS, never at CLEAN, and never modifies the underlying weighted score. Defends against the "real LinkedIn with embedded malicious redirect below corroboration threshold" scenario. | `tests/unit/test_calibration.py::TestCalibrationCapCeiling` (3 tests) + ADR §"Why the cap is SUSPICIOUS and not CLEAN" |
@@ -54,16 +54,17 @@ Status is one of:
 | **Diagnostic refactor (audit #10)** — three duplicate API health-check implementations (`diagnose_apis.py`, `test_apis.py`, `/api/diagnose`) consolidated into `src/diagnostics/api_checks.py` with a `CheckResult` dataclass and registry-driven `run_all_checks()`. `test_apis.py` deleted. | `src/diagnostics/` (18 tests covering the SKIP path, registry shape, dispatch, and `summarize()`) |
 | **Eval harness with per-sample JSONL storage** — corpus-agnostic `src/eval/harness.py` and `scripts/run_eval.py`. Each run produces one JSONL row per sample (sample_id, true_label, predicted_verdict, per_analyzer_scores, calibration outcome, model_id, commit_sha, TP/FP/TN/FN) plus an aggregate `.summary.json` under `eval_runs/`. Two binary projections (permissive/strict) computed and stored separately. The first baseline against `tests/real_world_samples/` is committed. The harness is the deliverable; numbers are data. | `src/eval/harness.py`, `scripts/run_eval.py`, `eval_runs/` (27 tests covering schema, projection, aggregate arithmetic) |
 | **Payment Fraud Firewall** — payment-specific analyzer that turns invoice, supplier, BEC, and bank-detail-change email signals into `SAFE`, `VERIFY`, or `DO_NOT_PAY` business decisions. | `src/analyzers/payment_fraud.py`, wired into pipeline and decision overrides |
-| **Payment scam dataset and ML tooling** — ignored local dataset scaffold, synthetic bank-detail-change seed set, public-advisory-derived payment-risk seed set, redaction/audit path for real samples, ML JSONL export, payment-decision eval reports, and a TF-IDF + logistic regression train/test baseline. | `src/eval/payment_dataset.py`, `src/eval/payment_decision_eval.py`, `src/ml/payment_classifier.py`, `scripts/payment_dataset.py`, `scripts/payment_eval.py`, `scripts/payment_train.py` |
+| **Payment scam dataset and ML tooling** — ignored local dataset scaffold, synthetic bank-detail-change seed set, public-advisory-derived payment-risk and holdout seed sets, redaction/audit path for real samples, ML JSONL export, payment-decision eval reports, and a TF-IDF + logistic regression train/test/holdout baseline. | `src/eval/payment_dataset.py`, `src/eval/payment_decision_eval.py`, `src/ml/payment_classifier.py`, `scripts/payment_dataset.py`, `scripts/payment_eval.py`, `scripts/payment_train.py` |
 | **Payment dataset readiness report** - counts source types, labels, payment decisions, and splits, and warns when non-synthetic coverage is missing for a payment decision. | `scripts/payment_dataset.py readiness`, `src/eval/payment_dataset.py` |
 | **Generic public-corpus ML baseline** - trains a TF-IDF + logistic regression classifier from prepared Nazario/Enron/SpamAssassin corpora and writes ignored model metrics. | `src/ml/phishing_classifier.py`, `scripts/phishing_train.py` |
 | **Payment ML decision sidecar** - payment analyzer reports model prediction, confidence, probabilities, and rules disagreement without letting synthetic-only ML override payment release. | `src/analyzers/payment_fraud.py`, `src/ml/payment_classifier.py` |
+| **Payment demo runner** - compact expected-vs-predicted `SAFE` / `VERIFY` / `DO_NOT_PAY` table for PII-free demo samples. | `src/eval/payment_demo.py`, `scripts/payment_demo.py` |
 | **Synthetic SAFE invoice seed class** - payment dataset generator can add routine invoice examples so `SAFE`, `VERIFY`, and `DO_NOT_PAY` all train and evaluate. | `src/eval/payment_dataset.py` |
 | **Public-corpus smoke eval baseline** - 15-sample Nazario/Enron/SpamAssassin run on commit `c459237`, with permissive and strict failure reports generated from ignored corpora. | `docs/EVALUATION.md`, `scripts/eval_inspect_failures.py` |
 | **Feedback DB retention policy** - `purge --target feedback|all` purges old SQLAlchemy feedback labels by age while optionally keeping N newest records. | `src/automation/retention.py`, `main.py purge` |
 | **Browser session auth for dashboard** - `/login` sets signed session and CSRF cookies; the same `TokenVerifier` accepts bearer or browser session auth. | `src/security/web_security.py`, `main.py`, `templates/login.html`, `templates/_shared.html` |
 | **Multi-container Docker Compose browser split** - URL detonation connects to a separate `browser-sandbox` Playwright service via `PLAYWRIGHT_WS_ENDPOINT`. | `docker-compose.yml`, `docker-compose.production.yml`, `src/analyzers/url_detonation.py` |
-| 1035 tests (48 test modules) | unit + integration |
+| 1044 tests (49 test modules) | unit + integration |
 
 ---
 
@@ -71,11 +72,8 @@ Status is one of:
 
 Ordered by intended sequence, not priority.
 
-### Per-data-subject erasure (`purge --by-address`)
-GDPR Art. 17 right-to-erasure. Today, deleting a specific subject's data requires manual `grep` + edit. Add `python main.py purge --by-address <addr>` that walks both `results.jsonl` and the feedback DB and removes any row mentioning the address. Documented as P3 in `THREAT_MODEL.md` §6a.
-
 ### Real redacted payment samples
-The payment dataset has tooling, synthetic seed data, public-advisory-derived `VERIFY`/`DO_NOT_PAY` seed data, readiness reporting, redaction, eval, and ML training. It still needs real redacted invoice, bank-change, remittance, and supplier-update samples before external product metrics are credible. Target: 20 to 50 real redacted examples across `SAFE`, `VERIFY`, and `DO_NOT_PAY`.
+The payment dataset has tooling, synthetic seed data, public-advisory-derived `VERIFY`/`DO_NOT_PAY` seed and holdout data, readiness reporting, redaction, eval, demo, and ML training. It still needs real redacted invoice, bank-change, remittance, and supplier-update samples before external product metrics are credible. Target: 20 to 50 real redacted examples across `SAFE`, `VERIFY`, and `DO_NOT_PAY`.
 
 ### Audit trail for feedback labels
 Append-only log of who relabeled what. Closes residual risk **R2**. Required before the project is honest about being multi-analyst.

@@ -10,6 +10,7 @@ exposure separate from the security threats in `THREAT_MODEL.md`.
 This module provides the purge primitive used by:
 - The `purge` CLI subcommand in `main.py`
 - A scheduled job (future, tracked in ROADMAP.md) that runs daily
+- Per-subject erasure by email address or email_id for JSONL and feedback DB
 
 Design notes:
 
@@ -19,9 +20,9 @@ Design notes:
    have a valid timestamp are KEPT (we'd rather over-retain than lose
    data we can't classify). Operators who want strict purging can pass
    `keep_unparseable=False`.
-3. **No DB, just a file**: the retention story for the SQLAlchemy
-   feedback DB is separate and handled by its own purge logic; this
-   module is only for the JSONL log.
+3. **Feedback DB handled explicitly**: SQLAlchemy feedback retention and
+   per-subject erasure use separate functions so JSONL rewrites and DB
+   deletes can be tested independently.
 4. **Time-zone safe**: timestamps in the file are ISO-8601 with a TZ
    offset, but legacy rows may be naive. Naive timestamps are treated
    as UTC.
@@ -80,6 +81,21 @@ class FeedbackRetentionStats:
         return self.kept + self.dropped
 
 
+@dataclass
+class ErasureStats:
+    """Summary of one per-subject erasure run."""
+
+    path: str
+    subject: str
+    kept: int
+    dropped: int
+    dry_run: bool
+
+    @property
+    def total_seen(self) -> int:
+        return self.kept + self.dropped
+
+
 def _parse_timestamp(value) -> Optional[datetime]:
     """
     Parse the `timestamp` field from a results.jsonl row.
@@ -100,6 +116,109 @@ def _parse_timestamp(value) -> Optional[datetime]:
         # in the existing data/results.jsonl may be naive.
         return dt.replace(tzinfo=timezone.utc)
     return dt
+
+
+def _contains_subject(value, subject: str) -> bool:
+    needle = subject.casefold()
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return needle in value.casefold()
+    if isinstance(value, dict):
+        return any(_contains_subject(item, subject) for item in value.values())
+    if isinstance(value, (list, tuple, set)):
+        return any(_contains_subject(item, subject) for item in value)
+    return needle in str(value).casefold()
+
+
+def _sql_like_contains(value: str) -> str:
+    escaped = (
+        value.casefold()
+        .replace("\\", "\\\\")
+        .replace("%", "\\%")
+        .replace("_", "\\_")
+    )
+    return f"%{escaped}%"
+
+
+def erase_subject_from_results_jsonl(
+    path: Union[str, Path],
+    subject: str,
+    *,
+    dry_run: bool = False,
+    index=None,
+) -> ErasureStats:
+    """
+    Remove JSONL analysis rows that mention an email address or email_id.
+
+    This is the per-data-subject erasure primitive for `data/results.jsonl`.
+    Matching is intentionally broad across nested JSON fields because stored
+    rows can contain sender, recipient, reply-to, subject/body previews, and
+    analyzer details.
+    """
+    subject = subject.strip()
+    if not subject:
+        raise ValueError("subject must not be empty")
+
+    target = Path(path)
+    if not target.exists():
+        return ErasureStats(path=str(target), subject=subject, kept=0, dropped=0, dry_run=dry_run)
+
+    kept_lines: list[str] = []
+    kept = dropped = 0
+    with target.open("r", encoding="utf-8") as fh:
+        for raw in fh:
+            line = raw.rstrip("\n").rstrip("\r")
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                if _contains_subject(line, subject):
+                    dropped += 1
+                else:
+                    kept += 1
+                    kept_lines.append(line)
+                continue
+
+            if _contains_subject(row, subject):
+                dropped += 1
+            else:
+                kept += 1
+                kept_lines.append(line)
+
+    if not dry_run:
+        tmp_path = target.with_suffix(target.suffix + ".erasure.tmp")
+        try:
+            with tmp_path.open("w", encoding="utf-8", newline="\n") as out:
+                for line in kept_lines:
+                    out.write(line)
+                    out.write("\n")
+            os.replace(tmp_path, target)
+        except Exception:
+            try:
+                if tmp_path.exists():
+                    tmp_path.unlink()
+            except OSError:
+                pass
+            raise
+        if index is not None:
+            try:
+                index.invalidate()
+            except Exception:
+                logger.exception("Failed to invalidate email lookup index after subject erasure")
+
+    logger.info(
+        "Erased subject from %s: subject=%s kept=%d dropped=%d dry_run=%s",
+        target, subject, kept, dropped, dry_run,
+    )
+    return ErasureStats(
+        path=str(target),
+        subject=subject,
+        kept=kept,
+        dropped=dropped,
+        dry_run=dry_run,
+    )
 
 
 def purge_results_jsonl(
@@ -333,5 +452,68 @@ async def purge_feedback_db(
         kept=kept,
         dropped=drop_count,
         keep_recent=keep_recent,
+        dry_run=dry_run,
+    )
+
+
+async def erase_subject_from_feedback_db(
+    db_path: Union[str, Path],
+    subject: str,
+    *,
+    dry_run: bool = False,
+) -> ErasureStats:
+    """Remove feedback rows that mention an email address or email_id."""
+    subject = subject.strip()
+    if not subject:
+        raise ValueError("subject must not be empty")
+
+    target = Path(db_path)
+    if not target.exists():
+        return ErasureStats(path=str(target), subject=subject, kept=0, dropped=0, dry_run=dry_run)
+
+    from sqlalchemy import delete, func, or_, select
+
+    from src.feedback.database import (
+        DatabaseManager,
+        FeedbackRecord,
+        create_sqlite_url,
+    )
+
+    db = DatabaseManager(create_sqlite_url(str(target)), echo=False)
+    await db.initialize()
+    try:
+        async with db.async_session_maker() as session:
+            total = (
+                await session.execute(select(func.count(FeedbackRecord.id)))
+            ).scalar() or 0
+            needle = _sql_like_contains(subject)
+            match_filter = or_(
+                func.lower(FeedbackRecord.email_id).like(needle, escape="\\"),
+                func.lower(FeedbackRecord.analyst_notes).like(needle, escape="\\"),
+                func.lower(FeedbackRecord.feature_vector).like(needle, escape="\\"),
+            )
+            drop_count = (
+                await session.execute(
+                    select(func.count(FeedbackRecord.id)).where(match_filter)
+                )
+            ).scalar() or 0
+            if not dry_run and drop_count:
+                await session.execute(delete(FeedbackRecord).where(match_filter))
+                await session.commit()
+            elif not dry_run:
+                await session.commit()
+            kept = total - drop_count
+    finally:
+        await db.close()
+
+    logger.info(
+        "Erased subject from feedback DB %s: subject=%s kept=%d dropped=%d dry_run=%s",
+        target, subject, kept, drop_count, dry_run,
+    )
+    return ErasureStats(
+        path=str(target),
+        subject=subject,
+        kept=kept,
+        dropped=drop_count,
         dry_run=dry_run,
     )

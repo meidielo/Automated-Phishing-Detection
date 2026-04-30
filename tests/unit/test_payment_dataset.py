@@ -195,11 +195,13 @@ def test_seed_public_advisory_payment_examples_adds_realish_decisions(tmp_path: 
         dataset_dir=dataset,
         do_not_pay_count=10,
         verify_count=10,
+        holdout_do_not_pay_count=2,
+        holdout_verify_count=2,
     )
 
-    assert summary.total_count == 20
-    assert summary.scam_count == 10
-    assert summary.legitimate_count == 10
+    assert summary.total_count == 24
+    assert summary.scam_count == 12
+    assert summary.legitimate_count == 12
     result = validate_dataset(dataset)
     assert result.ok
     assert audit_dataset_pii(dataset) == []
@@ -210,7 +212,7 @@ def test_seed_public_advisory_payment_examples_adds_realish_decisions(tmp_path: 
     assert {row["contains_real_pii"] for row in rows} == {"no"}
     assert {row["payment_decision"] for row in rows} == {"DO_NOT_PAY", "VERIFY"}
     assert {row["label"] for row in rows} == {"LEGITIMATE_PAYMENT", "PAYMENT_SCAM"}
-    assert {row["split"] for row in rows} == {"train", "validation", "test"}
+    assert {row["split"] for row in rows} == {"holdout", "train", "validation", "test"}
 
 
 def test_public_advisory_seed_can_satisfy_decision_readiness_with_safe_samples(tmp_path: Path):

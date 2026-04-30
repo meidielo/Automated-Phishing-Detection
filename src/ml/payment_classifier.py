@@ -46,9 +46,12 @@ class PaymentMLMetrics:
     train_rows: int
     validation_rows: int
     test_rows: int
+    holdout_rows: int
     classes: list[str]
     test_accuracy: float
+    holdout_accuracy: Optional[float]
     confusion_matrix: dict[str, dict[str, int]]
+    holdout_confusion_matrix: dict[str, dict[str, int]]
     classification_report: dict
 
 
@@ -113,6 +116,10 @@ def split_records(records: list[PaymentMLRecord]) -> tuple[list[PaymentMLRecord]
     if train and test:
         return train, validation, test
     return _fallback_split(records)
+
+
+def holdout_records(records: list[PaymentMLRecord]) -> list[PaymentMLRecord]:
+    return _records_for_split(records, "holdout")
 
 
 def _target_values(records: list[PaymentMLRecord], target: str) -> list[str]:
@@ -201,7 +208,9 @@ def train_payment_classifier(
     if not records:
         raise ValueError("payment ML dataset has no rows")
 
-    train, validation, test = split_records(records)
+    holdout = holdout_records(records)
+    trainable_records = [record for record in records if record.split != "holdout"]
+    train, validation, test = split_records(trainable_records)
     if not train or not test:
         raise ValueError("payment ML dataset needs train and test rows")
 
@@ -215,6 +224,12 @@ def train_payment_classifier(
     model.fit(_texts(train), y_train)
     predicted = model.predict(_texts(test)).tolist()
     classes = sorted(set(y_train) | set(y_test) | set(predicted))
+    holdout_predicted: list[str] = []
+    y_holdout: list[str] = []
+    if holdout:
+        y_holdout = _target_values(holdout, target)
+        holdout_predicted = model.predict(_texts(holdout)).tolist()
+        classes = sorted(set(classes) | set(y_holdout) | set(holdout_predicted))
 
     output_dir.mkdir(parents=True, exist_ok=True)
     model_path = output_dir / f"{target}_model.joblib"
@@ -236,9 +251,18 @@ def train_payment_classifier(
         train_rows=len(train),
         validation_rows=len(validation),
         test_rows=len(test),
+        holdout_rows=len(holdout),
         classes=classes,
         test_accuracy=round(float(accuracy_score(y_test, predicted)), 3),
+        holdout_accuracy=(
+            round(float(accuracy_score(y_holdout, holdout_predicted)), 3)
+            if holdout else None
+        ),
         confusion_matrix=_confusion_as_dict(classes, y_test, predicted),
+        holdout_confusion_matrix=(
+            _confusion_as_dict(classes, y_holdout, holdout_predicted)
+            if holdout else {}
+        ),
         classification_report=report,
     )
     payload = asdict(metrics)

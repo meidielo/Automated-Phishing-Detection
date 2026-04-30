@@ -10,7 +10,7 @@ This module:
 import json
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import numpy as np
@@ -28,6 +28,10 @@ from src.feedback.database import (
 from src.models import Verdict
 
 logger = logging.getLogger(__name__)
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class RetrainerConfig:
@@ -384,7 +388,7 @@ class RetrainOrchestrator:
                 )
 
             # Check if too long since last retrain
-            days_since = (datetime.utcnow() - last_run.completed_at).days
+            days_since = (_utc_now() - last_run.completed_at).days
             if days_since > RetrainerConfig.MAX_DAYS_BETWEEN_RETRAIN:
                 return (
                     True,
@@ -423,11 +427,12 @@ class RetrainOrchestrator:
         Returns:
             Result dict with status, metadata, improvements
         """
-        run_id = f"retrain_{uuid.uuid4().hex[:8]}_{int(datetime.utcnow().timestamp())}"
+        started_at = _utc_now()
+        run_id = f"retrain_{uuid.uuid4().hex[:8]}_{int(started_at.timestamp())}"
         run = RetrainRun(
             run_id=run_id,
             triggered_by=triggered_by,
-            started_at=datetime.utcnow(),
+            started_at=started_at,
             status="in_progress",
         )
         session.add(run)
@@ -451,7 +456,7 @@ class RetrainOrchestrator:
             )
 
             # Mark complete
-            run.completed_at = datetime.utcnow()
+            run.completed_at = _utc_now()
             run.status = "completed"
 
             # TODO: Calculate actual improvement by A/B testing
@@ -478,7 +483,7 @@ class RetrainOrchestrator:
         except Exception as e:
             run.status = "failed"
             run.error_message = str(e)
-            run.completed_at = datetime.utcnow()
+            run.completed_at = _utc_now()
             await session.commit()
 
             logger.error(f"Retraining run {run_id} failed: {e}", exc_info=True)

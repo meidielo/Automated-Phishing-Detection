@@ -6,7 +6,11 @@ from pathlib import Path
 import joblib
 import pytest
 
-from src.eval.payment_dataset import init_dataset, seed_synthetic_bank_change_dataset
+from src.eval.payment_dataset import (
+    init_dataset,
+    seed_public_advisory_payment_examples,
+    seed_synthetic_bank_change_dataset,
+)
 from src.ml.payment_classifier import (
     load_payment_ml_records,
     predict_payment_decision,
@@ -30,6 +34,8 @@ def test_train_payment_classifier_on_seed_dataset(tmp_path: Path):
     assert metrics.train_rows == 16
     assert metrics.validation_rows == 2
     assert metrics.test_rows == 2
+    assert metrics.holdout_rows == 0
+    assert metrics.holdout_accuracy is None
     assert metrics.classes == ["DO_NOT_PAY", "VERIFY"]
     assert metrics.test_accuracy == 1.0
     assert metrics.model_path.exists()
@@ -41,6 +47,7 @@ def test_train_payment_classifier_on_seed_dataset(tmp_path: Path):
 
     payload = json.loads(metrics.metrics_path.read_text(encoding="utf-8"))
     assert payload["test_accuracy"] == 1.0
+    assert payload["holdout_rows"] == 0
     model = joblib.load(metrics.model_path)
     prediction = model.predict(["urgent updated bank details do not use the old account"])[0]
     assert prediction in {"DO_NOT_PAY", "VERIFY"}
@@ -94,6 +101,33 @@ def test_train_payment_classifier_supports_safe_class(tmp_path: Path):
     )
     assert prediction.decision in {"DO_NOT_PAY", "SAFE", "VERIFY"}
     assert set(prediction.class_probabilities) == {"DO_NOT_PAY", "SAFE", "VERIFY"}
+
+
+def test_train_payment_classifier_reports_holdout_without_training_on_it(tmp_path: Path):
+    dataset = tmp_path / "payment_scam_dataset_seed"
+    seed_synthetic_bank_change_dataset(
+        dataset_dir=dataset,
+        scam_count=10,
+        legit_count=10,
+        safe_count=10,
+        seed=1337,
+        clean=True,
+    )
+    seed_public_advisory_payment_examples(
+        dataset_dir=dataset,
+        do_not_pay_count=0,
+        verify_count=0,
+        holdout_do_not_pay_count=2,
+        holdout_verify_count=2,
+    )
+
+    metrics = train_payment_classifier(dataset_dir=dataset, output_dir=tmp_path / "model")
+
+    assert metrics.train_rows == 24
+    assert metrics.test_rows == 3
+    assert metrics.holdout_rows == 4
+    assert metrics.holdout_accuracy is not None
+    assert metrics.holdout_confusion_matrix
 
 
 def test_split_records_falls_back_when_no_explicit_test(tmp_path: Path):

@@ -10,7 +10,7 @@ import imaplib
 import logging
 import ssl
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import AsyncGenerator, Callable, Optional
 
 from src.config import IMAPConfig
@@ -122,7 +122,7 @@ class IMAPFetcher:
         conn = self._ensure_connected()
 
         if since is None:
-            since = datetime.utcnow() - timedelta(days=1)
+            since = datetime.now(timezone.utc) - timedelta(days=1)
 
         date_str = since.strftime("%d-%b-%Y")
         search_criteria = f'(SINCE {date_str} UNSEEN)'
@@ -338,7 +338,7 @@ class IMAPFetcher:
                 for email_obj in emails:
                     yield email_obj
                 # After first poll, only get truly new emails
-                since = datetime.utcnow() - timedelta(seconds=poll_interval + 10)
+                since = datetime.now(timezone.utc) - timedelta(seconds=poll_interval + 10)
             except Exception as e:
                 logger.error(f"Stream error: {e}")
 

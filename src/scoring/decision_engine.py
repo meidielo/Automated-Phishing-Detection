@@ -8,7 +8,7 @@ from multiple analyzers into a final verdict.
 
 import logging
 from dataclasses import asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from src.config import ScoringConfig
@@ -186,7 +186,7 @@ class DecisionEngine:
             extracted_urls=[],  # URLs are in iocs/details
             iocs=iocs,
             reasoning=reasoning,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             calibration=calibration.to_dict() if calibration.fired else None,
         )
 

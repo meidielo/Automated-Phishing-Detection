@@ -107,7 +107,7 @@ class TestRetrainWeights:
         mock_session = AsyncMock()
 
         # Mock query to return empty result
-        mock_result = AsyncMock()
+        mock_result = MagicMock()
         mock_result.scalars.return_value.all.return_value = []
         mock_session.execute.return_value = mock_result
 

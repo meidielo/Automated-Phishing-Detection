@@ -5,7 +5,7 @@ Uses SQLite for sender history tracking and behavioral baseline comparison.
 import asyncio
 import logging
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from src.models import AnalyzerResult, EmailObject
@@ -169,7 +169,7 @@ class SenderProfileAnalyzer:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
 
-                current_time = datetime.utcnow().isoformat()
+                current_time = datetime.now(timezone.utc).isoformat()
                 recipient_count = len(email.to_addresses)
                 content_length = len(email.body_plain)
                 send_hour = email.date.hour if email.date else -1

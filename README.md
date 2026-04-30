@@ -121,7 +121,7 @@ To start a local payment-scam dataset:
 ```bash
 python scripts/payment_dataset.py init --dataset data/payment_scam_dataset
 python scripts/payment_dataset.py seed-synthetic --dataset data/payment_scam_dataset --scam-count 50 --legit-count 50 --safe-count 50 --seed 1337 --clean
-python scripts/payment_dataset.py seed-public-advisory --dataset data/payment_scam_dataset
+python scripts/payment_dataset.py seed-public-advisory --dataset data/payment_scam_dataset --holdout-do-not-pay-count 3 --holdout-verify-count 3
 python scripts/payment_dataset.py redact --source path/to/raw-payment-email.eml --output data/payment_scam_dataset/incoming/redacted/vendor-update.eml
 python scripts/payment_dataset.py audit-pii --sample data/payment_scam_dataset/incoming/redacted/vendor-update.eml
 python scripts/payment_dataset.py add --dataset data/payment_scam_dataset --source path/to/sample.eml --label PAYMENT_SCAM --payment-decision DO_NOT_PAY --scenario bank_detail_change --source-type redacted --split train --verified-by meidie --contains-real-pii no
@@ -130,15 +130,18 @@ python scripts/payment_dataset.py export-eval-labels --dataset data/payment_scam
 python scripts/payment_dataset.py export-ml-jsonl --dataset data/payment_scam_dataset
 python scripts/payment_dataset.py readiness --dataset data/payment_scam_dataset
 python scripts/payment_eval.py --dataset data/payment_scam_dataset
+python scripts/payment_eval.py --dataset data/payment_scam_dataset --split holdout --output-prefix data/payment_scam_dataset/reports/payment_holdout_eval
 python scripts/payment_train.py --dataset data/payment_scam_dataset
+python scripts/payment_demo.py --dataset data/payment_scam_dataset
 ```
 
 The payment dataset records both the generic label (`PAYMENT_SCAM`, `LEGITIMATE_PAYMENT`, `NON_PAYMENT`) and the expected business decision (`SAFE`, `VERIFY`, `DO_NOT_PAY`). The synthetic seed set is for repeatable development only; replace or supplement it with redacted real examples before claiming product metrics.
-`seed-public-advisory` adds non-private `VERIFY` and `DO_NOT_PAY` examples based on public BEC/payment-redirection warning patterns from Scamwatch and cyber.gov.au. These are better than synthetic-only plumbing checks, but real redacted inbox/client samples are still the strongest evidence.
+`seed-public-advisory` adds non-private `VERIFY` and `DO_NOT_PAY` examples based on public BEC/payment-redirection warning patterns from Scamwatch, cyber.gov.au, the FBI, and public BEC writeups. These are better than synthetic-only plumbing checks, but real redacted inbox/client samples are still the strongest evidence. The optional holdout flags keep public-derived rows out of training so you can inspect a separate eval slice.
 The redaction tool pseudonymizes email and URL domains, normalizes obvious payment identifiers, removes non-text attachments, and audits the result using non-sensitive fingerprints. Manually review the redacted `.eml` before labeling because names and business context can still need human cleanup.
-`scripts/payment_eval.py` writes JSON, CSV, and Markdown reports that compare expected vs predicted `SAFE`, `VERIFY`, and `DO_NOT_PAY` decisions.
-`scripts/payment_train.py` trains and tests a TF-IDF + logistic regression baseline from the ML JSONL export, writing ignored model artifacts under `models/payment_classifier/`. When `models/payment_classifier/payment_decision_model.joblib` exists, the payment analyzer reports an `ml_decision` sidecar with the model prediction, confidence, class probabilities, and whether it disagrees with the rules decision. The rules decision remains authoritative until the dataset has real redacted coverage.
+`scripts/payment_eval.py` writes JSON, CSV, and Markdown reports that compare expected vs predicted `SAFE`, `VERIFY`, and `DO_NOT_PAY` decisions, including accuracy by source type and split.
+`scripts/payment_train.py` trains and tests a TF-IDF + logistic regression baseline from the ML JSONL export, writing ignored model artifacts under `models/payment_classifier/`. Holdout rows are excluded from training and reported separately. When `models/payment_classifier/payment_decision_model.joblib` exists, the payment analyzer reports an `ml_decision` sidecar with the model prediction, confidence, class probabilities, and whether it disagrees with the rules decision. The rules decision remains authoritative until the dataset has real redacted coverage.
 `scripts/payment_dataset.py readiness` counts source types, labels, decisions, and splits, and explicitly warns when non-synthetic coverage is missing for a payment decision.
+`scripts/payment_demo.py` prints a compact expected-vs-predicted demo across `SAFE`, `VERIFY`, and `DO_NOT_PAY`, preferring PII-free redacted/public samples over synthetic rows.
 
 ## Quick Start
 
@@ -298,7 +301,7 @@ The static Sigma rule library in [`sigma_rules/`](sigma_rules/) ships hand-writt
 
 ## Testing
 
-The test suite has **1035 tests across 48 test modules** (unit + integration), exercising every analyzer, the decision engine override rules (including the cycle 7 ordering fix that catches pure-text BEC), the cross-analyzer calibration pass (ADR 0001) with explicit cap-ceiling tests, the persistent email_id lookup index (ADR 0002) with cross-restart smoking-gun tests, scoring confidence capping, IOC export, the Sigma exporter, the URL reputation dead-domain confidence downgrade, credential encryption migration, the LLM determinism contract, the generic phishing ML baseline, the payment-fraud dataset/eval/train workflow, the body_html sanitizer with hostile XSS payloads, the data retention purge, and the web security middleware (bearer auth, browser session auth with CSRF, SSRF guard, security headers). CI runs the full suite on every push and PR against a fresh checkout from the hash-pinned lock file. CI-bites verified by deliberate-red sanity check on a throwaway branch.
+The test suite has **1044 tests across 49 test modules** (unit + integration), exercising every analyzer, the decision engine override rules (including the cycle 7 ordering fix that catches pure-text BEC), the cross-analyzer calibration pass (ADR 0001) with explicit cap-ceiling tests, the persistent email_id lookup index (ADR 0002) with cross-restart smoking-gun tests, scoring confidence capping, IOC export, the Sigma exporter, the URL reputation dead-domain confidence downgrade, credential encryption migration, the LLM determinism contract, the generic phishing ML baseline, the payment-fraud dataset/eval/train/demo workflow, the body_html sanitizer with hostile XSS payloads, the data retention purge and per-subject erasure, and the web security middleware (bearer auth, browser session auth with CSRF, SSRF guard, security headers). CI runs the full suite on every push and PR against a fresh checkout from the hash-pinned lock file. CI-bites verified by deliberate-red sanity check on a throwaway branch.
 
 ```bash
 # Run all tests
@@ -397,9 +400,13 @@ python main.py purge --older-than 7
 
 # Strict mode: also drop rows with unparseable timestamps
 python main.py purge --strict
+
+# Erase one address/email_id from both stored analysis rows and feedback labels
+python main.py purge --target all --by-address person@example.com --dry-run
+python main.py purge --target all --by-address person@example.com
 ```
 
-Run it from cron daily. Configure the default retention via `data_retention_days` in `config.yaml` or the `DATA_RETENTION_DAYS` environment variable. See `THREAT_MODEL.md` §6a for the full privacy threat model.
+Run the age-based purge from cron daily. Configure the default retention via `data_retention_days` in `config.yaml` or the `DATA_RETENTION_DAYS` environment variable. Use `--by-address` for per-data-subject erasure requests. See `THREAT_MODEL.md` section 6a for the full privacy threat model.
 
 ## Project documentation
 

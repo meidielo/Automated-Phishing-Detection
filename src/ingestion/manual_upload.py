@@ -9,6 +9,7 @@ Accepts .eml and .msg files via:
 import logging
 import os
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Union
 
@@ -209,7 +210,7 @@ class ManualUploadHandler:
             cc_addrs = [a.strip() for a in msg.cc.split(";")]
 
         # Parse date
-        date = datetime.utcnow()
+        date = datetime.now(timezone.utc)
         if msg.date:
             try:
                 date = msg.date

@@ -23,6 +23,7 @@ class PaymentDecisionEvalRow:
     filename: str
     label: str
     scenario: str
+    source_type: str
     split: str
     expected_decision: str
     predicted_decision: str
@@ -41,6 +42,8 @@ class PaymentDecisionEvalSummary:
     mismatches: int
     accuracy: float
     confusion_matrix: dict[str, dict[str, int]]
+    by_source_type: dict[str, dict[str, int | float]]
+    by_split: dict[str, dict[str, int | float]]
     rows: list[PaymentDecisionEvalRow]
     json_path: Optional[Path] = None
     csv_path: Optional[Path] = None
@@ -68,6 +71,24 @@ def _matrix(rows: list[PaymentDecisionEvalRow]) -> dict[str, dict[str, int]]:
     }
 
 
+def _slice_metrics(rows: list[PaymentDecisionEvalRow], attribute: str) -> dict[str, dict[str, int | float]]:
+    slices: dict[str, list[PaymentDecisionEvalRow]] = {}
+    for row in rows:
+        value = str(getattr(row, attribute) or "unknown")
+        slices.setdefault(value, []).append(row)
+    metrics: dict[str, dict[str, int | float]] = {}
+    for value, slice_rows in sorted(slices.items()):
+        correct = sum(1 for row in slice_rows if row.match)
+        total = len(slice_rows)
+        metrics[value] = {
+            "rows": total,
+            "correct": correct,
+            "mismatches": total - correct,
+            "accuracy": round(correct / total, 3) if total else 0.0,
+        }
+    return metrics
+
+
 def _markdown(summary: PaymentDecisionEvalSummary) -> str:
     lines = [
         "# Payment Decision Eval",
@@ -87,19 +108,35 @@ def _markdown(summary: PaymentDecisionEvalSummary) -> str:
         for predicted, count in sorted(predictions.items()):
             lines.append(f"| {expected} | {predicted} | {count} |")
 
+    lines.extend(["", "## Accuracy By Source Type", ""])
+    lines.extend(["| Source Type | Rows | Correct | Mismatches | Accuracy |", "|---|---:|---:|---:|---:|"])
+    for source_type, metrics in summary.by_source_type.items():
+        lines.append(
+            f"| {source_type} | {metrics['rows']} | {metrics['correct']} | "
+            f"{metrics['mismatches']} | {float(metrics['accuracy']):.3f} |"
+        )
+
+    lines.extend(["", "## Accuracy By Split", ""])
+    lines.extend(["| Split | Rows | Correct | Mismatches | Accuracy |", "|---|---:|---:|---:|---:|"])
+    for split, metrics in summary.by_split.items():
+        lines.append(
+            f"| {split} | {metrics['rows']} | {metrics['correct']} | "
+            f"{metrics['mismatches']} | {float(metrics['accuracy']):.3f} |"
+        )
+
     mismatches = [row for row in summary.rows if not row.match]
     lines.extend(["", "## Mismatches", ""])
     if not mismatches:
         lines.append("No mismatches.")
     else:
         lines.extend([
-            "| Filename | Scenario | Split | Expected | Predicted | Risk | Confidence | Signals | Error |",
-            "|---|---|---|---|---|---:|---:|---|---|",
+            "| Filename | Scenario | Source | Split | Expected | Predicted | Risk | Confidence | Signals | Error |",
+            "|---|---|---|---|---|---|---:|---:|---|---|",
         ])
         for row in mismatches:
             signals = ", ".join(row.signals[:5])
             lines.append(
-                f"| {row.filename} | {row.scenario} | {row.split} | "
+                f"| {row.filename} | {row.scenario} | {row.source_type} | {row.split} | "
                 f"{row.expected_decision} | {row.predicted_decision} | "
                 f"{row.risk_score:.3f} | {row.confidence:.3f} | {signals} | {row.error} |"
             )
@@ -120,6 +157,8 @@ def _write_reports(summary: PaymentDecisionEvalSummary, output_prefix: Path) -> 
         "mismatches": summary.mismatches,
         "accuracy": summary.accuracy,
         "confusion_matrix": summary.confusion_matrix,
+        "by_source_type": summary.by_source_type,
+        "by_split": summary.by_split,
         "rows": [asdict(row) for row in summary.rows],
     }
     json_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -129,6 +168,7 @@ def _write_reports(summary: PaymentDecisionEvalSummary, output_prefix: Path) -> 
             "filename",
             "label",
             "scenario",
+            "source_type",
             "split",
             "expected_decision",
             "predicted_decision",
@@ -154,6 +194,8 @@ def _write_reports(summary: PaymentDecisionEvalSummary, output_prefix: Path) -> 
         mismatches=summary.mismatches,
         accuracy=summary.accuracy,
         confusion_matrix=summary.confusion_matrix,
+        by_source_type=summary.by_source_type,
+        by_split=summary.by_split,
         rows=summary.rows,
         json_path=json_path,
         csv_path=csv_path,
@@ -164,6 +206,9 @@ def _write_reports(summary: PaymentDecisionEvalSummary, output_prefix: Path) -> 
 async def evaluate_payment_decisions(
     dataset_dir: Path = DEFAULT_DATASET_DIR,
     output_prefix: Optional[Path] = None,
+    *,
+    split: Optional[str] = None,
+    source_type: Optional[str] = None,
 ) -> PaymentDecisionEvalSummary:
     dataset_dir = Path(dataset_dir)
     validation = validate_dataset(dataset_dir)
@@ -174,7 +219,13 @@ async def evaluate_payment_decisions(
     analyzer = PaymentFraudAnalyzer()
     eval_rows: list[PaymentDecisionEvalRow] = []
 
-    for row in _read_dataset_rows(dataset_dir):
+    dataset_rows = _read_dataset_rows(dataset_dir)
+    if split:
+        dataset_rows = [row for row in dataset_rows if row.get("split") == split]
+    if source_type:
+        dataset_rows = [row for row in dataset_rows if row.get("source_type") == source_type]
+
+    for row in dataset_rows:
         filename = row["filename"]
         expected = row["payment_decision"]
         sample_path = dataset_dir / SAMPLES_DIR / filename
@@ -185,6 +236,7 @@ async def evaluate_payment_decisions(
                     filename=filename,
                     label=row["label"],
                     scenario=row["scenario"],
+                    source_type=row.get("source_type", ""),
                     split=row["split"],
                     expected_decision=expected,
                     predicted_decision="ERROR",
@@ -210,6 +262,7 @@ async def evaluate_payment_decisions(
                 filename=filename,
                 label=row["label"],
                 scenario=row["scenario"],
+                source_type=row.get("source_type", ""),
                 split=row["split"],
                 expected_decision=expected,
                 predicted_decision=predicted,
@@ -230,6 +283,8 @@ async def evaluate_payment_decisions(
         mismatches=row_count - correct,
         accuracy=round(correct / row_count, 3) if row_count else 0.0,
         confusion_matrix=_matrix(eval_rows),
+        by_source_type=_slice_metrics(eval_rows, "source_type"),
+        by_split=_slice_metrics(eval_rows, "split"),
         rows=eval_rows,
     )
 

@@ -8,7 +8,7 @@ Provides:
 """
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from src.config import PipelineConfig
@@ -16,6 +16,10 @@ from src.feedback.database import DatabaseManager
 from src.feedback.retrainer import RetrainOrchestrator
 
 logger = logging.getLogger(__name__)
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class RetrainScheduler:
@@ -96,7 +100,7 @@ class RetrainScheduler:
         while self.running:
             try:
                 await self._check_and_retrain()
-                self.last_check = datetime.utcnow()
+                self.last_check = _utc_now()
                 await asyncio.sleep(self.check_interval.total_seconds())
 
             except asyncio.CancelledError:

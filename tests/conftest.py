@@ -23,6 +23,10 @@ from src.models import (
 from src.config import PipelineConfig, ScoringConfig, APIConfig, IMAPConfig
 
 
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 @pytest.fixture
 def scoring_config():
     """Provide a standard scoring configuration."""
@@ -464,7 +468,7 @@ def sample_pipeline_result_clean(sample_email_clean, sample_analyzer_results_cle
             "headers": {},
         },
         reasoning="This email shows strong legitimate indicators with all authentication checks passing.",
-        timestamp=datetime.utcnow(),
+        timestamp=_utc_now(),
     )
 
 
@@ -495,7 +499,7 @@ def sample_pipeline_result_phishing(sample_email_phishing, sample_analyzer_resul
             "headers": {},
         },
         reasoning="This email shows multiple phishing indicators including spoofed headers, malicious URLs, and dangerous attachments.",
-        timestamp=datetime.utcnow(),
+        timestamp=_utc_now(),
     )
 
 

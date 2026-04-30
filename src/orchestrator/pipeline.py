@@ -5,7 +5,7 @@ Coordinates extraction, analysis, and decision phases with concurrency control.
 import asyncio
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from email.utils import parseaddr
 from typing import Optional
 
@@ -127,7 +127,7 @@ class PhishingPipeline:
         Raises:
             TimeoutError: If analysis exceeds pipeline_timeout.
         """
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
 
         try:
             # Phase 1: Extraction (sequential)
@@ -143,7 +143,7 @@ class PhishingPipeline:
                     f"Blocklist/allowlist override for {email.email_id}: "
                     f"{list_result.override_verdict.value} — {list_result.override_reason}"
                 )
-                elapsed_seconds = (datetime.utcnow() - start_time).total_seconds()
+                elapsed_seconds = (datetime.now(timezone.utc) - start_time).total_seconds()
                 override_score = 1.0 if list_result.override_verdict == Verdict.CONFIRMED_PHISHING else 0.0
                 return PipelineResult(
                     email_id=email.email_id,
@@ -154,7 +154,7 @@ class PhishingPipeline:
                     extracted_urls=extracted_urls,
                     iocs=iocs,
                     reasoning=list_result.override_reason,
-                    timestamp=datetime.utcnow(),
+                    timestamp=datetime.now(timezone.utc),
                 )
 
             # Phase 2: Analysis (concurrent)
@@ -175,7 +175,7 @@ class PhishingPipeline:
             )
 
             # Log completion
-            elapsed_seconds = (datetime.utcnow() - start_time).total_seconds()
+            elapsed_seconds = (datetime.now(timezone.utc) - start_time).total_seconds()
             self.logger.info(
                 f"Analysis complete for {email.email_id}: "
                 f"verdict={verdict.value}, score={overall_score:.3f}, "
@@ -200,12 +200,12 @@ class PhishingPipeline:
                 extracted_urls=extracted_urls,
                 iocs=iocs,
                 reasoning=reasoning,
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
             )
 
         except TimeoutError as e:
             self.logger.error(f"Pipeline timeout for {email.email_id}:")
-            elapsed_seconds = (datetime.utcnow() - start_time).total_seconds()
+            elapsed_seconds = (datetime.now(timezone.utc) - start_time).total_seconds()
             return PipelineResult(
                 email_id=email.email_id,
                 verdict=Verdict.SUSPICIOUS,
@@ -215,7 +215,7 @@ class PhishingPipeline:
                 extracted_urls=[],
                 iocs={},
                 reasoning=["Analysis timed out; partial result returned."],
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
             )
         except Exception as e:
             self.logger.error(f"Pipeline error for {email.email_id}: {e}", exc_info=True)
@@ -1029,7 +1029,7 @@ class PhishingPipeline:
     ):
         """Log analysis result as structured JSON for audit trail."""
         log_entry = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "email_id": email_id,
             "verdict": verdict.value,
             "overall_score": score,

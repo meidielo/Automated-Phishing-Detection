@@ -196,11 +196,11 @@ The pipeline stores email metadata — sender, recipient, subject, body excerpt,
 | Risk | Severity | Status | Notes |
 |---|---|---|---|
 | **P1 — Indefinite retention of email PII in `data/results.jsonl`** | medium (legal exposure) | **MITIGATED** | New `purge` subcommand: `python main.py purge --older-than 30`. Default retention is 30 days, configurable via `data_retention_days` in `config.yaml` or `DATA_RETENTION_DAYS` env var. The purge primitive is in `src/automation/retention.py` (17 tests). Operators should run it on a daily cron. The strongest property the test suite locks: after purge, no row remains with a timestamp older than the cutoff. |
-| **P2 — Feedback DB retention** | low | OPEN | The SQLAlchemy feedback DB (`feedback.db`) accumulates analyst labels indefinitely. Less personal-data-rich than `results.jsonl` but still worth pruning. Tracked in ROADMAP as "feedback DB retention policy". |
+| **P2 — Feedback DB retention** | low | **MITIGATED** | `python main.py purge --target feedback --older-than 30` prunes old SQLAlchemy feedback labels, and `--target all` purges both `results.jsonl` and feedback labels. `--keep-recent-feedback` can retain the newest N labels as a safety buffer. |
 | **P2 — Lawful basis for processing** | low (single-operator) | OPEN | Operator must have a lawful basis (consent, legitimate interest, etc.) to process inbox content. This is a deployment decision, not a code fix. Documented here so operators can't claim ignorance. |
-| **P3 — Right to erasure** | low | OPEN | A data subject who appears in the analyzed mail has the right to request erasure under GDPR Art. 17. The current pipeline has no per-subject deletion path; you'd have to grep `results.jsonl` and the feedback DB by sender/recipient and edit by hand. Future: add `purge --by-address <addr>`. |
+| **P3 — Right to erasure** | low | **MITIGATED** | `python main.py purge --target all --by-address <addr>` removes rows mentioning an email address or email_id from both `results.jsonl` and the feedback DB. Use `--dry-run` first to inspect the deletion count. |
 
-The purge subcommand supports `--dry-run` so operators can verify what would be deleted without committing the change, and `--strict` to also drop rows with unparseable timestamps (default keeps them, on the principle that we'd rather over-retain than silently lose data we can't classify).
+The purge subcommand supports `--dry-run` so operators can verify what would be deleted without committing the change, `--strict` to also drop rows with unparseable timestamps (default keeps them, on the principle that we'd rather over-retain than silently lose data we can't classify), and `--by-address` for per-data-subject erasure.
 
 ## 7. Explicit non-goals
 

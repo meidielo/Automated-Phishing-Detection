@@ -106,7 +106,12 @@ python scripts/payment_dataset.py export-eval-labels --dataset data/payment_scam
 python scripts/payment_dataset.py export-ml-jsonl --dataset data/payment_scam_dataset
 python scripts/payment_dataset.py readiness --dataset data/payment_scam_dataset
 python scripts/payment_eval.py --dataset data/payment_scam_dataset
+python scripts/payment_eval.py \
+  --dataset data/payment_scam_dataset \
+  --split holdout \
+  --output-prefix data/payment_scam_dataset/reports/payment_holdout_eval
 python scripts/payment_train.py --dataset data/payment_scam_dataset
+python scripts/payment_demo.py --dataset data/payment_scam_dataset
 ```
 
 `export-ml-jsonl` refuses samples that are not marked `contains_real_pii=no`
@@ -115,15 +120,21 @@ experiments.
 
 `payment_eval.py` writes JSON, CSV, and Markdown reports under
 `data/payment_scam_dataset/reports/` comparing expected vs predicted `SAFE`,
-`VERIFY`, and `DO_NOT_PAY` decisions.
+`VERIFY`, and `DO_NOT_PAY` decisions. Reports include accuracy by source type
+and split, and `--split holdout` can be used for the public-derived holdout set.
 
 `payment_train.py` trains and tests a TF-IDF + logistic regression baseline on
 the exported ML JSONL. It writes ignored model artifacts and metrics under
-`models/payment_classifier/`. When the payment-decision model exists, the
+`models/payment_classifier/`. Rows marked `split=holdout` are excluded from
+training and reported separately. When the payment-decision model exists, the
 payment analyzer includes an `ml_decision` sidecar so analysts can compare the
 rules decision against the model prediction without letting synthetic-only ML
 override payment release. Treat synthetic-only accuracy as a plumbing check, not
 a production metric.
+
+`payment_demo.py` prints one compact expected-vs-predicted table across `SAFE`,
+`VERIFY`, and `DO_NOT_PAY`, preferring PII-free redacted/public rows over
+synthetic rows.
 
 `readiness` is the honesty check. It reports whether the dataset is still
 synthetic-only and whether non-synthetic samples are PII-free, balanced across
@@ -152,14 +163,23 @@ Add public-advisory-derived examples for `VERIFY` and `DO_NOT_PAY`:
 python scripts/payment_dataset.py seed-public-advisory \
   --dataset data/payment_scam_dataset \
   --do-not-pay-count 10 \
-  --verify-count 10
+  --verify-count 10 \
+  --holdout-do-not-pay-count 3 \
+  --holdout-verify-count 3
 ```
 
 These samples are redacted examples based on public BEC and payment-redirection
-warning patterns from Scamwatch and cyber.gov.au. They are not copied from
-private mail and should be used as reproducible coverage for decision handling.
-They improve the development dataset, but real redacted inbox/client examples
-remain the better evidence before publishing external product metrics.
+warning patterns from:
+
+- [Scamwatch business email compromise scams](https://www.scamwatch.gov.au/types-of-scams/business-email-compromise-scams)
+- [Australian Cyber Security Centre business email compromise](https://www.cyber.gov.au/threats/types-threats/business-email-compromise)
+- [FBI business email compromise fraud alert](https://www.fbi.gov/contact-us/field-offices/denver/news/press-releases/business-e-mail-compromise-fraud-alert)
+- [Sublime Security BEC fake invoice analysis](https://sublime.security/blog/business-email-compromise-fake-invoice-16800)
+
+They are not copied from private mail and should be used as reproducible
+coverage for decision handling. They improve the development dataset, but real
+redacted inbox/client examples remain the better evidence before publishing
+external product metrics.
 
 Recommended minimum collection:
 

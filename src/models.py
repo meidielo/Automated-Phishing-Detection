@@ -3,9 +3,14 @@ Core data models for the phishing detection pipeline.
 Every component consumes and produces these types.
 """
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
+
+
+def utc_now() -> datetime:
+    """Return a naive UTC timestamp for legacy dataclass defaults."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class Verdict(str, Enum):
@@ -117,7 +122,7 @@ class PipelineResult:
     extracted_urls: list[ExtractedURL]
     iocs: dict
     reasoning: str
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=utc_now)
     # Calibration pass-2 outcome (ADR 0001). When the calibration pass
     # didn't run or didn't fire, this is None or an empty dict. When a
     # rule fires, the dict carries `rules_fired`, `verdict_cap`, and
@@ -133,7 +138,7 @@ class FeedbackRecord:
     correct_label: Verdict
     analyst_notes: str
     feature_vector: dict
-    submitted_at: datetime = field(default_factory=datetime.utcnow)
+    submitted_at: datetime = field(default_factory=utc_now)
 
 
 @dataclass

@@ -11,7 +11,7 @@ import logging
 import os
 import tempfile
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -70,7 +70,7 @@ class ScreenshotCapture:
         Returns:
             ScreenshotResult with capture details
         """
-        timestamp = datetime.utcnow()
+        timestamp = datetime.now(timezone.utc)
 
         if not filename:
             url_hash = hashlib.md5(url.encode()).hexdigest()[:12]
@@ -277,7 +277,7 @@ class ScreenshotCapture:
                 final.append(ScreenshotResult(
                     url=urls[i],
                     filepath="",
-                    timestamp=datetime.utcnow(),
+                    timestamp=datetime.now(timezone.utc),
                     width=0,
                     height=0,
                     file_size_bytes=0,
@@ -298,7 +298,7 @@ class ScreenshotCapture:
             Number of files removed
         """
         removed = 0
-        cutoff = datetime.utcnow().timestamp() - (max_age_hours * 3600)
+        cutoff = datetime.now(timezone.utc).timestamp() - (max_age_hours * 3600)
 
         for entry in os.scandir(self.config.output_dir):
             if entry.is_file() and entry.stat().st_mtime < cutoff:

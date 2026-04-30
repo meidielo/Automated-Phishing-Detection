@@ -28,10 +28,21 @@ async def _main() -> int:
         default=None,
         help="Report prefix. Writes .json, .csv, and .md files.",
     )
+    parser.add_argument("--split", default=None, help="Only evaluate rows from this split, e.g. holdout")
+    parser.add_argument("--source-type", default=None, help="Only evaluate rows from this source type")
     args = parser.parse_args()
 
-    summary = await evaluate_payment_decisions(args.dataset, args.output_prefix)
+    summary = await evaluate_payment_decisions(
+        args.dataset,
+        args.output_prefix,
+        split=args.split,
+        source_type=args.source_type,
+    )
     print(f"Payment decision eval: {summary.dataset_dir}")
+    if args.split:
+        print(f"  split:      {args.split}")
+    if args.source_type:
+        print(f"  source:     {args.source_type}")
     print(f"  rows:       {summary.row_count}")
     print(f"  correct:    {summary.correct}")
     print(f"  mismatches: {summary.mismatches}")
@@ -40,6 +51,12 @@ async def _main() -> int:
     for expected, predictions in sorted(summary.confusion_matrix.items()):
         for predicted, count in sorted(predictions.items()):
             print(f"    {expected} -> {predicted}: {count}")
+    print("  by source:")
+    for source_type, metrics in sorted(summary.by_source_type.items()):
+        print(f"    {source_type}: {metrics['correct']}/{metrics['rows']} ({metrics['accuracy']:.3f})")
+    print("  by split:")
+    for split, metrics in sorted(summary.by_split.items()):
+        print(f"    {split}: {metrics['correct']}/{metrics['rows']} ({metrics['accuracy']:.3f})")
     print(f"  json:       {summary.json_path}")
     print(f"  csv:        {summary.csv_path}")
     print(f"  markdown:   {summary.markdown_path}")

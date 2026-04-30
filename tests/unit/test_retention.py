@@ -13,11 +13,15 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
+from sqlalchemy import select
 
 from src.automation.retention import (
+    ErasureStats,
     FeedbackRetentionStats,
     RetentionStats,
     _parse_timestamp,
+    erase_subject_from_feedback_db,
+    erase_subject_from_results_jsonl,
     purge_feedback_db,
     purge_results_jsonl,
 )
@@ -282,6 +286,51 @@ class TestStatsObject:
         )
         assert stats.total_seen == 5
 
+    def test_erasure_total_seen(self):
+        stats = ErasureStats(
+            path="x",
+            subject="person@example.com",
+            kept=4,
+            dropped=1,
+            dry_run=False,
+        )
+        assert stats.total_seen == 5
+
+
+class TestSubjectErasure:
+    def test_erases_matching_results_rows_recursively(self, tmp_path):
+        path = tmp_path / "results.jsonl"
+        rows = [
+            json.dumps({"email_id": "keep", "from": "safe@example.com"}),
+            json.dumps({"email_id": "drop-1", "from": "person@example.com"}),
+            json.dumps({"email_id": "drop-2", "headers": {"reply_to": "Person@Example.com"}}),
+            json.dumps({"email_id": "keep-2", "to": ["other@example.com"]}),
+        ]
+        _write_jsonl(path, rows)
+
+        stats = erase_subject_from_results_jsonl(path, "person@example.com")
+
+        assert stats.kept == 2
+        assert stats.dropped == 2
+        remaining = path.read_text(encoding="utf-8")
+        assert "drop-1" not in remaining
+        assert "drop-2" not in remaining
+        assert "keep-2" in remaining
+
+    def test_erasure_dry_run_does_not_modify_results(self, tmp_path):
+        path = tmp_path / "results.jsonl"
+        rows = [
+            json.dumps({"email_id": "drop", "from": "person@example.com"}),
+            json.dumps({"email_id": "keep", "from": "safe@example.com"}),
+        ]
+        _write_jsonl(path, rows)
+        before = path.read_text(encoding="utf-8")
+
+        stats = erase_subject_from_results_jsonl(path, "person@example.com", dry_run=True)
+
+        assert stats.dropped == 1
+        assert path.read_text(encoding="utf-8") == before
+
 
 class TestFeedbackDbRetention:
     async def _seed_feedback_db(self, db_path: Path, rows: list[tuple[str, datetime]]):
@@ -379,3 +428,45 @@ class TestFeedbackDbRetention:
 
         assert stats.dropped == 1
         assert await self._feedback_ids(db_path) == ["new", "old"]
+
+    @pytest.mark.asyncio
+    async def test_erases_feedback_by_email_id_or_notes(self, tmp_path):
+        now = datetime(2026, 4, 14, 12, 0, 0)
+        db_path = tmp_path / "feedback.db"
+        await self._seed_feedback_db(db_path, [
+            ("msg-person@example.com", now),
+            ("safe-id", now),
+            ("another-safe-id", now),
+        ])
+
+        db = DatabaseManager(create_sqlite_url(str(db_path)), echo=False)
+        await db.initialize()
+        async with db.async_session_maker() as session:
+            result = await session.execute(
+                select(FeedbackRecord).where(FeedbackRecord.email_id == "another-safe-id")
+            )
+            record = result.scalar_one()
+            record.analyst_notes = "mentions person@example.com in notes"
+            await session.commit()
+        await db.close()
+
+        stats = await erase_subject_from_feedback_db(db_path, "person@example.com")
+
+        assert stats.kept == 1
+        assert stats.dropped == 2
+        assert await self._feedback_ids(db_path) == ["safe-id"]
+
+    @pytest.mark.asyncio
+    async def test_feedback_erasure_escapes_sql_like_wildcards(self, tmp_path):
+        now = datetime(2026, 4, 14, 12, 0, 0)
+        db_path = tmp_path / "feedback.db"
+        await self._seed_feedback_db(db_path, [
+            ("msg-person_example.com", now),
+            ("msg-personXexample.com", now),
+        ])
+
+        stats = await erase_subject_from_feedback_db(db_path, "person_example.com")
+
+        assert stats.kept == 1
+        assert stats.dropped == 1
+        assert await self._feedback_ids(db_path) == ["msg-personXexample.com"]

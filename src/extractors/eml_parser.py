@@ -306,11 +306,11 @@ class EMLParser:
                 if dt and dt.tzinfo:
                     # Convert to UTC
                     return dt.astimezone(timezone.utc)
-                return dt if dt else datetime.utcnow()
+                return dt if dt else datetime.now(timezone.utc)
         except Exception as e:
             self.logger.warning(f"Failed to parse date: {e}")
 
-        return datetime.utcnow()
+        return datetime.now(timezone.utc)
 
     def _extract_bodies(self, message: Message) -> tuple[str, str]:
         """

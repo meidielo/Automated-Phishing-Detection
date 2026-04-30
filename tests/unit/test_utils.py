@@ -1,5 +1,7 @@
 """Tests for utility modules: cyberchef_helpers, validators, screenshot."""
 import os
+from datetime import datetime, timezone
+
 import pytest
 
 from src.utils.cyberchef_helpers import (
@@ -43,6 +45,10 @@ from src.utils.validators import (
     contains_null_bytes,
 )
 from src.utils.screenshot import ScreenshotConfig, ScreenshotResult
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -320,7 +326,7 @@ class TestScreenshotResult:
         r = ScreenshotResult(
             url="https://example.com",
             filepath="/tmp/cap.png",
-            timestamp=__import__("datetime").datetime.utcnow(),
+            timestamp=_utc_now(),
             width=1280,
             height=800,
             file_size_bytes=50000,
@@ -333,7 +339,7 @@ class TestScreenshotResult:
         r = ScreenshotResult(
             url="https://evil.com",
             filepath="",
-            timestamp=__import__("datetime").datetime.utcnow(),
+            timestamp=_utc_now(),
             width=0,
             height=0,
             file_size_bytes=0,

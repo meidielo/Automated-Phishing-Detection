@@ -11,7 +11,7 @@ Tests:
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,6 +25,10 @@ from src.feedback.feedback_api import (
     _verdict_to_severity,
 )
 from src.models import Verdict
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class TestVerdictToSeverity:
@@ -88,7 +92,7 @@ class TestHealthCheck:
 
     def test_health_response_creation(self):
         """Test creating health check response."""
-        now = datetime.utcnow()
+        now = _utc_now()
         response = HealthResponse(
             status="healthy",
             timestamp=now,
@@ -104,7 +108,7 @@ class TestStatsResponse:
 
     def test_stats_response_creation(self):
         """Test creating stats response."""
-        now = datetime.utcnow()
+        now = _utc_now()
         response = StatsResponse(
             total_feedback_records=100,
             total_unique_emails=95,
@@ -121,7 +125,7 @@ class TestStatsResponse:
 
     def test_stats_calculation_perfect_accuracy(self):
         """Test stats with perfect accuracy."""
-        now = datetime.utcnow()
+        now = _utc_now()
         response = StatsResponse(
             total_feedback_records=100,
             total_unique_emails=100,
@@ -167,7 +171,7 @@ class TestAPIEndpointModels:
 
     def test_feedback_response_model(self):
         """Test FeedbackResponse model."""
-        now = datetime.utcnow()
+        now = _utc_now()
         response = FeedbackResponse(
             id=1,
             email_id="test_email",
@@ -181,7 +185,7 @@ class TestAPIEndpointModels:
 
     def test_feedback_response_false_positive_action(self):
         """Test feedback response for false positive action."""
-        now = datetime.utcnow()
+        now = _utc_now()
         response = FeedbackResponse(
             id=1,
             email_id="test_email",
@@ -195,7 +199,7 @@ class TestAPIEndpointModels:
 
     def test_feedback_response_false_negative_action(self):
         """Test feedback response for false negative action."""
-        now = datetime.utcnow()
+        now = _utc_now()
         response = FeedbackResponse(
             id=2,
             email_id="test_email2",
@@ -220,7 +224,7 @@ class TestRateLimiting:
         for _ in range(5):
             if client_id not in rate_limits:
                 rate_limits[client_id] = []
-            rate_limits[client_id].append(datetime.utcnow())
+            rate_limits[client_id].append(_utc_now())
 
         assert len(rate_limits[client_id]) == 5
 
@@ -234,7 +238,7 @@ class TestRateLimiting:
         for i in range(MAX_REQUESTS + 1):
             if client_id not in rate_limits:
                 rate_limits[client_id] = []
-            rate_limits[client_id].append(datetime.utcnow())
+            rate_limits[client_id].append(_utc_now())
 
         # Should exceed limit
         assert len(rate_limits[client_id]) > MAX_REQUESTS

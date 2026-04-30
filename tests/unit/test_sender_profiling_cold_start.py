@@ -29,13 +29,17 @@ test_sender_profiling_cold_start_skips_from_scoring.
 from __future__ import annotations
 
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
 from src.analyzers.sender_profiling import SenderProfileAnalyzer
 from src.models import EmailObject
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def _make_email(from_address: str = "attacker@evil.example") -> EmailObject:
@@ -50,7 +54,7 @@ def _make_email(from_address: str = "attacker@evil.example") -> EmailObject:
         subject="Test",
         body_plain="Body text",
         body_html="",
-        date=datetime.utcnow(),
+        date=_utc_now(),
         attachments=[],
         inline_images=[],
         message_id="<msg@test>",
