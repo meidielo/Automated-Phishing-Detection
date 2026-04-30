@@ -59,9 +59,10 @@ If you're running this in any non-laptop context, do at minimum:
 2. **Use `/login` for browser dashboard access.** It sets a signed session cookie plus a CSRF cookie. API clients can still use `Authorization: Bearer <ANALYST_API_TOKEN>`.
 3. **Run the `browser-sandbox` container on its own Docker network.** Do not give it host networking. The default `docker-compose.yml` already separates it; verify before deploying.
 4. **Treat `.env` as secret material.** Don't commit it. Don't bake it into images. Mount it at runtime.
-5. **Back up or intentionally purge the feedback DB.** It is an audit trail of analyst decisions and is also regulated data. Use `python main.py purge --target feedback --dry-run` before deleting labels.
-6. **Monitor circuit-breaker state.** If every analyzer is open-circuit, the pipeline is effectively producing CLEAN verdicts on real phishing. Alert on this.
-7. **Pin the brand reference set.** Treat `brand_references/` as detection content under change control. Anyone who can write to that directory can blind the visual similarity analyzer.
+5. **Back up runtime data and purge it on a schedule.** Results, alerts, feedback labels, and sender profiles can all contain regulated personal data. Use `python scripts/backup_runtime_data.py` for non-secret backups and `python main.py purge --target all --dry-run` before deleting rows.
+6. **Monitor uptime and mailbox freshness.** Run `python scripts/production_health_check.py --require-monitor-running` from cron or an external monitor and send failures to a webhook.
+7. **Monitor circuit-breaker state.** If every analyzer is open-circuit, the pipeline is effectively producing CLEAN verdicts on real phishing. Alert on this.
+8. **Pin the brand reference set.** Treat `brand_references/` as detection content under change control. Anyone who can write to that directory can blind the visual similarity analyzer.
 
 ## Coordinated disclosure
 

@@ -1,0 +1,186 @@
+body {
+  margin: 20px;
+  background: var(--bg-primary, #f5f7fb);
+  color: var(--text-primary, #172033);
+  font-family: Arial, sans-serif;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.header {
+  margin-bottom: 20px;
+  padding: 20px;
+  border-radius: 5px;
+  background: #243447;
+  color: #ffffff;
+}
+
+.stats,
+.stats-grid {
+  display: grid;
+  gap: 20px;
+  margin: 20px 0;
+}
+
+.stats {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.stats-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.stat-card,
+.stat-box,
+.section,
+.pending-queue {
+  padding: 20px;
+  border: 1px solid var(--border, #d8dee8);
+  border-radius: 5px;
+  background: var(--bg-secondary, #ffffff);
+}
+
+.stat-card {
+  text-align: center;
+}
+
+.stat-box {
+  box-shadow: 0 2px 4px rgba(15, 23, 42, 0.08);
+}
+
+.stat-box h3 {
+  margin: 0 0 10px;
+  color: var(--text-primary, #172033);
+}
+
+.section {
+  margin: 20px 0;
+}
+
+.stat-number {
+  margin: 10px 0;
+  font-size: 32px;
+  font-weight: 700;
+}
+
+.metric-number {
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.stat-label,
+.no-data {
+  color: var(--text-secondary, #667085);
+}
+
+.no-data {
+  padding: 40px;
+  text-align: center;
+}
+
+.verdict-badge {
+  display: inline-block;
+  padding: 10px 20px;
+  border-radius: 3px;
+  color: #ffffff;
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.verdict-clean {
+  color: var(--v-clean, #16a34a);
+}
+
+.verdict-suspicious {
+  color: var(--v-suspicious, #ca8a04);
+}
+
+.verdict-likely-phishing {
+  color: var(--v-likely, #ea580c);
+}
+
+.verdict-confirmed-phishing {
+  color: var(--v-phishing, #dc2626);
+}
+
+.verdict-unknown {
+  color: var(--text-secondary, #667085);
+}
+
+.verdict-badge.verdict-clean {
+  background: var(--v-clean, #16a34a);
+  color: #ffffff;
+}
+
+.verdict-badge.verdict-suspicious {
+  background: var(--v-suspicious, #ca8a04);
+  color: #111827;
+}
+
+.verdict-badge.verdict-likely-phishing {
+  background: var(--v-likely, #ea580c);
+  color: #111827;
+}
+
+.verdict-badge.verdict-confirmed-phishing {
+  background: var(--v-phishing, #dc2626);
+  color: #ffffff;
+}
+
+.verdict-badge.verdict-unknown {
+  background: var(--text-secondary, #667085);
+  color: #ffffff;
+}
+
+.bar-row {
+  margin: 10px 0;
+}
+
+.report-progress {
+  display: block;
+  width: 100%;
+  height: 18px;
+  margin-top: 6px;
+  accent-color: var(--accent, #2563eb);
+}
+
+.report-progress.verdict-clean {
+  accent-color: var(--v-clean, #16a34a);
+}
+
+.report-progress.verdict-suspicious {
+  accent-color: var(--v-suspicious, #ca8a04);
+}
+
+.report-progress.verdict-likely-phishing {
+  accent-color: var(--v-likely, #ea580c);
+}
+
+.report-progress.verdict-confirmed-phishing {
+  accent-color: var(--v-phishing, #dc2626);
+}
+
+.score-progress {
+  accent-color: var(--accent, #2563eb);
+}
+
+.analyzer-result {
+  margin: 10px 0;
+  padding: 10px;
+  border-left: 4px solid var(--accent, #2563eb);
+  background: var(--bg-tertiary, #f3f6fb);
+}
+
+@media (max-width: 760px) {
+  body {
+    margin: 12px;
+  }
+
+  .stats,
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+}

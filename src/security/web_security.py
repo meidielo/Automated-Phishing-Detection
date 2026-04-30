@@ -48,6 +48,7 @@ import hashlib
 import hmac
 import json
 import logging
+import os
 import secrets
 import socket
 import time
@@ -63,8 +64,23 @@ logger = logging.getLogger(__name__)
 SESSION_COOKIE_NAME = "phishdetect_session"
 CSRF_COOKIE_NAME = "phishdetect_csrf"
 CSRF_HEADER_NAME = "x-csrf-token"
-SESSION_MAX_AGE_SECONDS = 8 * 60 * 60
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS", "TRACE"}
+
+
+def _session_max_age_from_env() -> int:
+    raw = os.getenv("SESSION_MAX_AGE_SECONDS", str(8 * 60 * 60))
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning("Invalid SESSION_MAX_AGE_SECONDS=%r; using 8 hours", raw)
+        return 8 * 60 * 60
+    if value <= 0:
+        logger.warning("SESSION_MAX_AGE_SECONDS must be positive; using 8 hours")
+        return 8 * 60 * 60
+    return value
+
+
+SESSION_MAX_AGE_SECONDS = _session_max_age_from_env()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -109,23 +125,29 @@ class TokenVerifier:
         signature = _sign(payload_b64.encode("ascii"), self.expected_token or "")
         return f"{payload_b64}.{signature}"
 
-    def verify_session_cookie(self, value: Optional[str], *, now: Optional[int] = None) -> bool:
-        """Return True if a signed session cookie is valid and unexpired."""
+    def session_payload(self, value: Optional[str], *, now: Optional[int] = None) -> Optional[dict]:
+        """Return a valid signed session payload, or None."""
         if not self.enabled or not value or "." not in value:
-            return False
+            return None
         payload_b64, signature = value.rsplit(".", 1)
         expected = _sign(payload_b64.encode("ascii"), self.expected_token or "")
         if not hmac.compare_digest(signature, expected):
-            return False
+            return None
         try:
             payload = json.loads(_b64url_decode(payload_b64).decode("utf-8"))
         except (ValueError, json.JSONDecodeError):
-            return False
+            return None
         expires_at = payload.get("exp")
         if not isinstance(expires_at, int):
-            return False
+            return None
         current = int(now if now is not None else time.time())
-        return current <= expires_at
+        if current > expires_at:
+            return None
+        return payload
+
+    def verify_session_cookie(self, value: Optional[str], *, now: Optional[int] = None) -> bool:
+        """Return True if a signed session cookie is valid and unexpired."""
+        return self.session_payload(value, now=now) is not None
 
     @staticmethod
     def create_csrf_token() -> str:
@@ -252,11 +274,10 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """
     Attach standard browser security headers to every response.
 
-    CSP is intentionally strict (`default-src 'self'`) which means the
-    existing inline JS/CSS in templates/ will be blocked. Inline scripts
-    are explicitly allowed via `'unsafe-inline'` for now because the
-    dashboard uses inline JS heavily. This is documented as a known
-    weakness — see ROADMAP planned item "move inline JS to static files".
+    CSP keeps inline JS/CSS temporarily allowed for older templates that
+    have not been split into static assets yet. The main dashboard ships a
+    stricter per-response CSP from src/reporting/dashboard.py after moving
+    its JS/CSS and shared theme/auth fragment to /static.
     """
 
     DEFAULT_CSP = (

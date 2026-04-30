@@ -1,0 +1,143 @@
+/* ── Theme CSS variables ─────────────────────────────────────── */
+  :root, [data-theme="dark"] {
+    --bg-primary: #0f1117;
+    --bg-secondary: #1a1d27;
+    --bg-input: #0f1117;
+    --border: #2d3148;
+    --text-primary: #e2e8f0;
+    --text-secondary: #94a3b8;
+    --text-muted: #8b8fad;
+    --text-placeholder: #6b6f8a;
+    --accent: #7c3aed;
+    --accent-hover: #6d28d9;
+    --nav-bg: #1a1d27;
+    --nav-border: #2d3148;
+    --nav-link: #94a3b8;
+    --nav-hover-bg: #2d3148;
+    --success-bg: #052e16;
+    --success-border: #166534;
+    --success-text: #4ade80;
+    --error-bg: #1f0000;
+    --error-border: #991b1b;
+    --error-text: #f87171;
+    --scrollbar-track: #1a1d27;
+    --scrollbar-thumb: #3b3f57;
+    --scrollbar-thumb-hover: #5a5f7a;
+    --modal-overlay: rgba(0, 0, 0, 0.7);
+    --code-bg: #161822;
+    /* ── Extra UI layers ── */
+    --bg-tertiary: #12151f;
+    --bg-hover: #1e2130;
+    --accent-bg: #1e1b33;
+    --accent-border: #2d2852;
+    --accent-light: #a78bfa;
+    --btn-ghost-hover: #363b55;
+    /* ── Verdict palette ── */
+    --v-clean: #4ade80;
+    --v-clean-bg: #052e16;
+    --v-clean-bg2: #14532d;
+    --v-clean-border: #166534;
+    --v-suspicious: #fbbf24;
+    --v-suspicious-bg: #1c1400;
+    --v-suspicious-bg2: #451a03;
+    --v-suspicious-border: #78350f;
+    --v-likely: #fb923c;
+    --v-likely-bg: #200800;
+    --v-likely-bg2: #431407;
+    --v-likely-border: #9a3412;
+    --v-phishing: #f87171;
+    --v-phishing-bg: #1f0000;
+    --v-phishing-bg2: #450a0a;
+    --v-phishing-border: #991b1b;
+    /* ── Muted/dim text ── */
+    --text-dim: #4c4f6b;
+    --text-info: #64748b;
+    --warning-text: #fbbf24;
+    --warning-bg: #1c1400;
+    --warning-border: #78350f;
+  }
+
+  [data-theme="light"] {
+    --bg-primary: #f8fafc;
+    --bg-secondary: #ffffff;
+    --bg-input: #ffffff;
+    --border: #e2e8f0;
+    --text-primary: #1e293b;
+    --text-secondary: #475569;
+    --text-muted: #64748b;
+    --text-placeholder: #94a3b8;
+    --accent: #7c3aed;
+    --accent-hover: #6d28d9;
+    --nav-bg: #ffffff;
+    --nav-border: #e2e8f0;
+    --nav-link: #475569;
+    --nav-hover-bg: #f1f5f9;
+    --success-bg: #f0fdf4;
+    --success-border: #86efac;
+    --success-text: #166534;
+    --error-bg: #fef2f2;
+    --error-border: #fca5a5;
+    --error-text: #991b1b;
+    --scrollbar-track: #f1f5f9;
+    --scrollbar-thumb: #cbd5e1;
+    --scrollbar-thumb-hover: #94a3b8;
+    --modal-overlay: rgba(0, 0, 0, 0.4);
+    --code-bg: #f1f5f9;
+    /* ── Extra UI layers ── */
+    --bg-tertiary: #f1f5f9;
+    --bg-hover: #f8fafc;
+    --accent-bg: #f5f3ff;
+    --accent-border: #ddd6fe;
+    --accent-light: #7c3aed;
+    --btn-ghost-hover: #e2e8f0;
+    /* ── Verdict palette ── */
+    --v-clean: #16a34a;
+    --v-clean-bg: #f0fdf4;
+    --v-clean-bg2: #dcfce7;
+    --v-clean-border: #86efac;
+    --v-suspicious: #ca8a04;
+    --v-suspicious-bg: #fefce8;
+    --v-suspicious-bg2: #fef9c3;
+    --v-suspicious-border: #fde047;
+    --v-likely: #ea580c;
+    --v-likely-bg: #fff7ed;
+    --v-likely-bg2: #ffedd5;
+    --v-likely-border: #fdba74;
+    --v-phishing: #dc2626;
+    --v-phishing-bg: #fef2f2;
+    --v-phishing-bg2: #fee2e2;
+    --v-phishing-border: #fca5a5;
+    /* ── Muted/dim text ── */
+    --text-dim: #94a3b8;
+    --text-info: #64748b;
+    --warning-text: #ca8a04;
+    --warning-bg: #fefce8;
+    --warning-border: #fde047;
+  }
+
+  /* ── Scrollbar ──────────────────────────────────────────────── */
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: var(--scrollbar-track); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
+  * { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track); }
+
+  /* ── Theme toggle button ────────────────────────────────────── */
+  .theme-toggle {
+    background: none; border: 1px solid var(--border); color: var(--text-secondary);
+    padding: 5px 10px; border-radius: 6px; cursor: pointer; font-size: 14px;
+    display: flex; align-items: center; gap: 5px;
+    transition: background 0.2s, color 0.2s;
+  }
+  .theme-toggle:hover { background: var(--nav-hover-bg); color: var(--text-primary); }
+  .logout-button {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    padding: 5px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background 0.2s, color 0.2s;
+  }
+  .logout-button:hover { background: var(--nav-hover-bg); color: var(--text-primary); }

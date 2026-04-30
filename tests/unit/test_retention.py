@@ -9,6 +9,7 @@ malformed rows, blank lines, mixed-format timestamps, and large files.
 from __future__ import annotations
 
 import json
+import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -19,11 +20,16 @@ from src.automation.retention import (
     ErasureStats,
     FeedbackRetentionStats,
     RetentionStats,
+    SenderProfileRetentionStats,
     _parse_timestamp,
+    erase_subject_from_alerts_jsonl,
     erase_subject_from_feedback_db,
     erase_subject_from_results_jsonl,
+    erase_subject_from_sender_profiles_db,
+    purge_alerts_jsonl,
     purge_feedback_db,
     purge_results_jsonl,
+    purge_sender_profiles_db,
 )
 from src.feedback.database import DatabaseManager, FeedbackRecord, create_sqlite_url
 
@@ -286,6 +292,16 @@ class TestStatsObject:
         )
         assert stats.total_seen == 5
 
+    def test_sender_profile_total_seen(self):
+        stats = SenderProfileRetentionStats(
+            path="x",
+            cutoff=datetime.now(timezone.utc),
+            kept=4,
+            dropped=3,
+            dry_run=False,
+        )
+        assert stats.total_seen == 7
+
     def test_erasure_total_seen(self):
         stats = ErasureStats(
             path="x",
@@ -470,3 +486,119 @@ class TestFeedbackDbRetention:
         assert stats.kept == 1
         assert stats.dropped == 1
         assert await self._feedback_ids(db_path) == ["msg-personXexample.com"]
+
+
+class TestAlertRetention:
+    def test_purges_alert_jsonl_by_timestamp(self, tmp_path):
+        now = datetime(2026, 4, 14, 12, 0, 0, tzinfo=timezone.utc)
+        path = tmp_path / "alerts.jsonl"
+        _write_jsonl(path, [
+            _row(now - timedelta(days=60), email_id="old-alert"),
+            _row(now - timedelta(days=2), email_id="new-alert"),
+        ])
+
+        stats = purge_alerts_jsonl(path, max_age_days=30, now=now)
+
+        assert stats.kept == 1
+        assert stats.dropped == 1
+        assert "old-alert" not in path.read_text(encoding="utf-8")
+        assert "new-alert" in path.read_text(encoding="utf-8")
+
+    def test_erases_subject_from_alerts_jsonl(self, tmp_path):
+        path = tmp_path / "alerts.jsonl"
+        _write_jsonl(path, [
+            json.dumps({"email_id": "keep", "from": "safe@example.com"}),
+            json.dumps({"email_id": "drop", "from": "person@example.com"}),
+        ])
+
+        stats = erase_subject_from_alerts_jsonl(path, "person@example.com")
+
+        assert stats.kept == 1
+        assert stats.dropped == 1
+        assert "person@example.com" not in path.read_text(encoding="utf-8")
+
+
+class TestSenderProfileRetention:
+    def _seed_sender_db(self, db_path: Path, now: datetime):
+        with sqlite3.connect(db_path) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                CREATE TABLE senders (
+                    sender_email TEXT PRIMARY KEY,
+                    email_count INTEGER,
+                    first_seen TIMESTAMP,
+                    last_seen TIMESTAMP
+                )
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE sender_recipients (
+                    sender_email TEXT,
+                    recipient_email TEXT,
+                    occurrence_count INTEGER,
+                    last_seen TIMESTAMP
+                )
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE sender_emails (
+                    email_id TEXT PRIMARY KEY,
+                    sender_email TEXT,
+                    timestamp TIMESTAMP
+                )
+                """
+            )
+            old = (now - timedelta(days=60)).isoformat()
+            new = (now - timedelta(days=2)).isoformat()
+            cur.execute("INSERT INTO senders VALUES (?, ?, ?, ?)", ("old@example.com", 1, old, old))
+            cur.execute("INSERT INTO senders VALUES (?, ?, ?, ?)", ("new@example.com", 1, new, new))
+            cur.execute("INSERT INTO sender_recipients VALUES (?, ?, ?, ?)", ("old@example.com", "old-recipient@example.com", 1, old))
+            cur.execute("INSERT INTO sender_recipients VALUES (?, ?, ?, ?)", ("new@example.com", "new-recipient@example.com", 1, new))
+            cur.execute("INSERT INTO sender_emails VALUES (?, ?, ?)", ("old-msg", "old@example.com", old))
+            cur.execute("INSERT INTO sender_emails VALUES (?, ?, ?)", ("new-msg", "new@example.com", new))
+            conn.commit()
+
+    def _table_count(self, db_path: Path, table: str) -> int:
+        with sqlite3.connect(db_path) as conn:
+            return conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+
+    def test_purges_old_sender_profile_rows(self, tmp_path):
+        now = datetime(2026, 4, 14, 12, 0, 0, tzinfo=timezone.utc)
+        db_path = tmp_path / "sender_profiles.db"
+        self._seed_sender_db(db_path, now)
+
+        stats = purge_sender_profiles_db(db_path, max_age_days=30, now=now)
+
+        assert stats.kept == 3
+        assert stats.dropped == 3
+        assert self._table_count(db_path, "senders") == 1
+        assert self._table_count(db_path, "sender_recipients") == 1
+        assert self._table_count(db_path, "sender_emails") == 1
+
+    def test_sender_profile_dry_run_does_not_delete(self, tmp_path):
+        now = datetime(2026, 4, 14, 12, 0, 0, tzinfo=timezone.utc)
+        db_path = tmp_path / "sender_profiles.db"
+        self._seed_sender_db(db_path, now)
+
+        stats = purge_sender_profiles_db(db_path, max_age_days=30, now=now, dry_run=True)
+
+        assert stats.dropped == 3
+        assert self._table_count(db_path, "senders") == 2
+        assert self._table_count(db_path, "sender_recipients") == 2
+        assert self._table_count(db_path, "sender_emails") == 2
+
+    def test_erases_subject_from_sender_profile_rows(self, tmp_path):
+        now = datetime(2026, 4, 14, 12, 0, 0, tzinfo=timezone.utc)
+        db_path = tmp_path / "sender_profiles.db"
+        self._seed_sender_db(db_path, now)
+
+        stats = erase_subject_from_sender_profiles_db(db_path, "old@example.com")
+
+        assert stats.kept == 3
+        assert stats.dropped == 3
+        with sqlite3.connect(db_path) as conn:
+            senders = [row[0] for row in conn.execute("SELECT sender_email FROM senders")]
+            assert senders == ["new@example.com"]

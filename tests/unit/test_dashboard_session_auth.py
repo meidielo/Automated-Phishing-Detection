@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from main import PhishingDetectionApp
 from src.config import PipelineConfig
 from src.feedback.email_lookup import EmailLookupIndex
+from src.models import AnalyzerResult, PipelineResult, Verdict
 from src.reporting.dashboard import PhishingDashboard
 from src.security.web_security import CSRF_COOKIE_NAME, SESSION_COOKIE_NAME, TokenVerifier
 
@@ -51,9 +52,22 @@ def test_dashboard_uses_self_hosted_chart_asset_after_login():
 
     assert response.status_code == 200
     assert '/static/vendor/chart.umd.js' in response.text
+    assert '/static/dashboard.css' in response.text
+    assert '/static/dashboard.js' in response.text
+    assert '/static/shared.css' in response.text
+    assert '/static/shared.js' in response.text
+    assert '<style>' not in response.text
+    assert '<script>' not in response.text
+    assert 'onclick=' not in response.text
+    assert 'onchange=' not in response.text
     assert "cdn.jsdelivr" not in response.text
     assert 'id="verdictFallback"' in response.text
     assert 'id="trendsFallback"' in response.text
+
+    csp = response.headers["Content-Security-Policy"]
+    assert "script-src 'self'" in csp
+    assert "style-src 'self'" in csp
+    assert "'unsafe-inline'" not in csp
 
 
 def test_dashboard_serves_self_hosted_chart_asset_without_session():
@@ -71,6 +85,86 @@ def test_dashboard_serves_self_hosted_chart_asset_without_session():
     source_map = client.get("/static/vendor/chart.umd.js.map")
     assert source_map.status_code == 200
     assert '"version":3' in source_map.text[:100]
+
+
+def test_dashboard_static_assets_are_served_without_session():
+    client = TestClient(
+        _build_app_with_token(),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    for asset_path, expected in [
+        ("/static/dashboard.css", ".chart-wrap"),
+        ("/static/dashboard.js", "function renderTable"),
+        ("/static/dashboard-report.css", ".report-progress"),
+        ("/static/shared.css", ".theme-toggle"),
+        ("/static/shared.js", "Logout"),
+    ]:
+        response = client.get(asset_path)
+        assert response.status_code == 200
+        assert expected in response.text
+
+
+def test_generated_dashboard_report_pages_use_static_css_and_escape_content():
+    dashboard = PhishingDashboard(template_dir="./missing-templates")
+    fallback = dashboard._generate_fallback_dashboard()
+    stats = dashboard._generate_stats_page(
+        {
+            "total_emails": 1,
+            "verdict_distribution": {"CLEAN": 1},
+            "average_score": 0.25,
+            "emails_last_24h": 1,
+        }
+    )
+    detail = dashboard._generate_email_detail_page(
+        PipelineResult(
+            email_id='email"><script>alert(1)</script>',
+            verdict=Verdict.SUSPICIOUS,
+            overall_score=0.5,
+            overall_confidence=0.7,
+            analyzer_results={
+                "header<script>": AnalyzerResult(
+                    analyzer_name="header",
+                    risk_score=0.5,
+                    confidence=0.8,
+                    details={},
+                )
+            },
+            extracted_urls=[],
+            iocs={},
+            reasoning="<script>alert(1)</script>",
+        )
+    )
+
+    for html in [fallback, stats, detail]:
+        assert '<link rel="stylesheet" href="/static/dashboard-report.css">' in html
+        assert "<style" not in html
+        assert " style=" not in html
+        assert "<script>" not in html
+
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in detail
+
+
+def test_session_status_reports_browser_session_expiry():
+    client = TestClient(
+        _build_app_with_token(),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    logged_out = client.get("/api/auth/session")
+    assert logged_out.status_code == 200
+    assert logged_out.json()["authenticated"] is False
+
+    client.post("/login", data={"token": "secret", "next": "/dashboard"})
+    logged_in = client.get("/api/auth/session")
+
+    payload = logged_in.json()
+    assert payload["auth_enabled"] is True
+    assert payload["authenticated"] is True
+    assert isinstance(payload["expires_at"], int)
+    assert payload["max_age_seconds"] > 0
 
 
 def test_login_sets_secure_session_and_csrf_cookies():

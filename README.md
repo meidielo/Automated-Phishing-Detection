@@ -298,7 +298,7 @@ The static Sigma rule library in [`sigma_rules/`](sigma_rules/) ships hand-writt
 
 ## Testing
 
-The test suite has **1054 tests across 49 test modules** (unit + integration), exercising every analyzer, the decision engine override rules (including the cycle 7 ordering fix that catches pure-text BEC), the cross-analyzer calibration pass (ADR 0001) with explicit cap-ceiling tests, the persistent email_id lookup index (ADR 0002) with cross-restart smoking-gun tests, scoring confidence capping, IOC export, the Sigma exporter, the URL reputation dead-domain confidence downgrade, credential encryption migration, the LLM determinism contract, the generic phishing ML baseline, the payment-fraud dataset/eval/train/demo workflow, the body_html sanitizer with hostile XSS payloads, the data retention purge and per-subject erasure, dashboard self-hosted chart assets/fallback rendering, and the web security middleware (bearer auth, browser session auth with CSRF, SSRF guard, security headers). CI runs the full suite on every push and PR against a fresh checkout from the hash-pinned lock file. CI-bites verified by deliberate-red sanity check on a throwaway branch.
+The test suite has **1067 tests across 50 test modules** (unit + integration), exercising every analyzer, the decision engine override rules (including the cycle 7 ordering fix that catches pure-text BEC), the cross-analyzer calibration pass (ADR 0001) with explicit cap-ceiling tests, the persistent email_id lookup index (ADR 0002) with cross-restart smoking-gun tests, scoring confidence capping, IOC export, the Sigma exporter, the URL reputation dead-domain confidence downgrade, credential encryption migration, the LLM determinism contract, the generic phishing ML baseline, the payment-fraud dataset/eval/train/demo workflow, the body_html sanitizer with hostile XSS payloads, retention and per-subject erasure across results, alerts, feedback, and sender profiles, dashboard self-hosted chart assets/fallback rendering under a strict dashboard CSP, operational backup/health scripts, and the web security middleware (bearer auth, browser session auth with CSRF, SSRF guard, security headers). CI runs the full suite plus a Playwright dashboard chart smoke check on every push and PR against a fresh checkout from the hash-pinned lock file. CI-bites verified by deliberate-red sanity check on a throwaway branch.
 
 ```bash
 # Run all tests
@@ -383,7 +383,7 @@ For tunnel-backed services (like phishanalyze), routes are configured in the Clo
 
 ## Data retention & privacy
 
-Stored email metadata in `data/results.jsonl` is regulated personal information under the Australian Privacy Act and the EU GDPR. The pipeline ships with a 30-day default retention window and a `purge` CLI subcommand:
+Stored email/result artifacts in `data/results.jsonl`, `data/alerts.jsonl`, `data/feedback.db`, and `data/sender_profiles.db` can contain regulated personal information under the Australian Privacy Act and the EU GDPR. The pipeline ships with a 30-day default retention window and a `purge` CLI subcommand:
 
 ```bash
 # Show what would be deleted without modifying the file
@@ -398,12 +398,35 @@ python main.py purge --older-than 7
 # Strict mode: also drop rows with unparseable timestamps
 python main.py purge --strict
 
-# Erase one address/email_id from both stored analysis rows and feedback labels
+# Purge every supported runtime artifact
+python main.py purge --target all
+
+# Erase one address/email_id from results, alerts, feedback labels, and sender profiles
 python main.py purge --target all --by-address person@example.com --dry-run
 python main.py purge --target all --by-address person@example.com
 ```
 
 Run the age-based purge from cron daily. Configure the default retention via `data_retention_days` in `config.yaml` or the `DATA_RETENTION_DAYS` environment variable. Use `--by-address` for per-data-subject erasure requests. See `THREAT_MODEL.md` section 6a for the full privacy threat model.
+
+## Production operations
+
+Operational scripts:
+
+```bash
+# Runtime backup, excluding secrets by default
+python scripts/backup_runtime_data.py --destination backups --retention-days 14
+
+# Uptime plus mailbox-monitor freshness alert
+python scripts/production_health_check.py --base-url https://detect.example.com --token "$ANALYST_API_TOKEN" --require-monitor-running
+
+# Load/error probe against a deployment with mailbox monitoring enabled
+python scripts/monitor_load_test.py --base-url https://detect.example.com --token "$ANALYST_API_TOKEN" --duration-seconds 60 --concurrency 8 --require-monitor-running
+
+# Vendored Chart.js integrity check
+python scripts/vendor_chartjs.py --check
+```
+
+See [`docs/production-operations.md`](docs/production-operations.md) for cron, logrotate, backup, uptime, alerting, and load-test guidance.
 
 ## Project documentation
 
@@ -412,6 +435,7 @@ Run the age-based purge from cron daily. Configure the default retention via `da
 | [`docs/MITRE_ATTACK_MAPPING.md`](docs/MITRE_ATTACK_MAPPING.md) | Per-analyzer ATT&CK technique coverage with explicit gaps                       |
 | [`THREAT_MODEL.md`](THREAT_MODEL.md)                       | STRIDE-per-trust-boundary, adversary archetypes, residual risks, non-goals       |
 | [`SECURITY.md`](SECURITY.md)                               | Vulnerability disclosure policy, supported versions, hardening guidance          |
+| [`docs/production-operations.md`](docs/production-operations.md) | Production backup, health, retention, alerting, and load-test runbook |
 | [`docs/EVALUATION.md`](docs/EVALUATION.md)                 | Evaluation methodology and corpus plan                                            |
 | [`docs/adr/0001-cross-analyzer-context-passing.md`](docs/adr/0001-cross-analyzer-context-passing.md) | ADR for the two-pass calibration design |
 | [`docs/adr/0002-persistent-email-id-lookup-for-feedback.md`](docs/adr/0002-persistent-email-id-lookup-for-feedback.md) | ADR for the persistent email_id lookup index |

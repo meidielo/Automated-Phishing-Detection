@@ -384,6 +384,26 @@ class PhishingDetectionApp:
             response.delete_cookie(CSRF_COOKIE_NAME)
             return response
 
+        @app.get("/api/auth/session")
+        async def api_session(request: Request):
+            """Return browser session state for dashboard UI polish."""
+            if not self.token_verifier.enabled:
+                return {
+                    "auth_enabled": False,
+                    "authenticated": True,
+                    "expires_at": None,
+                    "max_age_seconds": SESSION_MAX_AGE_SECONDS,
+                }
+            payload = self.token_verifier.session_payload(
+                request.cookies.get(SESSION_COOKIE_NAME)
+            )
+            return {
+                "auth_enabled": True,
+                "authenticated": payload is not None,
+                "expires_at": payload.get("exp") if payload else None,
+                "max_age_seconds": SESSION_MAX_AGE_SECONDS,
+            }
+
         @app.get("/", response_class=HTMLResponse)
         async def index():
             """Serve the main upload/analyze page."""
@@ -1376,7 +1396,7 @@ class PhishingDetectionApp:
                             body_parts.append(chunk.encode("utf-8"))
                     body = b"".join(body_parts).decode("utf-8")
                     # Only inject if not already present (avoid double-injection)
-                    if "phishdetect-theme" not in body and "</head>" in body:
+                    if "data-phishdetect-shared" not in body and "</head>" in body:
                         body = _inject_shared(body)
                     # Strip content-length so HTMLResponse recalculates it
                     # after injection makes the body longer. Stale content-length
@@ -1725,7 +1745,7 @@ Quick Start:
     )
     purge_parser.add_argument(
         "--target",
-        choices=["jsonl", "feedback", "all"],
+        choices=["jsonl", "alerts", "feedback", "sender-profiles", "all"],
         default="jsonl",
         help="Data store to purge. Default preserves the legacy JSONL-only behavior.",
     )
@@ -1745,6 +1765,16 @@ Quick Start:
         "--feedback-db",
         default="data/feedback.db",
         help="Path to the feedback SQLite DB to purge.",
+    )
+    purge_parser.add_argument(
+        "--alerts-path",
+        default="data/alerts.jsonl",
+        help="Path to the alert JSONL file to purge.",
+    )
+    purge_parser.add_argument(
+        "--sender-profiles-db",
+        default="data/sender_profiles.db",
+        help="Path to the sender profiling SQLite DB to purge.",
     )
     purge_parser.add_argument(
         "--keep-recent-feedback",
@@ -1830,10 +1860,14 @@ Quick Start:
 
     elif args.command == "purge":
         from src.automation.retention import (
+            erase_subject_from_alerts_jsonl,
             erase_subject_from_feedback_db,
             erase_subject_from_results_jsonl,
+            erase_subject_from_sender_profiles_db,
+            purge_alerts_jsonl,
             purge_feedback_db,
             purge_results_jsonl,
+            purge_sender_profiles_db,
         )
         config = PipelineConfig.from_env()
         max_age = args.older_than if args.older_than is not None else config.data_retention_days
@@ -1850,6 +1884,17 @@ Quick Start:
                 print(f"  subject: {erasure.subject}")
                 print(f"  kept:    {erasure.kept}")
                 print(f"  dropped: {erasure.dropped}")
+            if args.target in ("alerts", "all"):
+                alert_erasure = erase_subject_from_alerts_jsonl(
+                    args.alerts_path,
+                    args.by_address,
+                    dry_run=args.dry_run,
+                )
+                prefix = "[DRY RUN] " if args.dry_run else ""
+                print(f"{prefix}Erased subject from alerts {alert_erasure.path}")
+                print(f"  subject: {alert_erasure.subject}")
+                print(f"  kept:    {alert_erasure.kept}")
+                print(f"  dropped: {alert_erasure.dropped}")
             if args.target in ("feedback", "all"):
                 feedback_erasure = asyncio.run(erase_subject_from_feedback_db(
                     args.feedback_db,
@@ -1861,6 +1906,17 @@ Quick Start:
                 print(f"  subject: {feedback_erasure.subject}")
                 print(f"  kept:    {feedback_erasure.kept}")
                 print(f"  dropped: {feedback_erasure.dropped}")
+            if args.target in ("sender-profiles", "all"):
+                sender_erasure = erase_subject_from_sender_profiles_db(
+                    args.sender_profiles_db,
+                    args.by_address,
+                    dry_run=args.dry_run,
+                )
+                prefix = "[DRY RUN] " if args.dry_run else ""
+                print(f"{prefix}Erased subject from sender profiles {sender_erasure.path}")
+                print(f"  subject: {sender_erasure.subject}")
+                print(f"  kept:    {sender_erasure.kept}")
+                print(f"  dropped: {sender_erasure.dropped}")
             return
 
         if args.target in ("jsonl", "all") and args.dry_run:
@@ -1903,6 +1959,39 @@ Quick Start:
             print(f"  unparseable: {stats.unparseable}")
             print(f"  bytes:       {stats.bytes_before} -> {stats.bytes_after}")
 
+        if args.target in ("alerts", "all"):
+            if args.dry_run:
+                import shutil, tempfile
+                src_path = Path(args.alerts_path)
+                with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as tmp:
+                    tmp_path = Path(tmp.name)
+                if src_path.exists():
+                    shutil.copy2(src_path, tmp_path)
+                try:
+                    alert_stats = purge_alerts_jsonl(
+                        tmp_path,
+                        max_age_days=max_age,
+                        keep_unparseable=not args.strict,
+                    )
+                    print(f"[DRY RUN] {args.alerts_path} (no changes written)")
+                    print(f"  cutoff:      {alert_stats.cutoff.isoformat()}")
+                    print(f"  would keep:  {alert_stats.kept}")
+                    print(f"  would drop:  {alert_stats.dropped}")
+                    print(f"  unparseable: {alert_stats.unparseable} ({'kept' if not args.strict else 'dropped'})")
+                finally:
+                    tmp_path.unlink(missing_ok=True)
+            else:
+                alert_stats = purge_alerts_jsonl(
+                    args.alerts_path,
+                    max_age_days=max_age,
+                    keep_unparseable=not args.strict,
+                )
+                print(f"Purged alerts {alert_stats.path}")
+                print(f"  cutoff:      {alert_stats.cutoff.isoformat()}")
+                print(f"  kept:        {alert_stats.kept}")
+                print(f"  dropped:     {alert_stats.dropped}")
+                print(f"  unparseable: {alert_stats.unparseable}")
+
         if args.target in ("feedback", "all"):
             feedback_stats = asyncio.run(purge_feedback_db(
                 args.feedback_db,
@@ -1916,6 +2005,18 @@ Quick Start:
             print(f"  keep recent: {feedback_stats.keep_recent}")
             print(f"  kept:        {feedback_stats.kept}")
             print(f"  dropped:     {feedback_stats.dropped}")
+
+        if args.target in ("sender-profiles", "all"):
+            sender_stats = purge_sender_profiles_db(
+                args.sender_profiles_db,
+                max_age_days=max_age,
+                dry_run=args.dry_run,
+            )
+            prefix = "[DRY RUN] " if args.dry_run else ""
+            print(f"{prefix}Sender profiles DB {sender_stats.path}")
+            print(f"  cutoff:  {sender_stats.cutoff.isoformat()}")
+            print(f"  kept:    {sender_stats.kept}")
+            print(f"  dropped: {sender_stats.dropped}")
 
     else:
         if len(sys.argv) == 1:

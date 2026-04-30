@@ -4,6 +4,7 @@ Provides web interface for analysis review, statistics, and result details.
 """
 import logging
 from datetime import datetime, timedelta
+from html import escape
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
@@ -14,6 +15,18 @@ from src.models import PipelineResult, Verdict
 
 
 logger = logging.getLogger(__name__)
+
+DASHBOARD_CSP = (
+    "default-src 'self'; "
+    "img-src 'self' data: blob:; "
+    "style-src 'self'; "
+    "script-src 'self'; "
+    "connect-src 'self'; "
+    "frame-src 'none'; "
+    "object-src 'none'; "
+    "base-uri 'self'; "
+    "form-action 'self'"
+)
 
 
 class PhishingDashboard:
@@ -61,8 +74,14 @@ class PhishingDashboard:
         from pathlib import Path
         dashboard_path = Path(self.env.loader.searchpath[0]) / "dashboard.html" if self.env else None
         if dashboard_path and dashboard_path.exists():
-            return HTMLResponse(content=dashboard_path.read_text(encoding="utf-8"))
-        return HTMLResponse(content=self._generate_fallback_dashboard())
+            return HTMLResponse(
+                content=dashboard_path.read_text(encoding="utf-8"),
+                headers={"Content-Security-Policy": DASHBOARD_CSP},
+            )
+        return HTMLResponse(
+            content=self._generate_fallback_dashboard(),
+            headers={"Content-Security-Policy": DASHBOARD_CSP},
+        )
 
     async def get_stats(self) -> HTMLResponse:
         """
@@ -91,7 +110,10 @@ class PhishingDashboard:
             except Exception as e:
                 logger.error(f"Error fetching statistics: {e}")
 
-        return HTMLResponse(content=self._generate_stats_page(stats))
+        return HTMLResponse(
+            content=self._generate_stats_page(stats),
+            headers={"Content-Security-Policy": DASHBOARD_CSP},
+        )
 
     async def get_email_detail(self, email_id: str) -> str:
         """
@@ -117,7 +139,10 @@ class PhishingDashboard:
             raise HTTPException(status_code=404, detail="Analysis result not found")
 
         # Generate HTML from result
-        return HTMLResponse(content=self._generate_email_detail_page(result))
+        return HTMLResponse(
+            content=self._generate_email_detail_page(result),
+            headers={"Content-Security-Policy": DASHBOARD_CSP},
+        )
 
     async def api_pending_reviews(self, limit: int = Query(50, ge=1, le=1000)) -> dict:
         """
@@ -184,17 +209,7 @@ class PhishingDashboard:
         <html>
         <head>
             <title>Phishing Detection Dashboard</title>
-            <style>
-                body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
-                .container { max-width: 1200px; margin: 0 auto; }
-                .header { background-color: #2c3e50; color: white; padding: 20px; border-radius: 5px; }
-                .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin: 20px 0; }
-                .stat-card { background-color: white; padding: 20px; border-radius: 5px; text-align: center; }
-                .stat-number { font-size: 32px; font-weight: bold; margin: 10px 0; }
-                .stat-label { color: #666; }
-                .pending-queue { background-color: white; padding: 20px; border-radius: 5px; }
-                .no-data { color: #999; text-align: center; padding: 40px; }
-            </style>
+            <link rel="stylesheet" href="/static/dashboard-report.css">
         </head>
         <body>
             <div class="container">
@@ -206,19 +221,19 @@ class PhishingDashboard:
                 <div class="stats">
                     <div class="stat-card">
                         <div class="stat-label">Clean</div>
-                        <div class="stat-number" style="color: #28a745;">0</div>
+                        <div class="stat-number verdict-clean">0</div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-label">Suspicious</div>
-                        <div class="stat-number" style="color: #ffc107;">0</div>
+                        <div class="stat-number verdict-suspicious">0</div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-label">Likely Phishing</div>
-                        <div class="stat-number" style="color: #fd7e14;">0</div>
+                        <div class="stat-number verdict-likely-phishing">0</div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-label">Confirmed Phishing</div>
-                        <div class="stat-number" style="color: #dc3545;">0</div>
+                        <div class="stat-number verdict-confirmed-phishing">0</div>
                     </div>
                 </div>
 
@@ -242,16 +257,7 @@ class PhishingDashboard:
         <html>
         <head>
             <title>Analysis Statistics</title>
-            <style>
-                body {{ font-family: Arial, sans-serif; margin: 20px; }}
-                .container {{ max-width: 1200px; margin: 0 auto; }}
-                .header {{ background-color: #2c3e50; color: white; padding: 20px; border-radius: 5px; }}
-                .stats-grid {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin: 20px 0; }}
-                .stat-box {{ background-color: white; padding: 20px; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
-                .stat-box h3 {{ margin: 0 0 10px 0; color: #2c3e50; }}
-                .bar {{ background-color: #e9ecef; height: 30px; border-radius: 3px; margin: 10px 0; overflow: hidden; }}
-                .bar-fill {{ height: 100%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; }}
-            </style>
+            <link rel="stylesheet" href="/static/dashboard-report.css">
         </head>
         <body>
             <div class="container">
@@ -263,12 +269,12 @@ class PhishingDashboard:
                 <div class="stats-grid">
                     <div class="stat-box">
                         <h3>Total Emails Analyzed</h3>
-                        <div style="font-size: 28px; font-weight: bold;">{stats.get('total_emails', 0)}</div>
+                        <div class="metric-number">{stats.get('total_emails', 0)}</div>
                     </div>
 
                     <div class="stat-box">
                         <h3>Average Phishing Score</h3>
-                        <div style="font-size: 28px; font-weight: bold;">{stats.get('average_score', 0):.3f}</div>
+                        <div class="metric-number">{stats.get('average_score', 0):.3f}</div>
                     </div>
 
                     <div class="stat-box">
@@ -278,7 +284,7 @@ class PhishingDashboard:
 
                     <div class="stat-box">
                         <h3>Emails (Last 24h)</h3>
-                        <div style="font-size: 28px; font-weight: bold;">{stats.get('emails_last_24h', 0)}</div>
+                        <div class="metric-number">{stats.get('emails_last_24h', 0)}</div>
                     </div>
                 </div>
             </div>
@@ -289,45 +295,32 @@ class PhishingDashboard:
 
     def _generate_email_detail_page(self, result: PipelineResult) -> str:
         """Generate detailed email analysis page HTML."""
-        verdict_colors = {
-            Verdict.CLEAN: "#28a745",
-            Verdict.SUSPICIOUS: "#ffc107",
-            Verdict.LIKELY_PHISHING: "#fd7e14",
-            Verdict.CONFIRMED_PHISHING: "#dc3545",
-        }
+        safe_email_id = escape(result.email_id)
+        safe_reasoning = escape(result.reasoning)
+        verdict_class = self._verdict_class(result.verdict)
+        score_value = self._percent(result.overall_score)
 
         html = f"""
         <!DOCTYPE html>
         <html>
         <head>
-            <title>Email Analysis - {result.email_id}</title>
-            <style>
-                body {{ font-family: Arial, sans-serif; margin: 20px; }}
-                .container {{ max-width: 1200px; margin: 0 auto; }}
-                .header {{ background-color: #2c3e50; color: white; padding: 20px; border-radius: 5px; margin-bottom: 20px; }}
-                .verdict {{ font-size: 24px; font-weight: bold; padding: 10px 20px; border-radius: 3px; display: inline-block; }}
-                .section {{ background-color: white; padding: 20px; border-radius: 5px; margin: 20px 0; }}
-                .analyzer-result {{ padding: 10px; margin: 10px 0; background-color: #f8f9fa; border-left: 4px solid #0d6efd; }}
-                .score-bar {{ background-color: #e9ecef; height: 20px; border-radius: 3px; overflow: hidden; }}
-                .score-fill {{ height: 100%; background-color: #0d6efd; }}
-            </style>
+            <title>Email Analysis - {safe_email_id}</title>
+            <link rel="stylesheet" href="/static/dashboard-report.css">
         </head>
         <body>
             <div class="container">
                 <div class="header">
                     <h1>Email Analysis Details</h1>
-                    <p>Email ID: <strong>{result.email_id}</strong></p>
-                    <div class="verdict" style="background-color: {verdict_colors.get(result.verdict, '#999')};">
-                        {result.verdict.value}
+                    <p>Email ID: <strong>{safe_email_id}</strong></p>
+                    <div class="verdict-badge {verdict_class}">
+                        {escape(result.verdict.value)}
                     </div>
                 </div>
 
                 <div class="section">
                     <h2>Score Breakdown</h2>
                     <p><strong>Overall Score:</strong> {result.overall_score:.3f}</p>
-                    <div class="score-bar">
-                        <div class="score-fill" style="width: {result.overall_score * 100}%"></div>
-                    </div>
+                    <progress class="report-progress score-progress" max="100" value="{score_value}"></progress>
                     <p><strong>Confidence:</strong> {result.overall_confidence:.3f}</p>
                 </div>
 
@@ -338,7 +331,7 @@ class PhishingDashboard:
 
                 <div class="section">
                     <h2>Reasoning</h2>
-                    <p>{result.reasoning}</p>
+                    <p>{safe_reasoning}</p>
                 </div>
 
                 <div class="section">
@@ -353,27 +346,36 @@ class PhishingDashboard:
         return html
 
     @staticmethod
+    def _percent(value: float) -> int:
+        """Return a clamped integer percentage for HTML progress elements."""
+        return max(0, min(100, int(round(value * 100))))
+
+    @staticmethod
+    def _verdict_class(verdict: Verdict | str) -> str:
+        """Map verdict names to CSS classes without emitting inline styles."""
+        value = verdict.value if isinstance(verdict, Verdict) else str(verdict)
+        classes = {
+            "CLEAN": "verdict-clean",
+            "SUSPICIOUS": "verdict-suspicious",
+            "LIKELY_PHISHING": "verdict-likely-phishing",
+            "CONFIRMED_PHISHING": "verdict-confirmed-phishing",
+        }
+        return classes.get(value, "verdict-unknown")
+
+    @staticmethod
     def _generate_verdict_bars(verdict_dist: dict) -> str:
         """Generate HTML for verdict distribution bars."""
-        colors = {
-            "CLEAN": "#28a745",
-            "SUSPICIOUS": "#ffc107",
-            "LIKELY_PHISHING": "#fd7e14",
-            "CONFIRMED_PHISHING": "#dc3545",
-        }
-
         total = sum(verdict_dist.values()) or 1
         html = ""
 
         for verdict, count in verdict_dist.items():
-            percentage = (count / total) * 100
-            color = colors.get(verdict, "#999")
+            percentage = max(0, min(100, int(round((count / total) * 100))))
+            verdict_class = PhishingDashboard._verdict_class(str(verdict))
+            safe_verdict = escape(str(verdict))
             html += f"""
-            <div style="margin: 10px 0;">
-                <div>{verdict}: {count}</div>
-                <div class="bar">
-                    <div class="bar-fill" style="width: {percentage}%; background-color: {color};"></div>
-                </div>
+            <div class="bar-row">
+                <div>{safe_verdict}: {count}</div>
+                <progress class="report-progress {verdict_class}" max="100" value="{percentage}"></progress>
             </div>
             """
 
@@ -384,14 +386,13 @@ class PhishingDashboard:
         """Generate HTML for analyzer results breakdown."""
         html = ""
         for analyzer_name, analyzer_result in result.analyzer_results.items():
-            bar_width = int(analyzer_result.risk_score * 100)
+            bar_width = PhishingDashboard._percent(analyzer_result.risk_score)
+            safe_analyzer_name = escape(analyzer_name)
             html += f"""
             <div class="analyzer-result">
-                <strong>{analyzer_name}</strong><br>
+                <strong>{safe_analyzer_name}</strong><br>
                 Score: {analyzer_result.risk_score:.3f} | Confidence: {analyzer_result.confidence:.3f}
-                <div class="score-bar" style="margin-top: 5px;">
-                    <div class="score-fill" style="width: {bar_width}%"></div>
-                </div>
+                <progress class="report-progress score-progress" max="100" value="{bar_width}"></progress>
             </div>
             """
 

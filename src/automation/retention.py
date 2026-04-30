@@ -35,6 +35,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -74,6 +75,21 @@ class FeedbackRetentionStats:
     kept: int
     dropped: int
     keep_recent: int
+    dry_run: bool
+
+    @property
+    def total_seen(self) -> int:
+        return self.kept + self.dropped
+
+
+@dataclass
+class SenderProfileRetentionStats:
+    """Summary of one sender profile DB purge run."""
+
+    path: str
+    cutoff: datetime
+    kept: int
+    dropped: int
     dry_run: bool
 
     @property
@@ -355,6 +371,32 @@ def purge_results_jsonl(
     )
 
 
+def purge_alerts_jsonl(
+    path: Union[str, Path],
+    max_age_days: int,
+    *,
+    now: Optional[datetime] = None,
+    keep_unparseable: bool = True,
+) -> RetentionStats:
+    """Purge old alert JSONL rows. Alerts share the `timestamp` schema."""
+    return purge_results_jsonl(
+        path,
+        max_age_days,
+        now=now,
+        keep_unparseable=keep_unparseable,
+    )
+
+
+def erase_subject_from_alerts_jsonl(
+    path: Union[str, Path],
+    subject: str,
+    *,
+    dry_run: bool = False,
+) -> ErasureStats:
+    """Erase alert JSONL rows that mention an email address or email_id."""
+    return erase_subject_from_results_jsonl(path, subject, dry_run=dry_run)
+
+
 def _as_utc_naive(dt: datetime) -> datetime:
     """Normalize a datetime for SQLite DateTime comparisons."""
     if dt.tzinfo is not None:
@@ -515,5 +557,127 @@ async def erase_subject_from_feedback_db(
         subject=subject,
         kept=kept,
         dropped=drop_count,
+        dry_run=dry_run,
+    )
+
+
+def purge_sender_profiles_db(
+    db_path: Union[str, Path],
+    max_age_days: int,
+    *,
+    now: Optional[datetime] = None,
+    dry_run: bool = False,
+) -> SenderProfileRetentionStats:
+    """Purge sender profiling rows older than the retention window."""
+    if max_age_days < 0:
+        raise ValueError(f"max_age_days must be >= 0, got {max_age_days}")
+
+    target = Path(db_path)
+    cutoff = (now or datetime.now(timezone.utc)) - timedelta(days=max_age_days)
+    if not target.exists():
+        return SenderProfileRetentionStats(
+            path=str(target),
+            cutoff=cutoff,
+            kept=0,
+            dropped=0,
+            dry_run=dry_run,
+        )
+
+    cutoff_text = cutoff.isoformat()
+    with sqlite3.connect(target) as conn:
+        cursor = conn.cursor()
+        tables = {
+            "sender_emails": "timestamp",
+            "sender_recipients": "last_seen",
+            "senders": "last_seen",
+        }
+        total = dropped = 0
+        for table, column in tables.items():
+            exists = cursor.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                (table,),
+            ).fetchone()
+            if not exists:
+                continue
+            count = cursor.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            drop_count = cursor.execute(
+                f"SELECT COUNT(*) FROM {table} WHERE {column} < ?",
+                (cutoff_text,),
+            ).fetchone()[0]
+            total += count
+            dropped += drop_count
+            if drop_count and not dry_run:
+                cursor.execute(f"DELETE FROM {table} WHERE {column} < ?", (cutoff_text,))
+        if not dry_run:
+            conn.commit()
+
+    kept = total - dropped
+    logger.info(
+        "Purged sender profile DB %s: kept=%d dropped=%d dry_run=%s cutoff=%s",
+        target, kept, dropped, dry_run, cutoff.isoformat(),
+    )
+    return SenderProfileRetentionStats(
+        path=str(target),
+        cutoff=cutoff,
+        kept=kept,
+        dropped=dropped,
+        dry_run=dry_run,
+    )
+
+
+def erase_subject_from_sender_profiles_db(
+    db_path: Union[str, Path],
+    subject: str,
+    *,
+    dry_run: bool = False,
+) -> ErasureStats:
+    """Remove sender profile rows that mention an email address or email_id."""
+    subject = subject.strip()
+    if not subject:
+        raise ValueError("subject must not be empty")
+
+    target = Path(db_path)
+    if not target.exists():
+        return ErasureStats(path=str(target), subject=subject, kept=0, dropped=0, dry_run=dry_run)
+
+    needle = _sql_like_contains(subject)
+    with sqlite3.connect(target) as conn:
+        cursor = conn.cursor()
+        specs = [
+            ("sender_emails", "lower(email_id) LIKE ? ESCAPE '\\' OR lower(sender_email) LIKE ? ESCAPE '\\'"),
+            ("sender_recipients", "lower(sender_email) LIKE ? ESCAPE '\\' OR lower(recipient_email) LIKE ? ESCAPE '\\'"),
+            ("senders", "lower(sender_email) LIKE ? ESCAPE '\\'"),
+        ]
+        total = dropped = 0
+        for table, predicate in specs:
+            exists = cursor.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                (table,),
+            ).fetchone()
+            if not exists:
+                continue
+            count = cursor.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            params = (needle, needle) if predicate.count("?") == 2 else (needle,)
+            drop_count = cursor.execute(
+                f"SELECT COUNT(*) FROM {table} WHERE {predicate}",
+                params,
+            ).fetchone()[0]
+            total += count
+            dropped += drop_count
+            if drop_count and not dry_run:
+                cursor.execute(f"DELETE FROM {table} WHERE {predicate}", params)
+        if not dry_run:
+            conn.commit()
+
+    kept = total - dropped
+    logger.info(
+        "Erased subject from sender profile DB %s: subject=%s kept=%d dropped=%d dry_run=%s",
+        target, subject, kept, dropped, dry_run,
+    )
+    return ErasureStats(
+        path=str(target),
+        subject=subject,
+        kept=kept,
+        dropped=dropped,
         dry_run=dry_run,
     )

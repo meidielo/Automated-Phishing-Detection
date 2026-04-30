@@ -44,6 +44,7 @@ models/phishing_classifier/
 # ===== Runtime Artifacts =====
 *.log
 logs/
+backups/
 screenshots/
 detonation_captures/
 sandbox_results/

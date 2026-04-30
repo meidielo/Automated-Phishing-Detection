@@ -1,5 +1,12 @@
 Vendored browser assets used by the dashboard.
 
+Update process:
+1. Run `python scripts/vendor_chartjs.py --version VERSION`.
+2. Run `python scripts/vendor_chartjs.py --check`.
+3. Run `python scripts/dashboard_browser_check.py`.
+4. Commit `static/vendor/chart.umd.js`, `static/vendor/chart.umd.js.map`,
+   and this README together.
+
 `chart.umd.js`
 - Library: Chart.js 4.4.0
 - Source: https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js

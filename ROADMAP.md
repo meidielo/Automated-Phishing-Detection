@@ -62,11 +62,15 @@ Status is one of:
 | **Payment demo runner** - compact expected-vs-predicted `SAFE` / `VERIFY` / `DO_NOT_PAY` table for PII-free demo samples. | `src/eval/payment_demo.py`, `scripts/payment_demo.py` |
 | **Synthetic SAFE invoice seed class** - payment dataset generator can add routine invoice examples so `SAFE`, `VERIFY`, and `DO_NOT_PAY` all train and evaluate. | `src/eval/payment_dataset.py` |
 | **Public-corpus smoke eval baseline** - 15-sample Nazario/Enron/SpamAssassin run on commit `c459237`, with permissive and strict failure reports generated from ignored corpora. | `docs/EVALUATION.md`, `scripts/eval_inspect_failures.py` |
-| **Feedback DB retention policy** - `purge --target feedback|all` purges old SQLAlchemy feedback labels by age while optionally keeping N newest records. | `src/automation/retention.py`, `main.py purge` |
-| **Browser session auth for dashboard** - `/login` sets signed session and CSRF cookies; the same `TokenVerifier` accepts bearer or browser session auth. | `src/security/web_security.py`, `main.py`, `templates/login.html`, `templates/_shared.html` |
-| **Self-hosted dashboard chart asset** - dashboard graphs load Chart.js from `/static/vendor/` so the strict `script-src 'self'` CSP allows charts without public-CDN dependency; fallback charts remain for asset/runtime failure. | `main.py`, `templates/dashboard.html`, `static/vendor/`, `tests/unit/test_dashboard_session_auth.py` |
+| **Full runtime retention policy** - `purge --target all` now covers results, alerts, feedback labels, and sender profiles by age and by subject erasure. | `src/automation/retention.py`, `main.py purge` |
+| **Browser session auth for dashboard** - `/login` sets signed session and CSRF cookies; the same `TokenVerifier` accepts bearer or browser session auth. Session lifetime is configurable and `/api/auth/session` exposes browser session state for UI. | `src/security/web_security.py`, `main.py`, `templates/login.html`, `static/shared.js` |
+| **Strict dashboard CSP and self-hosted chart assets** - dashboard graphs load Chart.js from `/static/vendor/`, dashboard/shared CSS and JS are static files, and `/dashboard/` sends a CSP without `'unsafe-inline'`; fallback charts remain for asset/runtime failure. | `main.py`, `src/reporting/dashboard.py`, `templates/dashboard.html`, `static/`, `tests/unit/test_dashboard_session_auth.py` |
+| **CI dashboard browser smoke test** - GitHub Actions installs Playwright Chromium and runs the dashboard chart smoke check under strict CSP. | `.github/workflows/ci.yml`, `scripts/dashboard_browser_check.py` |
+| **Formal vendored Chart.js process** - update/check script validates version, SHA256s, and local dashboard reference. | `scripts/vendor_chartjs.py`, `static/vendor/README.md` |
+| **Production operations hardening** - backup, health/alert, load/error probe scripts plus cron/logrotate runbook. | `scripts/backup_runtime_data.py`, `scripts/production_health_check.py`, `scripts/monitor_load_test.py`, `docs/production-operations.md` |
+| **Redacted Gmail-derived payment samples** - local ignored payment dataset now includes redacted real Gmail search-summary invoice/receipt/payment examples and fresh decision eval/ML exports. Raw mail is not committed. | `data/payment_scam_dataset/` (ignored), `scripts/payment_dataset.py readiness` |
 | **Multi-container Docker Compose browser split** - URL detonation connects to a separate `browser-sandbox` Playwright service via `PLAYWRIGHT_WS_ENDPOINT`. | `docker-compose.yml`, `docker-compose.production.yml`, `src/analyzers/url_detonation.py` |
-| 1054 tests (49 test modules) | unit + integration |
+| 1067 tests (50 test modules) | unit + integration |
 
 ---
 
@@ -74,8 +78,8 @@ Status is one of:
 
 Ordered by intended sequence, not priority.
 
-### Real redacted payment samples
-The payment dataset has tooling, synthetic seed data, public-advisory-derived `VERIFY`/`DO_NOT_PAY` seed and holdout data, public-corpus-mined payment scam language, readiness reporting, redaction, eval, demo, and ML training. It still needs real redacted invoice, bank-change, remittance, and supplier-update samples before external product metrics are credible. Target: 20 to 50 real redacted examples across `SAFE`, `VERIFY`, and `DO_NOT_PAY`.
+### Full-body real redacted payment samples
+The payment dataset has tooling, synthetic seed data, public-advisory-derived `VERIFY`/`DO_NOT_PAY` seed and holdout data, public-corpus-mined payment scam language, readiness reporting, redaction, eval, demo, ML training, and 10 redacted Gmail search-summary examples. It still needs full-body redacted invoice, bank-change, remittance, and supplier-update samples before external product metrics are credible. Target: 20 to 50 full-body redacted examples across `SAFE`, `VERIFY`, and `DO_NOT_PAY`.
 
 ### Audit trail for feedback labels
 Append-only log of who relabeled what. Closes residual risk **R2**. Required before the project is honest about being multi-analyst.

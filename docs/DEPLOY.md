@@ -101,6 +101,11 @@ docker compose -f docker-compose.production.yml up -d --build
 The `--build` flag rebuilds the image with the new code.
 The tunnel reconnects automatically.
 
+## Operations
+
+After deployment, follow `docs/production-operations.md` for backups,
+retention, log rotation, uptime checks, alerting, and load/error probes.
+
 ## Troubleshooting
 
 **Tunnel won't connect:**
