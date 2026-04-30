@@ -70,6 +70,11 @@ class PaymentFraudAnalyzer:
         "outstanding balance",
         "statement attached",
         "settlement",
+        "bank details",
+        "bank-detail",
+        "account change",
+        "supplier portal",
+        "remittance contact",
     ]
 
     BANK_CHANGE_PATTERNS = [
@@ -80,8 +85,20 @@ class PaymentFraudAnalyzer:
         r"do\s+not\s+use\s+(?:the\s+)?old\s+(?:bank|account|payment)\s+details",
         r"bank\s+account\s+(?:has\s+)?changed",
         r"bank\s+details\s+(?:have\s+)?changed",
+        r"payment-account\s+change",
+        r"bank-detail\s+update",
         r"bank\s+details\s+.*\bchanged\s+in\s+(?:the\s+)?(?:supplier\s+)?portal",
         r"account\s+details\s+(?:have\s+)?changed",
+        r"corrected\s+(?:the\s+)?bank\s+account",
+        r"payment\s+must\s+be\s+redirected",
+        r"saved\s+supplier\s+record\s+is\s+outdated",
+    ]
+
+    BANK_CHANGE_NEGATIONS = [
+        r"no\s+(?:bank|payment|account)\s+details?\s+(?:have\s+)?changed",
+        r"no\s+new\s+(?:bank|payment|account)\s+details?\s+(?:are\s+)?provided",
+        r"does\s+not\s+change\s+any\s+(?:bank|payment|account)\s+details",
+        r"no\s+supplier\s+bank\s+details\s+are\s+included",
     ]
 
     URGENCY_PATTERNS = [
@@ -99,6 +116,7 @@ class PaymentFraudAnalyzer:
 
     BYPASS_PATTERNS = [
         r"do\s+not\s+call",
+        r"do\s+not\s+contact",
         r"only\s+reply\s+to\s+this\s+email",
         r"keep\s+(?:this\s+)?confidential",
         r"do\s+not\s+discuss",
@@ -122,7 +140,27 @@ class PaymentFraudAnalyzer:
         r"confirm\s+(?:through|via)\s+(?:your\s+)?(?:usual|known)\s+contact",
         r"call\s+(?:your\s+)?(?:usual|known)\s+(?:contact|number)",
         r"verify\s+(?:through|via)\s+(?:the\s+)?portal",
+        r"call\s+(?:the\s+)?existing\s+supplier\s+contact",
         r"purchase\s+order",
+    ]
+
+    MANDATORY_VERIFICATION_PATTERNS = [
+        r"manual\s+verification\s+required",
+        r"requires?\s+(?:manual\s+)?verification",
+        r"needs?\s+second\s+approval",
+        r"awaiting\s+approval",
+        r"hold\s+payment",
+        r"payment\s+hold",
+        r"do\s+not\s+release\s+payment",
+        r"should\s+remain\s+in\s+review",
+        r"verify\s+the\s+request\s+out\s+of\s+band",
+        r"verify\s+this\s+change\s+using\s+(?:the\s+)?existing\s+saved\s+supplier\s+contact",
+        r"verify\s+the\s+change\s+with\s+the\s+supplier\s+contact",
+        r"complete\s+the\s+normal\s+supplier\s+verification\s+workflow",
+        r"supplier\s+master-data\s+process",
+        r"normal\s+supplier\s+master-data\s+workflow",
+        r"without\s+portal\s+verification",
+        r"do\s+not\s+use\s+bank\s+details\s+sent\s+over\s+email",
     ]
 
     FREE_EMAIL_DOMAINS = {
@@ -246,6 +284,7 @@ class PaymentFraudAnalyzer:
                 )
 
             self._add_bank_change_signals(text, signals)
+            self._add_mandatory_verification_signal(text, signals)
             self._add_urgency_signal(text, signals)
             self._add_bypass_signal(text, signals)
             self._add_sender_signals(
@@ -396,6 +435,8 @@ class PaymentFraudAnalyzer:
         }
 
     def _add_bank_change_signals(self, text: str, signals: list[PaymentFraudSignal]) -> None:
+        if self._matched_patterns(text, self.BANK_CHANGE_NEGATIONS):
+            return
         matches = self._matched_patterns(text, self.BANK_CHANGE_PATTERNS)
         if matches:
             signals.append(self._signal(
@@ -404,6 +445,21 @@ class PaymentFraudAnalyzer:
                 evidence=f"Bank or payment detail change language found: {matches[0]}",
                 recommendation="Do not pay until the supplier is verified through a saved contact method.",
                 risk_weight=0.42,
+            ))
+
+    def _add_mandatory_verification_signal(
+        self,
+        text: str,
+        signals: list[PaymentFraudSignal],
+    ) -> None:
+        matches = self._matched_patterns(text, self.MANDATORY_VERIFICATION_PATTERNS)
+        if matches:
+            signals.append(self._signal(
+                name="mandatory_supplier_verification",
+                severity=PaymentSignalSeverity.MEDIUM,
+                evidence=f"Payment workflow requires independent verification: {matches[0]}",
+                recommendation="Hold payment until the normal supplier verification workflow is complete.",
+                risk_weight=0.22,
             ))
 
     def _add_urgency_signal(self, text: str, signals: list[PaymentFraudSignal]) -> None:
@@ -473,10 +529,10 @@ class PaymentFraudAnalyzer:
         if header_detail.display_name_spoofing:
             signals.append(self._signal(
                 name="display_name_spoofing",
-                severity=PaymentSignalSeverity.HIGH,
+                severity=PaymentSignalSeverity.MEDIUM,
                 evidence="Display name appears to impersonate a known brand or role.",
                 recommendation="Verify the sender through a known supplier contact.",
-                risk_weight=0.18,
+                risk_weight=0.10,
             ))
 
         display = (email.from_display_name or "").strip()
@@ -628,7 +684,39 @@ class PaymentFraudAnalyzer:
             signal for signal in signals
             if signal.severity == PaymentSignalSeverity.HIGH
         ]
+        signal_names = {signal.name for signal in signals}
+        high_risk_payment_redirect = (
+            "reply_to_domain_mismatch" in signal_names
+            and (
+                "bank_detail_change_request" in signal_names
+                or "bank_details_in_email_body" in signal_names
+                or "executive_payment_request" in signal_names
+            )
+            and (
+                "payment_urgency_pressure" in signal_names
+                or "approval_bypass_language" in signal_names
+                or "sender_authentication_failed" in signal_names
+                or "display_name_spoofing" in signal_names
+            )
+        )
+        hostile_payment_signals = {
+            "reply_to_domain_mismatch",
+            "sender_authentication_failed",
+            "approval_bypass_language",
+            "dangerous_invoice_attachment",
+            "macro_enabled_invoice_attachment",
+            "executive_payment_request",
+            "free_email_supplier_request",
+        }
+        verification_workflow_context = (
+            "mandatory_supplier_verification" in signal_names
+            and not hostile_payment_signals.intersection(signal_names)
+        )
 
+        if high_risk_payment_redirect:
+            return PaymentDecision.DO_NOT_PAY
+        if verification_workflow_context:
+            return PaymentDecision.VERIFY
         if risk_score >= 0.78 or (critical_signals and risk_score >= 0.40):
             return PaymentDecision.DO_NOT_PAY
         if risk_score >= 0.22 or high_signals:

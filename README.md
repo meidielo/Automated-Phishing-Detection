@@ -121,6 +121,7 @@ To start a local payment-scam dataset:
 ```bash
 python scripts/payment_dataset.py init --dataset data/payment_scam_dataset
 python scripts/payment_dataset.py seed-synthetic --dataset data/payment_scam_dataset --scam-count 50 --legit-count 50 --safe-count 50 --seed 1337 --clean
+python scripts/payment_dataset.py seed-public-advisory --dataset data/payment_scam_dataset
 python scripts/payment_dataset.py redact --source path/to/raw-payment-email.eml --output data/payment_scam_dataset/incoming/redacted/vendor-update.eml
 python scripts/payment_dataset.py audit-pii --sample data/payment_scam_dataset/incoming/redacted/vendor-update.eml
 python scripts/payment_dataset.py add --dataset data/payment_scam_dataset --source path/to/sample.eml --label PAYMENT_SCAM --payment-decision DO_NOT_PAY --scenario bank_detail_change --source-type redacted --split train --verified-by meidie --contains-real-pii no
@@ -133,10 +134,11 @@ python scripts/payment_train.py --dataset data/payment_scam_dataset
 ```
 
 The payment dataset records both the generic label (`PAYMENT_SCAM`, `LEGITIMATE_PAYMENT`, `NON_PAYMENT`) and the expected business decision (`SAFE`, `VERIFY`, `DO_NOT_PAY`). The synthetic seed set is for repeatable development only; replace or supplement it with redacted real examples before claiming product metrics.
+`seed-public-advisory` adds non-private `VERIFY` and `DO_NOT_PAY` examples based on public BEC/payment-redirection warning patterns from Scamwatch and cyber.gov.au. These are better than synthetic-only plumbing checks, but real redacted inbox/client samples are still the strongest evidence.
 The redaction tool pseudonymizes email and URL domains, normalizes obvious payment identifiers, removes non-text attachments, and audits the result using non-sensitive fingerprints. Manually review the redacted `.eml` before labeling because names and business context can still need human cleanup.
 `scripts/payment_eval.py` writes JSON, CSV, and Markdown reports that compare expected vs predicted `SAFE`, `VERIFY`, and `DO_NOT_PAY` decisions.
 `scripts/payment_train.py` trains and tests a TF-IDF + logistic regression baseline from the ML JSONL export, writing ignored model artifacts under `models/payment_classifier/`. When `models/payment_classifier/payment_decision_model.joblib` exists, the payment analyzer reports an `ml_decision` sidecar with the model prediction, confidence, class probabilities, and whether it disagrees with the rules decision. The rules decision remains authoritative until the dataset has real redacted coverage.
-`scripts/payment_dataset.py readiness` counts source types, labels, decisions, and splits, and explicitly warns when the dataset is still synthetic-only.
+`scripts/payment_dataset.py readiness` counts source types, labels, decisions, and splits, and explicitly warns when non-synthetic coverage is missing for a payment decision.
 
 ## Quick Start
 
@@ -296,7 +298,7 @@ The static Sigma rule library in [`sigma_rules/`](sigma_rules/) ships hand-writt
 
 ## Testing
 
-The test suite has **1030 tests across 48 test modules** (unit + integration), exercising every analyzer, the decision engine override rules (including the cycle 7 ordering fix that catches pure-text BEC), the cross-analyzer calibration pass (ADR 0001) with explicit cap-ceiling tests, the persistent email_id lookup index (ADR 0002) with cross-restart smoking-gun tests, scoring confidence capping, IOC export, the Sigma exporter, the URL reputation dead-domain confidence downgrade, credential encryption migration, the LLM determinism contract, the generic phishing ML baseline, the payment-fraud dataset/eval/train workflow, the body_html sanitizer with hostile XSS payloads, the data retention purge, and the web security middleware (bearer auth, browser session auth with CSRF, SSRF guard, security headers). CI runs the full suite on every push and PR against a fresh checkout from the hash-pinned lock file. CI-bites verified by deliberate-red sanity check on a throwaway branch.
+The test suite has **1035 tests across 48 test modules** (unit + integration), exercising every analyzer, the decision engine override rules (including the cycle 7 ordering fix that catches pure-text BEC), the cross-analyzer calibration pass (ADR 0001) with explicit cap-ceiling tests, the persistent email_id lookup index (ADR 0002) with cross-restart smoking-gun tests, scoring confidence capping, IOC export, the Sigma exporter, the URL reputation dead-domain confidence downgrade, credential encryption migration, the LLM determinism contract, the generic phishing ML baseline, the payment-fraud dataset/eval/train workflow, the body_html sanitizer with hostile XSS payloads, the data retention purge, and the web security middleware (bearer auth, browser session auth with CSRF, SSRF guard, security headers). CI runs the full suite on every push and PR against a fresh checkout from the hash-pinned lock file. CI-bites verified by deliberate-red sanity check on a throwaway branch.
 
 ```bash
 # Run all tests

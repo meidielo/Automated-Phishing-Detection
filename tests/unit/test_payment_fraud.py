@@ -145,6 +145,63 @@ async def test_legitimate_bank_change_with_portal_verification_requires_verify()
 
 
 @pytest.mark.asyncio
+async def test_no_bank_details_changed_language_stays_safe():
+    analyzer = PaymentFraudAnalyzer()
+    email = make_email(
+        subject="Routine invoice",
+        body=(
+            "Invoice INV-0000 is ready in the saved supplier portal. "
+            "No bank details have changed. Please process through normal approval."
+        ),
+        auth_results="mx.example.com; spf=pass dkim=pass dmarc=pass",
+    )
+
+    result = await analyzer.analyze(email)
+
+    assert result.details["decision"] == "SAFE"
+    assert not any(s["name"] == "bank_detail_change_request" for s in result.details["signals"])
+
+
+@pytest.mark.asyncio
+async def test_payment_redirection_with_reply_mismatch_blocks_payment():
+    analyzer = PaymentFraudAnalyzer()
+    email = make_email(
+        subject="Supplier payment redirection",
+        body=(
+            "Our new remittance account is active now. "
+            "The saved supplier record is outdated and payment must be redirected."
+        ),
+        from_address="support@supp1ier.example",
+        reply_to="supplier-support@mailbox.example",
+        auth_results="mx.example.com; spf=pass dkim=pass dmarc=pass",
+    )
+
+    result = await analyzer.analyze(email)
+
+    assert result.details["decision"] == "DO_NOT_PAY"
+    assert any(s["name"] == "bank_detail_change_request" for s in result.details["signals"])
+
+
+@pytest.mark.asyncio
+async def test_mandatory_supplier_verification_requires_verify():
+    analyzer = PaymentFraudAnalyzer()
+    email = make_email(
+        subject="Manual verification required before payment",
+        body=(
+            "Please hold payment on invoice INV-0000 until the supplier confirms whether "
+            "the bank-detail update is legitimate. Use the saved phone number in the accounting system."
+        ),
+        auth_results="mx.example.com; spf=pass dkim=pass dmarc=pass",
+    )
+
+    result = await analyzer.analyze(email)
+
+    assert result.details["decision"] == "VERIFY"
+    assert any(s["name"] == "bank_detail_change_request" for s in result.details["signals"])
+    assert any(s["name"] == "mandatory_supplier_verification" for s in result.details["signals"])
+
+
+@pytest.mark.asyncio
 async def test_risky_invoice_attachment_blocks_payment():
     analyzer = PaymentFraudAnalyzer()
     attachment = AttachmentObject(

@@ -206,6 +206,17 @@ python scripts/payment_dataset.py seed-synthetic --dataset data/payment_scam_dat
 
 Synthetic samples are for pipeline development and ML plumbing only. Replace or
 supplement them with redacted real examples before reporting product metrics.
+
+Run this to add safe, public-advisory-derived payment-risk examples:
+
+```bash
+python scripts/payment_dataset.py seed-public-advisory --dataset data/payment_scam_dataset
+```
+
+These samples are not copied from private mail. They are redacted examples
+based on public BEC and payment-redirection warning patterns. They are useful
+for exercising `VERIFY` and `DO_NOT_PAY` handling, but real redacted inbox or
+client samples are still stronger evidence.
 """
 
 
@@ -991,6 +1002,311 @@ def _synthetic_safe_invoice_email(index: int) -> tuple[bytes, str]:
     return payload, supplier
 
 
+PUBLIC_ADVISORY_SOURCE_URLS = (
+    "https://www.scamwatch.gov.au/types-of-scams/business-email-compromise-scams",
+    "https://www.cyber.gov.au/threats/types-threats/business-email-compromise",
+)
+
+
+def _public_advisory_note() -> str:
+    return (
+        "Public-advisory-derived redacted example; not copied from source text; "
+        "patterns informed by Scamwatch and cyber.gov.au BEC guidance."
+    )
+
+
+def _public_advisory_cases() -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    do_not_pay_cases = [
+        {
+            "subject": "Updated bank details for outstanding invoice",
+            "scenario": "bank_detail_change",
+            "from": "Supplier Accounts <accounts@supplier-billing.example>",
+            "reply_to": "payments-team@mailbox.example",
+            "body": (
+                "Hi accounts,\n\n"
+                "Please ignore the saved supplier account and pay invoice INV-0000 to the new bank details below.\n"
+                "BSB: 000-000\n"
+                "Account number: 00000000\n\n"
+                "This must be completed today and there is no need to call the office.\n\n"
+                "Regards,\nSupplier Accounts"
+            ),
+        },
+        {
+            "subject": "Final notice - payment details changed",
+            "scenario": "overdue_invoice",
+            "from": "Credit Control <credit@supplier-accounts.example>",
+            "reply_to": "credit-control@mailbox.example",
+            "body": (
+                "Hello,\n\n"
+                "Your overdue invoice INV-0000 will be escalated unless payment is released to our replacement account.\n"
+                "Use only the details in this message and send the remittance by reply.\n\n"
+                "BSB: 000-000\n"
+                "Account number: 00000000\n\n"
+                "Regards,\nCredit Control"
+            ),
+        },
+        {
+            "subject": "Confidential supplier account update",
+            "scenario": "supplier_impersonation",
+            "from": "Operations Director <director@supplier-payments.example>",
+            "reply_to": "director-payments@mailbox.example",
+            "body": (
+                "Accounts team,\n\n"
+                "We have moved banks after an internal audit. Please update the supplier profile immediately.\n"
+                "Do not use the old saved bank record for invoice INV-0000.\n\n"
+                "BSB: 000-000\n"
+                "Account number: 00000000\n\n"
+                "This update is confidential until reconciliation is complete."
+            ),
+        },
+        {
+            "subject": "Urgent executive transfer approval",
+            "scenario": "executive_transfer",
+            "from": "Managing Director <executive@demo-business.example>",
+            "reply_to": "executive.office@mailbox.example",
+            "body": (
+                "Please release AUD $1,000.00 to the temporary settlement account today.\n\n"
+                "This relates to a private acquisition and cannot wait for the normal approval meeting.\n"
+                "Send confirmation here once the transfer is complete."
+            ),
+        },
+        {
+            "subject": "Invoice portal moved to new payment site",
+            "scenario": "payment_portal_link",
+            "from": "Supplier Billing <billing@supplier-portal.example>",
+            "reply_to": "support@mailbox.example",
+            "body": (
+                "Hi,\n\n"
+                "Our payment portal has moved. Please pay invoice INV-0000 through https://payments.example/redacted.\n"
+                "The old portal will not show the updated bank details.\n\n"
+                "Regards,\nBilling Support"
+            ),
+        },
+        {
+            "subject": "Replacement invoice attached",
+            "scenario": "fake_invoice_attachment",
+            "from": "Accounts Payable <ap@supplier-invoices.example>",
+            "reply_to": "invoice-help@mailbox.example",
+            "body": (
+                "Please discard the previous invoice and use this replacement version.\n\n"
+                "The account details changed after a bank migration. Pay AUD $1,000.00 to the account shown below.\n"
+                "BSB: 000-000\n"
+                "Account number: 00000000"
+            ),
+        },
+        {
+            "subject": "Deposit payment for booking",
+            "scenario": "supplier_impersonation",
+            "from": "Bookings Team <bookings@travel-supplier.example>",
+            "reply_to": "booking-confirm@mailbox.example",
+            "body": (
+                "Your booking deposit is now due. Our bank details changed this week, so do not use the account on the quote.\n\n"
+                "Pay AUD $1,000.00 to BSB 000-000 account number 00000000 and reply with the receipt."
+            ),
+        },
+        {
+            "subject": "Vehicle invoice settlement",
+            "scenario": "fake_invoice_attachment",
+            "from": "Sales Office <sales@vehicle-supplier.example>",
+            "reply_to": "sales-office@mailbox.example",
+            "body": (
+                "The final vehicle invoice is ready. We have corrected the bank account in the attached invoice.\n\n"
+                "Please send settlement today so delivery is not delayed. Do not contact the dealership switchboard."
+            ),
+        },
+        {
+            "subject": "Payroll bank update request",
+            "scenario": "executive_transfer",
+            "from": "Finance Manager <finance@demo-business.example>",
+            "reply_to": "finance-manager@mailbox.example",
+            "body": (
+                "Please update the executive reimbursement bank details before the next run.\n\n"
+                "Use BSB 000-000 and account number 00000000. This request should not go through HR because it is urgent."
+            ),
+        },
+        {
+            "subject": "Supplier payment redirection",
+            "scenario": "bank_detail_change",
+            "from": "Supplier Support <support@supp1ier.example>",
+            "reply_to": "supplier-support@mailbox.example",
+            "body": (
+                "We noticed payment for invoice INV-0000 is still pending.\n\n"
+                "Our new remittance account is active now. The saved supplier record is outdated and payment must be redirected."
+            ),
+        },
+    ]
+    verify_cases = [
+        {
+            "subject": "Supplier profile bank-change notice",
+            "scenario": "legitimate_bank_change_verified",
+            "from": "Supplier Accounts <accounts@supplier.example>",
+            "body": (
+                "Hi accounts payable,\n\n"
+                "We have submitted updated bank details through the supplier portal for future invoices.\n"
+                "Please verify this change using the existing saved supplier contact before releasing any payment.\n\n"
+                "Regards,\nSupplier Accounts"
+            ),
+        },
+        {
+            "subject": "Remittance process update",
+            "scenario": "legitimate_bank_change_verified",
+            "from": "Finance Team <finance@supplier.example>",
+            "body": (
+                "Our remittance process has changed after a bank migration.\n"
+                "No urgent payment is required from this email. Please complete the normal supplier verification workflow."
+            ),
+        },
+        {
+            "subject": "Portal request awaiting verification",
+            "scenario": "legitimate_bank_change_verified",
+            "from": "Vendor Portal <no-reply@portal.example>",
+            "body": (
+                "A supplier bank-detail update is awaiting approval in the portal.\n\n"
+                "Open the portal from your saved bookmark and verify the change with the supplier contact already on file."
+            ),
+        },
+        {
+            "subject": "Invoice details need second approval",
+            "scenario": "legitimate_invoice",
+            "from": "Supplier Billing <billing@supplier.example>",
+            "body": (
+                "Invoice INV-0000 is ready for review. The invoice includes a payment-account change that needs second approval.\n\n"
+                "Please call the existing supplier contact before processing."
+            ),
+        },
+        {
+            "subject": "New remittance email contact",
+            "scenario": "legitimate_bank_change_verified",
+            "from": "Supplier Service Desk <service@supplier.example>",
+            "body": (
+                "The remittance contact address has changed, but payment details should not be updated from this email.\n"
+                "Use the supplier master-data process to confirm the change."
+            ),
+        },
+        {
+            "subject": "Payment hold until supplier verification",
+            "scenario": "legitimate_invoice",
+            "from": "Internal Accounts <accounts@demo-business.example>",
+            "body": (
+                "Please hold payment on invoice INV-0000 until the supplier confirms whether the bank-detail update is legitimate.\n"
+                "Use the saved phone number in the accounting system."
+            ),
+        },
+        {
+            "subject": "Account change approved by procurement",
+            "scenario": "legitimate_bank_change_verified",
+            "from": "Procurement <procurement@demo-business.example>",
+            "body": (
+                "Procurement has received a supplier account-change request.\n"
+                "Accounts should verify the request out of band before paying the next invoice."
+            ),
+        },
+        {
+            "subject": "Supplier onboarding bank details",
+            "scenario": "legitimate_bank_change_verified",
+            "from": "Onboarding <onboarding@supplier.example>",
+            "body": (
+                "Thank you for adding us as a supplier. Bank details are available in the secure onboarding portal.\n"
+                "Please do not use bank details sent over email without portal verification."
+            ),
+        },
+        {
+            "subject": "Statement and bank change review",
+            "scenario": "legitimate_remittance",
+            "from": "Statements <statements@supplier.example>",
+            "body": (
+                "Attached statement totals AUD $1,000.00. The statement references a bank-detail change scheduled for next month.\n"
+                "Please verify through the normal supplier master-data workflow."
+            ),
+        },
+        {
+            "subject": "Manual verification required before payment",
+            "scenario": "legitimate_invoice",
+            "from": "AP Controls <controls@demo-business.example>",
+            "body": (
+                "Invoice INV-0000 should remain in review because the supplier record changed this week.\n"
+                "Do not release payment until another approver confirms the saved supplier contact."
+            ),
+        },
+    ]
+    return do_not_pay_cases, verify_cases
+
+
+def _public_advisory_message(case: dict[str, str], index: int, prefix: str) -> bytes:
+    return _synthetic_message(
+        subject=case["subject"],
+        body=case["body"] + "\n\nSource basis: public BEC/payment-redirection advisory pattern, redacted.",
+        from_address=case["from"],
+        reply_to=case.get("reply_to", ""),
+        auth_results=case.get(
+            "auth_results",
+            "mx.demo-business.example; spf=pass dkim=pass dmarc=pass",
+        ),
+        message_id=f"<public-advisory-{prefix}-{index}@dataset.example>",
+    )
+
+
+def seed_public_advisory_payment_examples(
+    dataset_dir: Path = DEFAULT_DATASET_DIR,
+    do_not_pay_count: int = 10,
+    verify_count: int = 10,
+) -> SeedSummary:
+    dataset_dir = Path(dataset_dir)
+    if do_not_pay_count < 0 or verify_count < 0:
+        raise ValueError("sample counts must be non-negative")
+    init_dataset(dataset_dir)
+
+    do_not_pay_cases, verify_cases = _public_advisory_cases()
+    generated_dir = dataset_dir / INCOMING_DIR / "public_advisory_examples"
+    generated_dir.mkdir(parents=True, exist_ok=True)
+    note = _public_advisory_note()
+
+    for index in range(do_not_pay_count):
+        case = do_not_pay_cases[index % len(do_not_pay_cases)]
+        source = generated_dir / f"public_do_not_pay_{index:03d}.eml"
+        source.write_bytes(_public_advisory_message(case, index, "do-not-pay"))
+        add_sample(
+            dataset_dir=dataset_dir,
+            source=source,
+            label="PAYMENT_SCAM",
+            payment_decision="DO_NOT_PAY",
+            scenario=case["scenario"],
+            source_type="public",
+            split=_split_for_index(index, do_not_pay_count),
+            verified_by="public-advisory-seed",
+            contains_real_pii="no",
+            notes=note,
+        )
+
+    for index in range(verify_count):
+        case = verify_cases[index % len(verify_cases)]
+        source = generated_dir / f"public_verify_{index:03d}.eml"
+        source.write_bytes(_public_advisory_message(case, index, "verify"))
+        add_sample(
+            dataset_dir=dataset_dir,
+            source=source,
+            label="LEGITIMATE_PAYMENT",
+            payment_decision="VERIFY",
+            scenario=case["scenario"],
+            source_type="public",
+            split=_split_for_index(index, verify_count),
+            verified_by="public-advisory-seed",
+            contains_real_pii="no",
+            notes=note,
+        )
+
+    eval_labels = export_eval_labels(dataset_dir)
+    return SeedSummary(
+        dataset_dir=dataset_dir,
+        scam_count=do_not_pay_count,
+        legitimate_count=verify_count,
+        safe_count=0,
+        total_count=do_not_pay_count + verify_count,
+        labels_path=dataset_dir / LABELS_CSV,
+        eval_labels_path=eval_labels,
+    )
+
+
 def seed_synthetic_bank_change_dataset(
     dataset_dir: Path = DEFAULT_DATASET_DIR,
     scam_count: int = 50,
@@ -1111,6 +1427,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
     seed_parser.add_argument("--seed", type=int, default=1337)
     seed_parser.add_argument("--clean", action="store_true", help="Remove the dataset before seeding")
 
+    public_seed_parser = subparsers.add_parser(
+        "seed-public-advisory",
+        help="Generate public-advisory-derived redacted payment-risk examples",
+    )
+    public_seed_parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET_DIR)
+    public_seed_parser.add_argument("--do-not-pay-count", type=int, default=10)
+    public_seed_parser.add_argument("--verify-count", type=int, default=10)
+
     redact_parser = subparsers.add_parser("redact", help="Create a redacted .eml copy for dataset review")
     redact_parser.add_argument("--source", type=Path, required=True)
     redact_parser.add_argument("--output", type=Path, default=None)
@@ -1192,6 +1516,23 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(f"  total:               {summary.total_count}")
         print(f"  labels:              {summary.labels_path}")
         print(f"  eval labels:         {summary.eval_labels_path}")
+        return 0
+
+    if args.command == "seed-public-advisory":
+        summary = seed_public_advisory_payment_examples(
+            dataset_dir=args.dataset,
+            do_not_pay_count=args.do_not_pay_count,
+            verify_count=args.verify_count,
+        )
+        print(f"Seeded public-advisory payment examples at {summary.dataset_dir}")
+        print(f"  do not pay:          {summary.scam_count}")
+        print(f"  verify:              {summary.legitimate_count}")
+        print(f"  total:               {summary.total_count}")
+        print(f"  labels:              {summary.labels_path}")
+        print(f"  eval labels:         {summary.eval_labels_path}")
+        print("  sources:")
+        for source_url in PUBLIC_ADVISORY_SOURCE_URLS:
+            print(f"    - {source_url}")
         return 0
 
     if args.command == "redact":

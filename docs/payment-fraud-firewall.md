@@ -146,6 +146,21 @@ bank-detail-change notices, and 50 synthetic `SAFE` invoice notices with train,
 validation, and test splits. Use it to exercise the analyzer and future ML code.
 Do not treat synthetic-only results as production-quality evidence.
 
+Add public-advisory-derived examples for `VERIFY` and `DO_NOT_PAY`:
+
+```bash
+python scripts/payment_dataset.py seed-public-advisory \
+  --dataset data/payment_scam_dataset \
+  --do-not-pay-count 10 \
+  --verify-count 10
+```
+
+These samples are redacted examples based on public BEC and payment-redirection
+warning patterns from Scamwatch and cyber.gov.au. They are not copied from
+private mail and should be used as reproducible coverage for decision handling.
+They improve the development dataset, but real redacted inbox/client examples
+remain the better evidence before publishing external product metrics.
+
 Recommended minimum collection:
 
 | Scenario | Scam | Legitimate |

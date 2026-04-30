@@ -8,11 +8,13 @@ import pytest
 
 from src.eval.payment_dataset import (
     add_sample,
+    audit_dataset_pii,
     export_ml_jsonl,
     export_eval_labels,
     init_dataset,
     redact_eml,
     scan_redaction_findings,
+    seed_public_advisory_payment_examples,
     seed_synthetic_bank_change_dataset,
     summarize_dataset_readiness,
     validate_dataset,
@@ -184,6 +186,74 @@ def test_seed_synthetic_can_add_safe_invoice_class(tmp_path: Path):
     safe_rows = [row for row in rows if row["payment_decision"] == "SAFE"]
     assert {row["scenario"] for row in safe_rows} == {"legitimate_invoice"}
     assert {row["label"] for row in safe_rows} == {"LEGITIMATE_PAYMENT"}
+
+
+def test_seed_public_advisory_payment_examples_adds_realish_decisions(tmp_path: Path):
+    dataset = tmp_path / "payment_scam_dataset_seed"
+
+    summary = seed_public_advisory_payment_examples(
+        dataset_dir=dataset,
+        do_not_pay_count=10,
+        verify_count=10,
+    )
+
+    assert summary.total_count == 20
+    assert summary.scam_count == 10
+    assert summary.legitimate_count == 10
+    result = validate_dataset(dataset)
+    assert result.ok
+    assert audit_dataset_pii(dataset) == []
+
+    with (dataset / "labels.csv").open("r", encoding="utf-8", newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    assert {row["source_type"] for row in rows} == {"public"}
+    assert {row["contains_real_pii"] for row in rows} == {"no"}
+    assert {row["payment_decision"] for row in rows} == {"DO_NOT_PAY", "VERIFY"}
+    assert {row["label"] for row in rows} == {"LEGITIMATE_PAYMENT", "PAYMENT_SCAM"}
+    assert {row["split"] for row in rows} == {"train", "validation", "test"}
+
+
+def test_public_advisory_seed_can_satisfy_decision_readiness_with_safe_samples(tmp_path: Path):
+    dataset = init_dataset(tmp_path / "payment_scam_dataset_seed")
+    safe_sample = _write_eml(tmp_path / "safe_invoice.eml")
+    safe_sample.write_text(
+        "\n".join(
+            [
+                "From: Billing <billing@supplier.example>",
+                "To: AP <accounts-payable@demo-business.example>",
+                "Subject: Routine invoice",
+                "",
+                "Invoice INV-0000 is ready in the saved supplier portal.",
+                "No bank details have changed.",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    add_sample(
+        dataset_dir=dataset,
+        source=safe_sample,
+        label="LEGITIMATE_PAYMENT",
+        payment_decision="SAFE",
+        scenario="legitimate_invoice",
+        source_type="redacted",
+        split="train",
+        contains_real_pii="no",
+    )
+
+    seed_public_advisory_payment_examples(
+        dataset_dir=dataset,
+        do_not_pay_count=10,
+        verify_count=10,
+    )
+
+    report = summarize_dataset_readiness(dataset, min_realish_samples=20)
+
+    assert report.realish_count == 21
+    assert report.pii_free_realish_count == 21
+    assert report.by_payment_decision == {"DO_NOT_PAY": 10, "SAFE": 1, "VERIFY": 10}
+    assert report.recommendations == []
+    assert report.ready_for_product_metrics
 
 
 def test_seed_synthetic_clean_requires_payment_dataset_name(tmp_path: Path):
