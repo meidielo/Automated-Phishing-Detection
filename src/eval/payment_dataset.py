@@ -602,6 +602,17 @@ def summarize_dataset_readiness(
             "Add examples for missing payment decisions: " + ", ".join(missing_decisions)
         )
 
+    realish_decisions = {
+        row.get("payment_decision", "")
+        for row in realish_rows
+    }
+    missing_realish_decisions = sorted(ALLOWED_DECISIONS - realish_decisions)
+    if realish_rows and missing_realish_decisions:
+        recommendations.append(
+            "Add non-synthetic examples for payment decisions: "
+            + ", ".join(missing_realish_decisions)
+        )
+
     missing_splits = sorted({"train", "validation", "test"} - set(by_split))
     if rows and missing_splits:
         recommendations.append(

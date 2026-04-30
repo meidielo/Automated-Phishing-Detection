@@ -351,3 +351,5 @@ def test_readiness_counts_redacted_realish_samples(tmp_path: Path):
     assert report.realish_count == 1
     assert report.pii_free_realish_count == 1
     assert report.by_source_type["redacted"] == 1
+    assert any("non-synthetic examples" in item for item in report.recommendations)
+    assert not report.ready_for_product_metrics
