@@ -98,12 +98,30 @@ def test_dashboard_static_assets_are_served_without_session():
         ("/static/dashboard.css", ".chart-wrap"),
         ("/static/dashboard.js", "function renderTable"),
         ("/static/dashboard-report.css", ".report-progress"),
-        ("/static/shared.css", ".theme-toggle"),
-        ("/static/shared.js", "Logout"),
+        ("/static/shared.css", ".feedback-modal"),
+        ("/static/shared.js", "product-feedback-open"),
     ]:
         response = client.get(asset_path)
         assert response.status_code == 200
         assert expected in response.text
+
+
+def test_analyze_page_uses_global_feedback_control_not_inline_panel():
+    client = TestClient(
+        _build_app_with_token(),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+    client.post("/login", data={"token": "secret", "next": "/"})
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert '/static/shared.css' in response.text
+    assert '/static/shared.js' in response.text
+    assert 'class="project-feedback"' not in response.text
+    assert "Project feedback" not in response.text
+    assert "mailto:meidie@mdpstudio.com.au" not in response.text
 
 
 def test_generated_dashboard_report_pages_use_static_css_and_escape_content():
