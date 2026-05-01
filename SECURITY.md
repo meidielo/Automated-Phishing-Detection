@@ -59,12 +59,13 @@ If you're running this in any non-laptop context, do at minimum:
 2. **Use `/login` for browser dashboard access.** It sets a signed session cookie plus a CSRF cookie. API clients can still use `Authorization: Bearer <ANALYST_API_TOKEN>`.
 3. **Treat `PUBLIC_DEMO_MODE=true` as sample-only.** It opens `/demo`, not the real dashboard, live upload analysis, mailbox monitoring, feedback learning, paid API-backed checks, or account management. Keep `ANALYST_API_TOKEN` configured.
 4. **Treat `/app` public signup as a privacy switch.** Keep `SAAS_PUBLIC_SIGNUP_ENABLED=false` until you are ready to accept visitor email uploads, set a high-entropy `SAAS_SESSION_SECRET`, and have retention/support/abuse handling in place.
-5. **Run the `browser-sandbox` container on its own Docker network.** Do not give it host networking. The default `docker-compose.yml` already separates it; verify before deploying.
-6. **Treat `.env` as secret material.** Don't commit it. Don't bake it into images. Mount it at runtime.
-7. **Back up runtime data and purge it on a schedule.** Results, alerts, feedback labels, sender profiles, and SaaS scan results can all contain regulated personal data. Use `python scripts/backup_runtime_data.py` for non-secret backups and `python main.py purge --target all --dry-run` before deleting rows.
-8. **Monitor uptime and mailbox freshness.** Run `python scripts/production_health_check.py --require-monitor-running` from cron or an external monitor and send failures to a webhook.
-9. **Monitor circuit-breaker state.** If every analyzer is open-circuit, the pipeline is effectively producing CLEAN verdicts on real phishing. Alert on this.
-10. **Pin the brand reference set.** Treat `brand_references/` as detection content under change control. Anyone who can write to that directory can blind the visual similarity analyzer.
+5. **Register Stripe webhooks only over HTTPS and keep `STRIPE_WEBHOOK_SECRET` secret.** `/api/stripe/webhook` verifies Stripe signatures before changing subscription state. Do not disable signature checks.
+6. **Run the `browser-sandbox` container on its own Docker network.** Do not give it host networking. The default `docker-compose.yml` already separates it; verify before deploying.
+7. **Treat `.env` as secret material.** Don't commit it. Don't bake it into images. Mount it at runtime.
+8. **Back up runtime data and purge it on a schedule.** Results, alerts, feedback labels, sender profiles, and SaaS scan results can all contain regulated personal data. Use `python scripts/backup_runtime_data.py` for non-secret backups and `python main.py purge --target all --dry-run` before deleting rows.
+9. **Monitor uptime and mailbox freshness.** Run `python scripts/production_health_check.py --require-monitor-running` from cron or an external monitor and send failures to a webhook.
+10. **Monitor circuit-breaker state.** If every analyzer is open-circuit, the pipeline is effectively producing CLEAN verdicts on real phishing. Alert on this.
+11. **Pin the brand reference set.** Treat `brand_references/` as detection content under change control. Anyone who can write to that directory can blind the visual similarity analyzer.
 
 ## Coordinated disclosure
 

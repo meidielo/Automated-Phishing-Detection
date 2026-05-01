@@ -47,11 +47,17 @@ Implemented foundation:
 - `python main.py purge --target saas` and `--target all` purge old SaaS scan,
   usage, lock, and audit rows under the same retention window as other runtime
   artifacts.
+- `/api/saas/billing/checkout` creates hosted Stripe Checkout Sessions in
+  subscription mode when `STRIPE_SECRET_KEY` and the target plan price ID are
+  configured.
+- `/api/saas/billing/portal` creates Stripe Customer Portal Sessions for
+  organizations that already have a Stripe customer.
+- `/api/stripe/webhook` verifies Stripe signatures and mirrors
+  `checkout.session.completed` plus `customer.subscription.*` events into the
+  local `subscriptions` table.
 
 Not implemented yet:
 
-- Stripe Checkout Session creation and webhook signature verification.
-- Customer Portal upgrade/cancel flow.
 - Production Postgres migrations.
 - Per-user mailbox OAuth or IMAP token storage.
 
@@ -67,9 +73,9 @@ checks, and Stripe webhook handlers share one catalog.
 | Pro | AUD 49 | 1000 | 3 | SMEs that receive invoices by email |
 | Business | AUD 149 | 5000 | 10 | Finance teams and agencies |
 
-Free should not run paid API-backed analyzers. Starter unlocks reputation,
-domain, brand, sender-profile, and private-history checks. Pro unlocks mailbox
-monitoring, LLM BEC reasoning, attachment sandboxing, and browser URL
+Free includes manual scans, header checks, payment rules, and account-scoped
+history. Starter unlocks reputation, domain, brand, and sender-profile checks.
+Pro unlocks mailbox monitoring, LLM BEC reasoning, attachment sandboxing, and browser URL
 detonation. Business adds team audit controls and higher budgets.
 
 ## Database Tables
@@ -133,7 +139,7 @@ Safe implementation order:
 3. Move user scan results from `results.jsonl` display paths into
    `scan_results`. **Done for `/api/saas/analyze/upload`.**
 4. Add usage tracking and feature gates. **Done for manual scans and analyzers.**
-5. Add Stripe Checkout and webhook subscription sync.
+5. Add Stripe Checkout and webhook subscription sync. **Done for the SaaS path.**
 6. Add per-user mailbox connection.
 7. Add tenant isolation tests before enabling real mailbox access.
 

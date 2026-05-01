@@ -96,6 +96,12 @@ button:hover,
   background: var(--nav-hover-bg);
 }
 
+.subtle-button {
+  margin-top: 10px;
+  padding: 7px 9px;
+  font-size: 12px;
+}
+
 .auth-form,
 .scan-form {
   display: grid;
@@ -232,6 +238,48 @@ input[type="file"] {
   gap: 14px;
 }
 
+.plan-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.plan-card {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  padding: 18px;
+}
+
+.plan-card.current {
+  border-color: color-mix(in srgb, var(--v-clean) 55%, var(--border));
+}
+
+.plan-card h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.plan-price {
+  font-size: 24px;
+  font-weight: 900;
+}
+
+.plan-card p {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.plan-card button[disabled] {
+  cursor: default;
+  opacity: 0.7;
+}
+
 .feature-card {
   min-width: 0;
 }
@@ -298,6 +346,10 @@ input[type="file"] {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .plan-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .auth-copy h1,
   .app-header h1 {
     font-size: 36px;
@@ -325,6 +377,7 @@ input[type="file"] {
   }
 
   .feature-grid,
+  .plan-grid,
   .history-card {
     grid-template-columns: 1fr;
   }

@@ -74,7 +74,8 @@ Status is one of:
 | **Public sample-only demo mode** - `/demo` can be exposed without analyst login while live analysis, mailbox monitoring, paid API-backed checks, feedback learning, dashboard data, and account management remain token-protected. | `PUBLIC_DEMO_MODE`, `main.py`, `templates/demo.html`, `static/demo.css` |
 | **Plan-aware feature locks** - public demo shows Free/Starter/Pro/Business analyzer locks, and `/api/demo/plans` exposes reusable plan metadata for future Stripe Billing and DB-backed quota gates. | `src/billing/plans.py`, `templates/demo.html`, `docs/saas-architecture.md` |
 | **SaaS account and quota foundation** - `/app` adds normal user login, signed user sessions with CSRF, SQLite `users`/`organizations`/`subscriptions`/`scan_results`/`usage_events`, tenant-scoped user scan history, free-tier scan quota, and analyzer feature gates that return locked tier metadata before paid clients load. Public signup stays disabled by default. | `src/saas/`, `src/billing/entitlements.py`, `main.py`, `templates/saas_app.html`, `static/saas.*` |
-| 1109 tests (56 test modules) | unit + integration |
+| **Stripe Billing subscription flow** - `/api/saas/billing/checkout` creates hosted subscription Checkout Sessions, `/api/saas/billing/portal` opens Customer Portal, and `/api/stripe/webhook` verifies signatures before mirroring Stripe subscription status into the SaaS DB. | `src/billing/stripe_client.py`, `main.py`, `src/saas/database.py`, `static/saas.js` |
+| 1129 tests (57 test modules) | unit + integration |
 
 ---
 
@@ -87,9 +88,6 @@ The payment dataset has tooling, synthetic seed data, public-advisory-derived `V
 
 ### Per-user mailbox isolation
 The public demo deliberately does not connect visitor mailboxes. A real user-owned mailbox product needs OAuth or user-provided IMAP credentials per user, encrypted per-user tokens, user-scoped result storage, per-user retention/deletion, and tests proving one user cannot see another user's mailbox, scans, or feedback labels.
-
-### Stripe Checkout and webhook subscription sync
-The database now stores organization subscription state, but live Stripe Checkout creation and webhook signature verification are intentionally not active until real Stripe price IDs are configured. Next step: create Checkout Sessions in subscription mode, verify `STRIPE_WEBHOOK_SECRET`, mirror status/plan/current-period into `subscriptions`, and add Customer Portal links for self-service upgrades/cancellation.
 
 ### Audit trail for feedback labels
 Append-only log of who relabeled what. Closes residual risk **R2**. Required before the project is honest about being multi-analyst.

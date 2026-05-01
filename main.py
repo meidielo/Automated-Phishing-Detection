@@ -568,6 +568,119 @@ class PhishingDetectionApp:
                 "csrf_header": "x-csrf-token",
             }
 
+        def _external_url(request: Request, path: str) -> str:
+            base_url = os.getenv("PUBLIC_BASE_URL", "").strip().rstrip("/")
+            if base_url:
+                return f"{base_url}{path}"
+            forwarded_proto = request.headers.get("x-forwarded-proto", "")
+            forwarded_host = request.headers.get("x-forwarded-host", "")
+            scheme = (forwarded_proto.split(",")[0].strip() or request.url.scheme).lower()
+            host = (
+                forwarded_host.split(",")[0].strip()
+                or request.headers.get("host")
+                or request.url.netloc
+            )
+            return f"{scheme}://{host}{path}"
+
+        def _stripe_subscription_price_id(subscription: dict) -> str | None:
+            items = subscription.get("items") or {}
+            data = items.get("data") if isinstance(items, dict) else []
+            if not data:
+                return None
+            price = (data[0] or {}).get("price") or {}
+            return price.get("id")
+
+        def _stripe_period_end_iso(subscription: dict) -> str | None:
+            raw = subscription.get("current_period_end")
+            if not raw:
+                return None
+            try:
+                from datetime import datetime, timezone
+                return datetime.fromtimestamp(int(raw), tz=timezone.utc).isoformat()
+            except (TypeError, ValueError, OSError):
+                return None
+
+        def _metadata_value(payload: dict, key: str) -> str:
+            metadata = payload.get("metadata")
+            if isinstance(metadata, dict):
+                return str(metadata.get(key, "") or "")
+            return ""
+
+        def _resolve_stripe_org_id(store: SaaSStore, payload: dict) -> str | None:
+            org_id = _metadata_value(payload, "org_id") or str(payload.get("client_reference_id", "") or "")
+            if org_id:
+                return org_id
+            customer_id = str(payload.get("customer", "") or "")
+            if customer_id:
+                by_customer = store.get_org_id_for_stripe_customer(customer_id)
+                if by_customer:
+                    return by_customer
+            subscription_id = str(payload.get("subscription", "") or payload.get("id", "") or "")
+            if subscription_id:
+                return store.get_org_id_for_stripe_subscription(subscription_id)
+            return None
+
+        def _apply_stripe_subscription(store: SaaSStore, subscription: dict) -> bool:
+            org_id = _resolve_stripe_org_id(store, subscription)
+            if not org_id:
+                logger.warning("Stripe subscription event has no matching organization")
+                return False
+            price_id = _stripe_subscription_price_id(subscription)
+            plan_slug = (
+                _metadata_value(subscription, "plan_slug")
+                or (plan_slug_for_price_id(price_id) if price_id else None)
+            )
+            if not plan_slug:
+                logger.warning("Stripe subscription event has unknown price %s", price_id)
+                return False
+            store.set_subscription(
+                org_id=org_id,
+                plan_slug=plan_slug,
+                status=str(subscription.get("status", "") or "incomplete"),
+                stripe_customer_id=str(subscription.get("customer", "") or "") or None,
+                stripe_subscription_id=str(subscription.get("id", "") or "") or None,
+                current_period_end=_stripe_period_end_iso(subscription),
+            )
+            return True
+
+        def _handle_stripe_event(event: dict) -> dict:
+            store = _get_saas_store()
+            event_type = str(event.get("type", ""))
+            data = event.get("data") if isinstance(event.get("data"), dict) else {}
+            obj = data.get("object") if isinstance(data, dict) else {}
+            if not isinstance(obj, dict):
+                return {"processed": False, "reason": "event object missing"}
+
+            if event_type == "checkout.session.completed":
+                org_id = _resolve_stripe_org_id(store, obj)
+                plan_slug = _metadata_value(obj, "plan_slug")
+                customer_id = str(obj.get("customer", "") or "")
+                subscription_id = str(obj.get("subscription", "") or "")
+                if not org_id or not plan_slug:
+                    logger.warning("Checkout session completed without org or plan metadata")
+                    return {"processed": False, "reason": "missing metadata"}
+                store.set_subscription(
+                    org_id=org_id,
+                    plan_slug=plan_slug,
+                    status="active",
+                    stripe_customer_id=customer_id or None,
+                    stripe_subscription_id=subscription_id or None,
+                    current_period_end=None,
+                )
+                return {"processed": True, "event_type": event_type}
+
+            if event_type in {
+                "customer.subscription.created",
+                "customer.subscription.updated",
+                "customer.subscription.deleted",
+            }:
+                return {
+                    "processed": _apply_stripe_subscription(store, obj),
+                    "event_type": event_type,
+                }
+
+            return {"processed": False, "event_type": event_type}
+
         @app.get("/login", response_class=HTMLResponse)
         async def login_page(request: Request, next: str = "/dashboard"):
             """Serve the dashboard login page."""
@@ -734,7 +847,7 @@ class PhishingDetectionApp:
 
         @app.post("/api/saas/billing/checkout")
         async def api_saas_billing_checkout(request: Request):
-            """Start a future Stripe Checkout flow, or explain what is missing."""
+            """Create a Stripe Checkout Session for a subscription upgrade."""
             context = _current_user_context(request, require_csrf=True)
             payload = await request.json()
             target_plan = str(payload.get("plan", "")).strip().lower()
@@ -746,12 +859,7 @@ class PhishingDetectionApp:
             if plan.slug == "free":
                 raise HTTPException(status_code=400, detail="Free does not need checkout")
 
-            import os as _os
-            missing = []
-            if not _os.getenv("STRIPE_SECRET_KEY"):
-                missing.append("STRIPE_SECRET_KEY")
-            if plan.stripe_price_env and not _os.getenv(plan.stripe_price_env):
-                missing.append(plan.stripe_price_env)
+            missing = missing_checkout_env(plan, os.environ)
             if missing:
                 return JSONResponse(
                     status_code=503,
@@ -767,15 +875,107 @@ class PhishingDetectionApp:
                     },
                 )
 
-            return JSONResponse(
-                status_code=501,
-                content={
-                    "billing_available": False,
-                    "reason": "Stripe SDK wiring is intentionally deferred until live prices are configured.",
-                    "plan": plan.slug,
-                    "account": context.to_dict(),
-                },
-            )
+            store = _get_saas_store()
+            try:
+                price_id = price_id_for_plan(plan, os.environ)
+                stripe_config = stripe_config_from_env(os.environ)
+                stripe_client = StripeBillingClient(stripe_config.secret_key)
+                customer_id = context.stripe_customer_id
+                if not customer_id:
+                    customer = stripe_client.create_customer(
+                        email=context.email,
+                        name=context.org_name,
+                        metadata={"org_id": context.org_id, "user_id": context.user_id},
+                    )
+                    customer_id = str(customer.get("id", "") or "")
+                    if not customer_id:
+                        raise StripeAPIError("Stripe did not return a customer ID")
+                    store.set_org_stripe_customer(
+                        org_id=context.org_id,
+                        stripe_customer_id=customer_id,
+                    )
+
+                session = stripe_client.create_checkout_session(
+                    customer_id=customer_id,
+                    price_id=price_id,
+                    org_id=context.org_id,
+                    user_id=context.user_id,
+                    plan_slug=plan.slug,
+                    success_url=_external_url(
+                        request,
+                        "/app?billing=success&session_id={CHECKOUT_SESSION_ID}",
+                    ),
+                    cancel_url=_external_url(request, "/app?billing=cancelled"),
+                )
+                if not session.get("id") or not session.get("url"):
+                    raise StripeAPIError("Stripe did not return a Checkout Session URL")
+            except StripeConfigError as exc:
+                raise HTTPException(status_code=503, detail=str(exc)) from exc
+            except StripeAPIError as exc:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Stripe Billing request failed: {exc}",
+                ) from exc
+
+            updated_context = store.get_account_context(context.user_id) or context
+            return {
+                "billing_available": True,
+                "checkout_url": session.get("url"),
+                "session_id": session.get("id"),
+                "plan": plan.slug,
+                "account": updated_context.to_dict(),
+            }
+
+        @app.post("/api/saas/billing/portal")
+        async def api_saas_billing_portal(request: Request):
+            """Create a short-lived Stripe Customer Portal session."""
+            context = _current_user_context(request, require_csrf=True)
+            if not context.stripe_customer_id:
+                raise HTTPException(
+                    status_code=409,
+                    detail="This organization has no Stripe customer yet. Start checkout first.",
+                )
+            try:
+                stripe_config = stripe_config_from_env(os.environ)
+                stripe_client = StripeBillingClient(stripe_config.secret_key)
+                portal = stripe_client.create_portal_session(
+                    customer_id=context.stripe_customer_id,
+                    return_url=_external_url(request, "/app?billing=portal"),
+                )
+                if not portal.get("url"):
+                    raise StripeAPIError("Stripe did not return a Customer Portal URL")
+            except StripeConfigError as exc:
+                raise HTTPException(status_code=503, detail=str(exc)) from exc
+            except StripeAPIError as exc:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Stripe Customer Portal request failed: {exc}",
+                ) from exc
+
+            return {
+                "billing_available": True,
+                "portal_url": portal.get("url"),
+                "account": context.to_dict(),
+            }
+
+        @app.post("/api/stripe/webhook")
+        async def api_stripe_webhook(request: Request):
+            """Verify Stripe webhook signatures and mirror subscription state."""
+            stripe_config = stripe_config_from_env(os.environ)
+            raw_body = await request.body()
+            try:
+                event = verify_stripe_webhook(
+                    raw_body,
+                    request.headers.get("stripe-signature"),
+                    stripe_config.webhook_secret,
+                )
+                result = _handle_stripe_event(event)
+            except StripeConfigError as exc:
+                raise HTTPException(status_code=503, detail=str(exc)) from exc
+            except StripeWebhookError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+            return {"received": True, **result}
 
         @app.post("/api/saas/analyze/upload")
         async def api_saas_analyze_upload(request: Request, file: UploadFile = File(...)):

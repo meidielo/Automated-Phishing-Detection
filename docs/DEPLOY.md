@@ -51,8 +51,11 @@ Optional public preview:
 - `/api/demo/plans` is also public in demo mode. It exposes non-secret plan and lock metadata only, so visitors can see which analyzers require Starter, Pro, or Business.
 - Leave `SAAS_PUBLIC_SIGNUP_ENABLED=false` until the deployment is ready to accept visitor email uploads. `/app` and `/api/saas/*` support normal user accounts, tenant-scoped scan storage, and free-tier quota gates, but public signup is an explicit deployment decision.
 
-Future subscription setup:
-- Fill `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and `STRIPE_PRICE_*` only after webhook signature verification and live Checkout are enabled. Until then, `/api/saas/billing/checkout` reports missing Stripe configuration instead of pretending billing is live.
+Stripe subscription setup:
+- Set `PUBLIC_BASE_URL` to the public HTTPS origin, for example `https://phishanalyze.mdpstudio.com.au`.
+- Set `STRIPE_SECRET_KEY` and `STRIPE_PRICE_STARTER` / `STRIPE_PRICE_PRO` / `STRIPE_PRICE_BUSINESS`.
+- Register `https://your-domain/api/stripe/webhook` in Stripe for `checkout.session.completed` and `customer.subscription.*`, then set `STRIPE_WEBHOOK_SECRET`.
+- Checkout and Customer Portal stay unavailable if required Stripe env vars are missing.
 
 Avoid `$` in `.env` values unless you know how to escape Docker Compose
 interpolation. If `docker compose config` prints warnings about a variable that

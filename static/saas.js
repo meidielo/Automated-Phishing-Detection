@@ -3,6 +3,8 @@
   const appView = document.getElementById("appView");
   const authNotice = document.getElementById("authNotice");
   const scanNotice = document.getElementById("scanNotice");
+  const billingNotice = document.getElementById("billingNotice");
+  const planGrid = document.getElementById("planGrid");
   const featureGrid = document.getElementById("featureGrid");
   const historyList = document.getElementById("historyList");
   const decisionStack = document.getElementById("decisionStack");
@@ -105,6 +107,7 @@
   async function loadPlans() {
     const payload = await apiJson("/api/saas/plans");
     updateAccount(payload.account);
+    renderPlans(payload);
     featureGrid.innerHTML = "";
     payload.features.forEach((feature) => {
       const card = document.createElement("article");
@@ -116,6 +119,30 @@
         <p>${escapeHtml(feature.description)}</p>
       `;
       featureGrid.appendChild(card);
+    });
+  }
+
+  function renderPlans(payload) {
+    const currentPlan = payload.current_plan || "free";
+    planGrid.innerHTML = "";
+    payload.plans.forEach((plan) => {
+      const isCurrent = plan.slug === currentPlan;
+      const isFree = plan.slug === "free";
+      const card = document.createElement("article");
+      card.className = `plan-card ${isCurrent ? "current" : ""}`;
+      const price = plan.monthly_price_aud > 0 ? `A$${plan.monthly_price_aud}/mo` : "Free";
+      const buttonText = isCurrent ? "Current plan" : (isFree ? "Included" : `Upgrade to ${plan.name}`);
+      card.innerHTML = `
+        <span class="feature-status">${escapeHtml(plan.best_for)}</span>
+        <h3>${escapeHtml(plan.name)}</h3>
+        <div class="plan-price">${escapeHtml(price)}</div>
+        <p>${escapeHtml(plan.summary)}</p>
+        <p>${plan.scan_quota} scans/month · ${plan.mailbox_quota} mailboxes</p>
+        <button type="button" data-plan="${escapeHtml(plan.slug)}" ${isCurrent || isFree ? "disabled" : ""}>
+          ${escapeHtml(buttonText)}
+        </button>
+      `;
+      planGrid.appendChild(card);
     });
   }
 
@@ -230,6 +257,44 @@
   document.getElementById("logoutButton").addEventListener("click", async () => {
     await apiJson("/api/saas/auth/logout", { method: "POST", body: "{}" });
     window.location.reload();
+  });
+
+  planGrid.addEventListener("click", async (event) => {
+    const button = event.target.closest("button[data-plan]");
+    if (!button || button.disabled) {
+      return;
+    }
+    hideNotice(billingNotice);
+    button.disabled = true;
+    try {
+      const payload = await apiJson("/api/saas/billing/checkout", {
+        method: "POST",
+        body: JSON.stringify({ plan: button.getAttribute("data-plan") }),
+      });
+      if (!payload.checkout_url) {
+        throw new Error("Stripe did not return a Checkout URL.");
+      }
+      window.location.href = payload.checkout_url;
+    } catch (error) {
+      showNotice(billingNotice, error.message);
+      button.disabled = false;
+    }
+  });
+
+  document.getElementById("portalButton").addEventListener("click", async () => {
+    hideNotice(billingNotice);
+    try {
+      const payload = await apiJson("/api/saas/billing/portal", {
+        method: "POST",
+        body: "{}",
+      });
+      if (!payload.portal_url) {
+        throw new Error("Stripe did not return a billing portal URL.");
+      }
+      window.location.href = payload.portal_url;
+    } catch (error) {
+      showNotice(billingNotice, error.message);
+    }
   });
 
   document.getElementById("scanForm").addEventListener("submit", async (event) => {

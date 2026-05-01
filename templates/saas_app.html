@@ -51,6 +51,7 @@
         <div>
           <span class="label">Plan</span>
           <strong id="planName">Free</strong>
+          <button class="subtle-button" type="button" id="portalButton">Manage billing</button>
         </div>
         <div>
           <span class="label">Monthly scans</span>
@@ -62,6 +63,7 @@
           <strong id="userEmail">-</strong>
         </div>
       </section>
+      <div class="notice" id="billingNotice" hidden></div>
 
       <section class="work-grid">
         <article class="scan-panel">
@@ -89,6 +91,7 @@
           </div>
           <p>Each analyzer uses the same feature slugs as billing, quotas, and the public demo.</p>
         </div>
+        <div class="plan-grid" id="planGrid"></div>
         <div class="feature-grid" id="featureGrid"></div>
       </section>
 

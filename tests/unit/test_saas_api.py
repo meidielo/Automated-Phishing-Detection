@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
+import time
 from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
 from fastapi.testclient import TestClient
 
+import main as app_main
 from main import PhishingDetectionApp
 from src.billing.entitlements import locked_analyzer_result
 from src.config import PipelineConfig
@@ -94,6 +99,45 @@ def _upload(client: TestClient):
     )
 
 
+def _post_json_with_csrf(client: TestClient, path: str, payload: dict):
+    csrf = client.cookies.get(USER_CSRF_COOKIE_NAME)
+    return client.post(
+        path,
+        headers={
+            "x-csrf-token": csrf,
+            "origin": "https://testserver",
+        },
+        json=payload,
+    )
+
+
+def _stripe_signature(payload: bytes, secret: str, timestamp: int) -> str:
+    signed = f"{timestamp}.{payload.decode('utf-8')}".encode("utf-8")
+    digest = hmac.new(secret.encode("utf-8"), signed, hashlib.sha256).hexdigest()
+    return f"t={timestamp},v1={digest}"
+
+
+class FakeStripeBillingClient:
+    created_customers = []
+    checkout_sessions = []
+    portal_sessions = []
+
+    def __init__(self, secret_key: str):
+        self.secret_key = secret_key
+
+    def create_customer(self, *, email: str, name: str, metadata: dict):
+        self.created_customers.append({"email": email, "name": name, "metadata": metadata})
+        return {"id": "cus_test"}
+
+    def create_checkout_session(self, **kwargs):
+        self.checkout_sessions.append(kwargs)
+        return {"id": "cs_test", "url": "https://checkout.stripe.com/c/cs_test"}
+
+    def create_portal_session(self, **kwargs):
+        self.portal_sessions.append(kwargs)
+        return {"id": "bps_test", "url": "https://billing.stripe.com/p/session/test"}
+
+
 def test_saas_signup_disabled_by_default(tmp_path):
     client = TestClient(
         _build_saas_app(tmp_path, signup_enabled=False),
@@ -140,6 +184,99 @@ def test_saas_manual_scan_quota_returns_locked_response(tmp_path):
 
     assert statuses[:5] == [200, 200, 200, 200, 200]
     assert statuses[5] == 402
+
+
+def test_saas_checkout_reports_missing_stripe_config(tmp_path, monkeypatch):
+    monkeypatch.delenv("STRIPE_SECRET_KEY", raising=False)
+    monkeypatch.delenv("STRIPE_PRICE_STARTER", raising=False)
+    client = TestClient(
+        _build_saas_app(tmp_path, signup_enabled=True),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    assert _signup(client).status_code == 200
+    response = _post_json_with_csrf(client, "/api/saas/billing/checkout", {"plan": "starter"})
+
+    assert response.status_code == 503
+    assert response.json()["missing_env"] == ["STRIPE_SECRET_KEY", "STRIPE_PRICE_STARTER"]
+
+
+def test_saas_checkout_and_portal_create_stripe_sessions(tmp_path, monkeypatch):
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "stripe_secret_for_tests")
+    monkeypatch.setenv("STRIPE_PRICE_STARTER", "price_starter")
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://detect.example.test")
+    monkeypatch.setattr(app_main, "StripeBillingClient", FakeStripeBillingClient)
+    FakeStripeBillingClient.created_customers = []
+    FakeStripeBillingClient.checkout_sessions = []
+    FakeStripeBillingClient.portal_sessions = []
+    client = TestClient(
+        _build_saas_app(tmp_path, signup_enabled=True),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    assert _signup(client).status_code == 200
+    checkout = _post_json_with_csrf(client, "/api/saas/billing/checkout", {"plan": "starter"})
+    portal = _post_json_with_csrf(client, "/api/saas/billing/portal", {})
+    session = client.get("/api/saas/session")
+
+    assert checkout.status_code == 200
+    assert checkout.json()["checkout_url"] == "https://checkout.stripe.com/c/cs_test"
+    assert FakeStripeBillingClient.created_customers[0]["metadata"]["org_id"].startswith("org_")
+    assert FakeStripeBillingClient.checkout_sessions[0]["price_id"] == "price_starter"
+    assert FakeStripeBillingClient.checkout_sessions[0]["success_url"].startswith(
+        "https://detect.example.test/app?billing=success"
+    )
+    assert portal.status_code == 200
+    assert portal.json()["portal_url"] == "https://billing.stripe.com/p/session/test"
+    assert session.json()["account"]["stripe_customer_id"] == "cus_test"
+
+
+def test_stripe_webhook_updates_subscription_plan(tmp_path, monkeypatch):
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "stripe_secret_for_tests")
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "stripe_webhook_secret_for_tests")
+    monkeypatch.setenv("STRIPE_PRICE_STARTER", "price_starter")
+    monkeypatch.setenv("STRIPE_PRICE_PRO", "price_pro")
+    monkeypatch.setattr(app_main, "StripeBillingClient", FakeStripeBillingClient)
+    FakeStripeBillingClient.created_customers = []
+    FakeStripeBillingClient.checkout_sessions = []
+    client = TestClient(
+        _build_saas_app(tmp_path, signup_enabled=True),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    assert _signup(client).status_code == 200
+    assert _post_json_with_csrf(client, "/api/saas/billing/checkout", {"plan": "starter"}).status_code == 200
+    event = {
+        "id": "evt_test",
+        "type": "customer.subscription.updated",
+        "data": {
+            "object": {
+                "id": "sub_test",
+                "customer": "cus_test",
+                "status": "active",
+                "current_period_end": 1_800_000_000,
+                "items": {"data": [{"price": {"id": "price_pro"}}]},
+            }
+        },
+    }
+    payload = json.dumps(event, separators=(",", ":")).encode("utf-8")
+    webhook = client.post(
+        "/api/stripe/webhook",
+        content=payload,
+        headers={
+            "stripe-signature": _stripe_signature(payload, "stripe_webhook_secret_for_tests", int(time.time())),
+            "content-type": "application/json",
+        },
+    )
+    session = client.get("/api/saas/session")
+
+    assert webhook.status_code == 200
+    assert webhook.json()["processed"] is True
+    assert session.json()["account"]["plan_slug"] == "pro"
+    assert session.json()["account"]["stripe_subscription_id"] == "sub_test"
 
 
 def test_saas_store_mail_account_metadata_is_org_scoped(tmp_path):
