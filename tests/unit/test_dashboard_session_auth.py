@@ -12,9 +12,12 @@ from src.reporting.dashboard import PhishingDashboard
 from src.security.web_security import CSRF_COOKIE_NAME, SESSION_COOKIE_NAME, TokenVerifier
 
 
-def _build_app_with_token(token: str = "secret"):
+def _build_app_with_token(token: str = "secret", public_demo_mode: bool = False):
     app_wrapper = PhishingDetectionApp.__new__(PhishingDetectionApp)
-    app_wrapper.config = PipelineConfig(analyst_api_token=token)
+    app_wrapper.config = PipelineConfig(
+        analyst_api_token=token,
+        public_demo_mode=public_demo_mode,
+    )
     app_wrapper.pipeline = MagicMock()
     app_wrapper.report_gen = MagicMock()
     app_wrapper.ioc_exporter = MagicMock()
@@ -98,12 +101,101 @@ def test_dashboard_static_assets_are_served_without_session():
         ("/static/dashboard.css", ".chart-wrap"),
         ("/static/dashboard.js", "function renderTable"),
         ("/static/dashboard-report.css", ".report-progress"),
+        ("/static/demo.css", ".demo-page"),
         ("/static/shared.css", ".feedback-modal"),
         ("/static/shared.js", "product-feedback-open"),
     ]:
         response = client.get(asset_path)
         assert response.status_code == 200
         assert expected in response.text
+
+
+def test_public_demo_is_not_available_by_default():
+    client = TestClient(
+        _build_app_with_token(),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    response = client.get("/demo")
+    status = client.get("/api/demo/status")
+
+    assert response.status_code == 404
+    assert status.status_code == 404
+
+
+def test_public_demo_opens_without_session_when_enabled():
+    client = TestClient(
+        _build_app_with_token(public_demo_mode=True),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    response = client.get("/demo")
+
+    assert response.status_code == 200
+    assert "Public demo mode" in response.text
+    assert "without mailbox or paid API access" in response.text
+    assert "No live mailbox" in response.text
+    assert "/static/demo.css" in response.text
+
+
+def test_public_demo_status_declares_locked_capabilities():
+    client = TestClient(
+        _build_app_with_token(public_demo_mode=True),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    response = client.get("/api/demo/status")
+
+    payload = response.json()
+    assert response.status_code == 200
+    assert payload["demo_mode"] is True
+    assert payload["paid_api_access"] is False
+    assert payload["live_analysis_enabled"] is False
+    assert payload["mailbox_access_enabled"] is False
+    assert payload["feedback_learning_enabled"] is False
+    assert payload["account_management_enabled"] is False
+    assert payload["user_mailboxes"] == "not_connected_in_public_demo"
+
+
+def test_public_demo_does_not_bypass_real_analysis_or_dashboard_auth():
+    client = TestClient(
+        _build_app_with_token(public_demo_mode=True),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    upload = client.post(
+        "/api/analyze/upload",
+        files={"file": ("sample.eml", b"Subject: hi\r\n\r\nbody", "message/rfc822")},
+    )
+    dashboard = client.get("/dashboard")
+
+    assert upload.status_code == 401
+    assert dashboard.status_code == 303
+    assert dashboard.headers["location"].startswith("/login?next=")
+
+
+def test_login_page_links_public_demo_only_when_enabled():
+    plain_client = TestClient(
+        _build_app_with_token(),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+    demo_client = TestClient(
+        _build_app_with_token(public_demo_mode=True),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    plain = plain_client.get("/login")
+    demo = demo_client.get("/login")
+
+    assert 'href="/demo"' not in plain.text
+    assert 'href="/demo"' in demo.text
+    assert "paid API checks" in demo.text
 
 
 def test_analyze_page_uses_global_feedback_control_not_inline_panel():
@@ -183,6 +275,20 @@ def test_session_status_reports_browser_session_expiry():
     assert payload["authenticated"] is True
     assert isinstance(payload["expires_at"], int)
     assert payload["max_age_seconds"] > 0
+    assert payload["public_demo_mode"] is False
+
+
+def test_session_status_reports_public_demo_mode():
+    client = TestClient(
+        _build_app_with_token(public_demo_mode=True),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    response = client.get("/api/auth/session")
+
+    assert response.status_code == 200
+    assert response.json()["public_demo_mode"] is True
 
 
 def test_login_sets_secure_session_and_csrf_cookies():

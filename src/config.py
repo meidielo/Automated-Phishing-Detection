@@ -7,6 +7,20 @@ from pathlib import Path
 from typing import Optional
 
 
+def _coerce_bool(value, default: bool = False) -> bool:
+    """Coerce env/YAML values such as true/false, yes/no, 1/0."""
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "y", "on"}:
+        return True
+    if text in {"0", "false", "no", "n", "off"}:
+        return False
+    return default
+
+
 @dataclass
 class APIConfig:
     virustotal_key: str = ""
@@ -66,6 +80,7 @@ class PipelineConfig:
     log_level: str = "INFO"
     dashboard_port: int = 8000
     analyst_api_token: str = ""
+    public_demo_mode: bool = False
     max_concurrent_browser: int = 3
     # Privacy / data retention. Stored email metadata in
     # data/results.jsonl is regulated PII under Australian Privacy Act
@@ -125,6 +140,7 @@ class PipelineConfig:
             log_level=os.getenv("LOG_LEVEL", "INFO"),
             dashboard_port=int(os.getenv("DASHBOARD_PORT", "8000")),
             analyst_api_token=os.getenv("ANALYST_API_TOKEN", ""),
+            public_demo_mode=_coerce_bool(os.getenv("PUBLIC_DEMO_MODE"), False),
             max_concurrent_browser=3,
             data_retention_days=int(os.getenv("DATA_RETENTION_DAYS", "30")),
         )
@@ -208,6 +224,7 @@ class PipelineConfig:
             log_level=_get(pipeline_data, "log_level", "LOG_LEVEL", "INFO"),
             dashboard_port=int(_get(pipeline_data, "dashboard_port", "DASHBOARD_PORT", 8000)),
             analyst_api_token=_get(pipeline_data, "analyst_api_token", "ANALYST_API_TOKEN"),
+            public_demo_mode=_coerce_bool(_get(pipeline_data, "public_demo_mode", "PUBLIC_DEMO_MODE", False)),
             max_concurrent_browser=int(pipeline_data.get("max_concurrent_browser", 3)),
             data_retention_days=int(_get(pipeline_data, "data_retention_days", "DATA_RETENTION_DAYS", 30)),
         )

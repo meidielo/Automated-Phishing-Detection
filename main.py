@@ -307,10 +307,24 @@ class PhishingDetectionApp:
             """Inject shared CSS/JS (auth, theme) before </head> in any page."""
             return html.replace("</head>", _shared_html_raw + "\n</head>", 1)
 
+        def _demo_enabled() -> bool:
+            return bool(getattr(self.config, "public_demo_mode", False))
+
         def _login_success_redirect(next_path: str) -> RedirectResponse:
             if not next_path.startswith("/") or next_path.startswith("//"):
                 next_path = "/dashboard"
             return RedirectResponse(url=next_path, status_code=303)
+
+        def _demo_login_link() -> str:
+            if not _demo_enabled():
+                return ""
+            return (
+                '<div class="demo-entry">'
+                '<a href="/demo">Open the public demo</a>'
+                '<span>Live mailbox access, paid API checks, feedback learning, '
+                'and account management stay locked behind analyst login.</span>'
+                '</div>'
+            )
 
         def _render_login(next_path: str, error_message: str = "") -> HTMLResponse:
             login_path = Path("./templates/login.html")
@@ -318,6 +332,7 @@ class PhishingDetectionApp:
                 login_path.read_text(encoding="utf-8")
                 .replace("{{NEXT_PATH}}", html.escape(next_path, quote=True))
                 .replace("{{ERROR_MESSAGE}}", html.escape(error_message, quote=True))
+                .replace("{{DEMO_LINK}}", _demo_login_link())
             )
             status_code = 401 if error_message else 200
             return HTMLResponse(content=_inject_shared(html_content), status_code=status_code)
@@ -393,6 +408,7 @@ class PhishingDetectionApp:
                     "authenticated": True,
                     "expires_at": None,
                     "max_age_seconds": SESSION_MAX_AGE_SECONDS,
+                    "public_demo_mode": _demo_enabled(),
                 }
             payload = self.token_verifier.session_payload(
                 request.cookies.get(SESSION_COOKIE_NAME)
@@ -402,6 +418,37 @@ class PhishingDetectionApp:
                 "authenticated": payload is not None,
                 "expires_at": payload.get("exp") if payload else None,
                 "max_age_seconds": SESSION_MAX_AGE_SECONDS,
+                "public_demo_mode": _demo_enabled(),
+            }
+
+        @app.get("/demo", response_class=HTMLResponse)
+        async def public_demo():
+            """Serve the safe public demo page without opening analyst APIs."""
+            if not _demo_enabled():
+                raise HTTPException(status_code=404, detail="Public demo mode is not enabled")
+            demo_path = Path("./templates/demo.html")
+            return HTMLResponse(content=_inject_shared(
+                demo_path.read_text(encoding="utf-8")
+            ))
+
+        @app.get("/api/demo/status")
+        async def api_demo_status():
+            """Return public demo limitations. Never exposes mailbox or paid API data."""
+            if not _demo_enabled():
+                raise HTTPException(status_code=404, detail="Public demo mode is not enabled")
+            return {
+                "demo_mode": True,
+                "paid_api_access": False,
+                "live_analysis_enabled": False,
+                "mailbox_access_enabled": False,
+                "feedback_learning_enabled": False,
+                "account_management_enabled": False,
+                "user_mailboxes": "not_connected_in_public_demo",
+                "message": (
+                    "Public demo mode uses fixed sample content only. Analyst login is "
+                    "required for live analysis, mailbox monitoring, paid API-backed "
+                    "checks, feedback learning, and account management."
+                ),
             }
 
         @app.get("/", response_class=HTMLResponse)

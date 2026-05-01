@@ -45,6 +45,9 @@ At minimum, fill in:
 - `GOOGLE_SAFE_BROWSING_API_KEY`
 - `ANALYST_API_TOKEN` (generate one: `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`)
 
+Optional public preview:
+- Set `PUBLIC_DEMO_MODE=true` only if you want `/demo` to be reachable without login. It is sample-only: it does not expose live upload analysis, mailbox monitoring, paid API-backed checks, feedback learning, dashboard data, or account management.
+
 Avoid `$` in `.env` values unless you know how to escape Docker Compose
 interpolation. If `docker compose config` prints warnings about a variable that
 looks like part of a secret, regenerate that secret with `secrets.token_urlsafe`
@@ -72,8 +75,9 @@ docker exec phishing-orchestrator python -c \
   "import urllib.request; print(urllib.request.urlopen('http://localhost:8000/api/health').read())"
 ```
 
-Visit your domain. You should see the dashboard.
+Visit your domain. You should see the login page for the dashboard.
 Use `/login` with `ANALYST_API_TOKEN` for browser access.
+If `PUBLIC_DEMO_MODE=true`, `/demo` is the only public sample page.
 
 The production stack also binds `127.0.0.1:8000:8000` on the host. This is
 only for SSH/cron health probes on the deployment machine; it is not exposed on

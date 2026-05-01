@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Public Demo - PhishDetect</title>
+  <link rel="stylesheet" href="/static/demo.css">
+</head>
+<body>
+  <header class="demo-topbar">
+    <a class="demo-logo" href="/demo">PhishDetect</a>
+    <div class="demo-actions">
+      <a href="/login">Analyst login</a>
+    </div>
+  </header>
+
+  <main class="demo-page">
+    <section class="demo-hero">
+      <div class="demo-kicker">Public demo mode</div>
+      <h1>Payment scam detection preview, without mailbox or paid API access.</h1>
+      <p>
+        This page uses fixed sample content only. Live analysis, mailbox monitoring,
+        paid API-backed checks, feedback learning, and account management require
+        analyst access.
+      </p>
+    </section>
+
+    <section class="demo-grid" aria-label="Demo limitations and sample result">
+      <article class="demo-panel demo-sample">
+        <div class="panel-header">
+          <div>
+            <span class="eyebrow">Sample email</span>
+            <h2>Payment details changed for April invoice</h2>
+          </div>
+          <span class="badge verify">VERIFY</span>
+        </div>
+        <dl class="sample-meta">
+          <div>
+            <dt>From</dt>
+            <dd>vendor-alert@sample.invalid</dd>
+          </div>
+          <div>
+            <dt>Verdict</dt>
+            <dd>Suspicious</dd>
+          </div>
+          <div>
+            <dt>Payment decision</dt>
+            <dd>Verify supplier out of band</dd>
+          </div>
+        </dl>
+        <div class="score-row">
+          <span>Risk score</span>
+          <strong>0.52</strong>
+        </div>
+        <div class="score-track" aria-hidden="true"><span></span></div>
+        <ul class="signal-list">
+          <li>Bank detail change language</li>
+          <li>Payment urgency before due date</li>
+          <li>Reply-to domain mismatch</li>
+          <li>Invoice attachment present</li>
+        </ul>
+      </article>
+
+      <article class="demo-panel">
+        <span class="eyebrow">Locked in public mode</span>
+        <h2>What visitors cannot use</h2>
+        <ul class="lock-list">
+          <li>
+            <strong>No live mailbox.</strong>
+            Public visitors do not see or connect any mailbox here.
+          </li>
+          <li>
+            <strong>No paid API usage.</strong>
+            URL reputation, sandboxing, and LLM-backed checks stay behind login.
+          </li>
+          <li>
+            <strong>No shared training.</strong>
+            Demo visitors cannot submit analyst feedback or retrain weights.
+          </li>
+          <li>
+            <strong>No account management.</strong>
+            Mail accounts and stored results remain private to the analyst instance.
+          </li>
+        </ul>
+      </article>
+
+      <article class="demo-panel">
+        <span class="eyebrow">Real user version</span>
+        <h2>Each user needs their own mailbox boundary</h2>
+        <p>
+          A production multi-user version should connect mail per account through
+          OAuth or user-provided IMAP credentials, encrypt tokens, and isolate every
+          result by user. This public demo intentionally does none of that.
+        </p>
+      </article>
+
+      <article class="demo-panel decision-panel">
+        <span class="eyebrow">Payment firewall output</span>
+        <div class="decision-row safe">
+          <span>SAFE</span>
+          <strong>Proceed normally</strong>
+        </div>
+        <div class="decision-row verify active">
+          <span>VERIFY</span>
+          <strong>Confirm supplier first</strong>
+        </div>
+        <div class="decision-row block">
+          <span>DO_NOT_PAY</span>
+          <strong>Block payment release</strong>
+        </div>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

@@ -118,6 +118,9 @@ Use `/login` for browser sessions. API clients should use
 Operational checks:
 - Rotate `ANALYST_API_TOKEN` if it has been shared in chat, logs, or tickets.
 - Keep Cloudflare Access or Tailscale in front of the dashboard for demos.
+- If `PUBLIC_DEMO_MODE=true`, verify only `/demo` is public. It must not expose
+  live analysis, mailbox data, feedback learning, paid API usage, or account
+  management.
 - Do not expose port `8000` publicly. The production compose file uses
   a loopback-only host port, `127.0.0.1:8000:8000`, for local health probes.
 

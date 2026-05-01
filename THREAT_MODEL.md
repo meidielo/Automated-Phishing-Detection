@@ -116,6 +116,7 @@ These are real and verifiable. References are file paths.
 | Mitigation | Where | Threat addressed |
 |---|---|---|
 | **Bearer token auth on all sensitive `/api/*` routes** | `src/security/web_security.py::TokenVerifier`, applied in `main.py` and `src/feedback/feedback_api.py` | S-TB6, E-TB6, T-TB6: feedback poisoning, account/credential takeover via dashboard |
+| **Public demo is sample-only** | `main.py::public_demo`, `main.py::api_demo_status` | I-TB6, D-TB4: public visitors can preview fixed sample output without mailbox data or paid API-backed analysis |
 | **`run_server()` defaults to 127.0.0.1; refuses non-loopback bind without token** | `main.py::run_server` | S-TB6: blocks accidental internet exposure |
 | **SSRF guard on `/api/detonate-url`** | `src/security/web_security.py::SSRFGuard` | T-TB3, I-TB3: cloud-metadata / internal-network exfil via URL detonator |
 | **Security headers middleware** (CSP, X-Frame-Options, X-Content-Type-Options, HSTS, Referrer-Policy, Permissions-Policy) | `src/security/web_security.py::SecurityHeadersMiddleware` | T-TB6, I-TB6: clickjacking, XSS amplification, MIME sniffing |
@@ -139,7 +140,7 @@ Ordered by severity-given-likelihood. Each one is something the project delibera
 ### R1 — Feedback API authentication
 **Severity:** high (was high). **Likelihood:** low (was high if exposed).
 **Status: MITIGATED.**
-**Description:** All state-changing and information-disclosing endpoints in `main.py` (`/api/feedback`, `/api/feedback/retrain`, `/api/accounts/*`, `/api/detonate-url`, `/api/diagnose`, `/api/system-status`, `/api/monitor/email/{id}`, `/api/analyze/upload`, `/api/config`, `/api/monitor/alerts`) require `TokenVerifier`. API clients use bearer auth. Browser users authenticate through `/login`, which sets a signed HttpOnly session cookie plus a CSRF cookie; state-changing session-cookie requests require a matching `X-CSRF-Token` and same-origin Origin/Referer. The same token (`ANALYST_API_TOKEN` env var) is enforced by the existing `src/feedback/feedback_api.py` router. Additionally, `run_server()` defaults to `127.0.0.1` and refuses to start on a non-loopback host without `ANALYST_API_TOKEN`.
+**Description:** All state-changing and information-disclosing endpoints in `main.py` (`/api/feedback`, `/api/feedback/retrain`, `/api/accounts/*`, `/api/detonate-url`, `/api/diagnose`, `/api/system-status`, `/api/monitor/email/{id}`, `/api/analyze/upload`, `/api/config`, `/api/monitor/alerts`) require `TokenVerifier`. API clients use bearer auth. Browser users authenticate through `/login`, which sets a signed HttpOnly session cookie plus a CSRF cookie; state-changing session-cookie requests require a matching `X-CSRF-Token` and same-origin Origin/Referer. The same token (`ANALYST_API_TOKEN` env var) is enforced by the existing `src/feedback/feedback_api.py` router. `PUBLIC_DEMO_MODE=true` only opens `/demo` and `/api/demo/status`; those routes serve fixed sample content and explicit capability flags, not mailbox data, uploaded emails, dashboard data, feedback labels, account management, URL detonation, or paid API-backed analysis. Additionally, `run_server()` defaults to `127.0.0.1` and refuses to start on a non-loopback host without `ANALYST_API_TOKEN`.
 
 ### R2 — Analyst is a single trust principal
 **Severity:** high. **Likelihood:** low (depends on operator).
@@ -210,6 +211,7 @@ To prevent scope creep and to make the threat model honest:
 - **The pipeline is not a SOAR.** No automated remediation, no ticket creation, no user notification. Reports are generated; routing is the operator's job.
 - **The pipeline is not an EDR.** Post-compromise activity (T1078 full, T1098, T1606, etc.) is out of scope. See ATT&CK mapping for the exact line.
 - **The pipeline is not multi-tenant.** No namespace isolation between different customers' mailboxes. One operator, one trust domain.
+- **The public demo is not a user mailbox connector.** `/demo` is fixed sample content. Per-user mailboxes need a separate multi-user auth, credential, storage, and retention design.
 - **The pipeline does not perform takedowns.** It identifies infrastructure; it does not act against it.
 
 ---

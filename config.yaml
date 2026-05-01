@@ -86,4 +86,5 @@ pipeline:
   log_level: "INFO"                   # env: LOG_LEVEL
   dashboard_port: 8000                # env: DASHBOARD_PORT
   analyst_api_token: ""               # env: ANALYST_API_TOKEN
+  public_demo_mode: false             # env: PUBLIC_DEMO_MODE
   max_concurrent_browser: 3

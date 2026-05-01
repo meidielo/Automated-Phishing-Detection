@@ -71,7 +71,8 @@ Status is one of:
 | **Docker production health hardening** - browser-sandbox healthcheck, Playwright server/client version pinning, loopback-only host probe port, deploy/self-heal scripts, and non-blocking URL reputation DNS fallbacks keep mailbox-monitor load from making the dashboard falsely unhealthy. | `docker-compose.production.yml`, `scripts/docker_deploy.sh`, `scripts/docker_self_heal.sh`, `src/analyzers/url_reputation.py` |
 | **Redacted Gmail-derived payment samples** - local ignored payment dataset now includes redacted real Gmail search-summary examples plus 25 full-body invoice/receipt/payment examples and fresh decision eval/ML exports. Raw mail is not committed. | `data/payment_scam_dataset/` (ignored), `scripts/payment_dataset.py readiness` |
 | **Multi-container Docker Compose browser split** - URL detonation connects to a separate `browser-sandbox` Playwright service via `PLAYWRIGHT_WS_ENDPOINT`. | `docker-compose.yml`, `docker-compose.production.yml`, `src/analyzers/url_detonation.py` |
-| 1073 tests (51 test modules) | unit + integration |
+| **Public sample-only demo mode** - `/demo` can be exposed without analyst login while live analysis, mailbox monitoring, paid API-backed checks, feedback learning, dashboard data, and account management remain token-protected. | `PUBLIC_DEMO_MODE`, `main.py`, `templates/demo.html`, `static/demo.css` |
+| 1082 tests (52 test modules) | unit + integration |
 
 ---
 
@@ -81,6 +82,9 @@ Ordered by intended sequence, not priority.
 
 ### Broader real redacted payment samples
 The payment dataset has tooling, synthetic seed data, public-advisory-derived `VERIFY`/`DO_NOT_PAY` seed and holdout data, public-corpus-mined payment scam language, readiness reporting, redaction, eval, demo, ML training, 10 redacted Gmail search-summary examples, and 25 redacted Gmail full-body `SAFE` invoice/receipt/payment examples. The remaining evidence gap is real full-body `VERIFY` and `DO_NOT_PAY` coverage: bank-change, supplier-update, executive-transfer, and payment-redirection samples gathered from client-approved or user-owned mail and redacted before labeling.
+
+### Per-user mailbox isolation
+The public demo deliberately does not connect visitor mailboxes. A real user-owned mailbox product needs OAuth or user-provided IMAP credentials per user, encrypted per-user tokens, user-scoped result storage, per-user retention/deletion, and tests proving one user cannot see another user's mailbox, scans, or feedback labels.
 
 ### Audit trail for feedback labels
 Append-only log of who relabeled what. Closes residual risk **R2**. Required before the project is honest about being multi-analyst.
@@ -107,7 +111,7 @@ When an analyst marks an email CONFIRMED_PHISHING, push the URL/domain/hash IOCs
 These were genuinely evaluated and decided against, at least for now. The reasoning is here so future-me doesn't relitigate.
 
 ### Multi-tenant namespace isolation
-**Why deferred:** the project is single-operator by design. Adding tenant separation means rewriting the feedback DB schema, the credential vault, and the dashboard. Not worth the complexity until there's a second tenant. Documented as non-goal #4 in `THREAT_MODEL.md`.
+**Why deferred:** the project is single-operator by design. Adding tenant separation means rewriting the feedback DB schema, the credential vault, and the dashboard. Public demo mode is sample-only and does not change that boundary. A real multi-user mailbox product should start from the planned per-user mailbox isolation work above. Documented as non-goal #4 in `THREAT_MODEL.md`.
 
 ### gVisor / Firecracker for browser sandbox
 **Why deferred:** Docker container isolation is good enough for a single-operator portfolio deployment. gVisor is the right answer for production, but the operational burden (kernel compat, debuggability) is too high for solo maintenance.

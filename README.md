@@ -208,6 +208,12 @@ Configuration loads from two sources (env vars override YAML):
 
 See `config.yaml` for all available options with inline documentation.
 
+### Public demo mode
+
+Set `PUBLIC_DEMO_MODE=true` to expose `/demo` as a sample-only public preview. This is intentionally not an auth bypass for the real app: `/`, `/dashboard`, `/monitor`, `/accounts`, live upload analysis, mailbox monitoring, feedback learning, and account management still require the analyst token.
+
+The demo page uses fixed sample content and `/api/demo/status` advertises the locked capabilities. Keep `ANALYST_API_TOKEN` configured before exposing the deployment publicly. A real multi-user version needs per-user OAuth or IMAP credentials, encrypted per-user tokens, and user-scoped result storage so each person only sees their own mailbox.
+
 ## API Keys Required
 
 | Service | Environment Variable | Purpose | Free Tier |
@@ -300,7 +306,7 @@ The static Sigma rule library in [`sigma_rules/`](sigma_rules/) ships hand-writt
 
 ## Testing
 
-The test suite has **1073 tests across 51 test modules** (unit + integration), exercising every analyzer, the decision engine override rules (including the cycle 7 ordering fix that catches pure-text BEC), the cross-analyzer calibration pass (ADR 0001) with explicit cap-ceiling tests, the persistent email_id lookup index (ADR 0002) with cross-restart smoking-gun tests, scoring confidence capping, IOC export, the Sigma exporter, the URL reputation dead-domain confidence downgrade, credential encryption migration, the LLM determinism contract, the generic phishing ML baseline, the payment-fraud dataset/eval/train/demo workflow, the body_html sanitizer with hostile XSS payloads, retention and per-subject erasure across results, alerts, feedback, and sender profiles, dashboard self-hosted chart assets/fallback rendering under a strict dashboard CSP, the privacy-safe shared feedback modal, Docker Playwright version pinning, operational backup/health scripts, and the web security middleware (bearer auth, browser session auth with CSRF, SSRF guard, security headers). CI runs the full suite plus a Playwright dashboard chart smoke check on every push and PR against a fresh checkout from the hash-pinned lock file. CI-bites verified by deliberate-red sanity check on a throwaway branch.
+The test suite has **1082 tests across 52 test modules** (unit + integration), exercising every analyzer, the decision engine override rules (including the cycle 7 ordering fix that catches pure-text BEC), the cross-analyzer calibration pass (ADR 0001) with explicit cap-ceiling tests, the persistent email_id lookup index (ADR 0002) with cross-restart smoking-gun tests, scoring confidence capping, IOC export, the Sigma exporter, the URL reputation dead-domain confidence downgrade, credential encryption migration, the LLM determinism contract, the generic phishing ML baseline, the payment-fraud dataset/eval/train/demo workflow, the body_html sanitizer with hostile XSS payloads, retention and per-subject erasure across results, alerts, feedback, and sender profiles, dashboard self-hosted chart assets/fallback rendering under a strict dashboard CSP, public demo mode guardrails, the privacy-safe shared feedback modal, Docker Playwright version pinning, operational backup/health scripts, and the web security middleware (bearer auth, browser session auth with CSRF, SSRF guard, security headers). CI runs the full suite plus a Playwright dashboard chart smoke check on every push and PR against a fresh checkout from the hash-pinned lock file. CI-bites verified by deliberate-red sanity check on a throwaway branch.
 
 ```bash
 # Run all tests
@@ -350,7 +356,9 @@ python -m pytest --cov=src --cov-report=html
 
 9. **No GPU acceleration**: NLP intent classification and image similarity run on CPU only. This is adequate for email-volume workloads but not for bulk retroactive analysis of large archives.
 
-10. **Single-node deployment**: The current architecture runs on a single node. For multi-node deployment, you'd need to add a message queue (Redis/RabbitMQ) between ingestion and the pipeline, which the async generator interface is designed to support but doesn't implement out of the box.
+10. **Public demo is sample-only**: `PUBLIC_DEMO_MODE=true` opens `/demo`, but it does not connect visitor mailboxes or let public users run paid API-backed analysis. Per-user mailbox access requires a separate multi-user auth and storage design.
+
+11. **Single-node deployment**: The current architecture runs on a single node. For multi-node deployment, you'd need to add a message queue (Redis/RabbitMQ) between ingestion and the pipeline, which the async generator interface is designed to support but doesn't implement out of the box.
 
 ## Docker Deployment
 
