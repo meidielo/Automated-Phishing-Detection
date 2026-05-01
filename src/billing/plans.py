@@ -79,6 +79,13 @@ PLAN_CATALOG: tuple[Plan, ...] = (
 
 FEATURE_CATALOG: tuple[Feature, ...] = (
     Feature(
+        slug="manual_scan",
+        name="Manual email scan",
+        description="Upload a single .eml file for account-scoped analysis.",
+        minimum_plan="free",
+        category="Core detection",
+    ),
+    Feature(
         slug="header_auth",
         name="Header authentication",
         description="SPF, DKIM, DMARC, reply-to, and sender-domain checks.",
@@ -96,6 +103,20 @@ FEATURE_CATALOG: tuple[Feature, ...] = (
         slug="scan_history",
         name="Private scan history",
         description="Database-backed result history scoped to the signed-in user or team.",
+        minimum_plan="free",
+        category="Account data",
+    ),
+    Feature(
+        slug="brand_impersonation",
+        name="Brand impersonation",
+        description="Sender, domain, and content signals for impersonated brands.",
+        minimum_plan="starter",
+        category="Core detection",
+    ),
+    Feature(
+        slug="sender_profiling",
+        name="Sender profiling",
+        description="Baseline sender patterns and flag unusual payment behavior.",
         minimum_plan="starter",
         category="Account data",
     ),
@@ -112,6 +133,14 @@ FEATURE_CATALOG: tuple[Feature, ...] = (
         name="Domain intelligence",
         description="WHOIS, domain age, hosting, and suspicious registration signals.",
         minimum_plan="starter",
+        category="Paid API-backed checks",
+        expensive=True,
+    ),
+    Feature(
+        slug="attachment_sandbox",
+        name="Attachment sandbox",
+        description="Sandbox-backed attachment inspection and file detonation budget.",
+        minimum_plan="pro",
         category="Paid API-backed checks",
         expensive=True,
     ),
@@ -158,13 +187,37 @@ def _plan_rank(slug: str) -> int:
 
 def minimum_plan_for_feature(feature_slug: str) -> Plan:
     """Return the minimum plan required for a feature slug."""
-    feature = next((item for item in FEATURE_CATALOG if item.slug == feature_slug), None)
-    if feature is None:
-        raise KeyError(f"unknown feature: {feature_slug}")
+    feature = get_feature(feature_slug)
     plan = next((item for item in PLAN_CATALOG if item.slug == feature.minimum_plan), None)
     if plan is None:
         raise KeyError(f"unknown plan: {feature.minimum_plan}")
     return plan
+
+
+def get_plan(plan_slug: str) -> Plan:
+    """Return a plan by slug."""
+    plan = next((item for item in PLAN_CATALOG if item.slug == plan_slug), None)
+    if plan is None:
+        raise KeyError(f"unknown plan: {plan_slug}")
+    return plan
+
+
+def get_feature(feature_slug: str) -> Feature:
+    """Return a feature by slug."""
+    feature = next((item for item in FEATURE_CATALOG if item.slug == feature_slug), None)
+    if feature is None:
+        raise KeyError(f"unknown feature: {feature_slug}")
+    return feature
+
+
+def plan_allows_feature(plan_slug: str, feature_slug: str) -> bool:
+    """Return True when a plan includes a feature."""
+    try:
+        plan_rank = _plan_rank(get_plan(plan_slug).slug)
+        feature_rank = _plan_rank(minimum_plan_for_feature(feature_slug).slug)
+    except KeyError:
+        return False
+    return plan_rank >= feature_rank
 
 
 def plan_payload(current_plan: str = "free") -> dict:

@@ -7,8 +7,9 @@ import json
 import logging
 from datetime import datetime, timezone
 from email.utils import parseaddr
-from typing import Optional
+from typing import Callable, Optional
 
+from src.billing.entitlements import ANALYZER_FEATURES, locked_analyzer_result
 from src.models import EmailObject, PipelineResult, Verdict, AnalyzerResult
 from src.config import PipelineConfig
 from src.scoring.blocklist_allowlist import BlocklistAllowlistChecker, ListCheckResult
@@ -109,7 +110,11 @@ class PhishingPipeline:
         config = PipelineConfig.from_env()
         return cls(config)
 
-    async def analyze(self, email: EmailObject) -> PipelineResult:
+    async def analyze(
+        self,
+        email: EmailObject,
+        feature_gate: Optional[Callable[[str], dict]] = None,
+    ) -> PipelineResult:
         """
         Execute full analysis pipeline on email.
 
@@ -162,7 +167,12 @@ class PhishingPipeline:
                 f"Phase 2: Running concurrent analyzers for email {email.email_id}"
             )
             analyzer_results = await asyncio.wait_for(
-                self._phase_analysis(email, iocs, extracted_urls),
+                self._phase_analysis(
+                    email,
+                    iocs,
+                    extracted_urls,
+                    feature_gate=feature_gate,
+                ),
                 timeout=self.config.pipeline_timeout
             )
 
@@ -299,7 +309,11 @@ class PhishingPipeline:
         return iocs, extracted_urls
 
     async def _phase_analysis(
-        self, email: EmailObject, iocs: dict, extracted_urls: list
+        self,
+        email: EmailObject,
+        iocs: dict,
+        extracted_urls: list,
+        feature_gate: Optional[Callable[[str], dict]] = None,
     ) -> dict[str, AnalyzerResult]:
         """
         Phase 2: Run all analyzers concurrently.
@@ -358,10 +372,27 @@ class PhishingPipeline:
                 return 60
             return 15
 
+        results = {}
+
         async def _launch(names: list[str]) -> list[tuple[str, asyncio.Task]]:
             tasks: list[tuple[str, asyncio.Task]] = []
             for analyzer_name in names:
                 try:
+                    feature_slug = ANALYZER_FEATURES.get(analyzer_name)
+                    if feature_gate is not None and feature_slug:
+                        decision = feature_gate(feature_slug)
+                        if not decision.get("available", False):
+                            self.logger.info(
+                                "Skipping analyzer %s: feature %s locked for plan %s",
+                                analyzer_name,
+                                feature_slug,
+                                decision.get("current_plan", "unknown"),
+                            )
+                            results[analyzer_name] = locked_analyzer_result(
+                                analyzer_name,
+                                decision,
+                            )
+                            continue
                     analyzer = await self._load_analyzer(analyzer_name)
                     if analyzer:
                         task = asyncio.create_task(
@@ -378,7 +409,6 @@ class PhishingPipeline:
         phase1_tasks = await _launch(phase1_names)
 
         # Run all concurrently with timeouts
-        results = {}
         for analyzer_name, task in phase1_tasks:
             try:
                 result = await asyncio.wait_for(task, timeout=_analyzer_timeout(analyzer_name))

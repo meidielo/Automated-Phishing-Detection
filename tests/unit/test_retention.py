@@ -20,18 +20,22 @@ from src.automation.retention import (
     ErasureStats,
     FeedbackRetentionStats,
     RetentionStats,
+    SaaSRetentionStats,
     SenderProfileRetentionStats,
     _parse_timestamp,
     erase_subject_from_alerts_jsonl,
     erase_subject_from_feedback_db,
     erase_subject_from_results_jsonl,
+    erase_subject_from_saas_db,
     erase_subject_from_sender_profiles_db,
     purge_alerts_jsonl,
     purge_feedback_db,
     purge_results_jsonl,
+    purge_saas_db,
     purge_sender_profiles_db,
 )
 from src.feedback.database import DatabaseManager, FeedbackRecord, create_sqlite_url
+from src.saas.database import SaaSStore
 
 
 # ─── helpers ─────────────────────────────────────────────────────────────────
@@ -301,6 +305,16 @@ class TestStatsObject:
             dry_run=False,
         )
         assert stats.total_seen == 7
+
+    def test_saas_total_seen(self):
+        stats = SaaSRetentionStats(
+            path="x",
+            cutoff=datetime.now(timezone.utc),
+            kept=4,
+            dropped=6,
+            dry_run=False,
+        )
+        assert stats.total_seen == 10
 
     def test_erasure_total_seen(self):
         stats = ErasureStats(
@@ -602,3 +616,70 @@ class TestSenderProfileRetention:
         with sqlite3.connect(db_path) as conn:
             senders = [row[0] for row in conn.execute("SELECT sender_email FROM senders")]
             assert senders == ["new@example.com"]
+
+
+class TestSaaSRetention:
+    def _seed_scan(self, store: SaaSStore, context, email_id: str, created_at: datetime):
+        scan_id = store.create_scan_job(
+            org_id=context.org_id,
+            user_id=context.user_id,
+            source="manual_upload",
+        )
+        store.record_scan_result(
+            org_id=context.org_id,
+            user_id=context.user_id,
+            scan_job_id=scan_id,
+            email_id=email_id,
+            verdict="SUSPICIOUS",
+            payment_decision="VERIFY",
+            result={"email_id": email_id, "from": f"{email_id}@example.com"},
+        )
+        with sqlite3.connect(store.db_path) as conn:
+            conn.execute(
+                "UPDATE scan_jobs SET created_at = ? WHERE id = ?",
+                (created_at.isoformat(), scan_id),
+            )
+            conn.execute(
+                "UPDATE scan_results SET created_at = ? WHERE scan_job_id = ?",
+                (created_at.isoformat(), scan_id),
+            )
+            conn.commit()
+        return scan_id
+
+    def test_purges_old_saas_scan_rows(self, tmp_path):
+        db_path = tmp_path / "saas.db"
+        store = SaaSStore(db_path)
+        context = store.create_user_with_org(email="owner@example.com", password="long-password-1")
+        now = datetime(2026, 5, 1, tzinfo=timezone.utc)
+        self._seed_scan(store, context, "old-email", now - timedelta(days=45))
+        self._seed_scan(store, context, "new-email", now - timedelta(days=2))
+
+        stats = purge_saas_db(db_path, max_age_days=30, now=now)
+
+        assert stats.dropped == 2
+        assert [row["email_id"] for row in store.list_scan_results(context.org_id)] == ["new-email"]
+
+    def test_saas_purge_dry_run_does_not_delete(self, tmp_path):
+        db_path = tmp_path / "saas.db"
+        store = SaaSStore(db_path)
+        context = store.create_user_with_org(email="owner@example.com", password="long-password-1")
+        now = datetime(2026, 5, 1, tzinfo=timezone.utc)
+        self._seed_scan(store, context, "old-email", now - timedelta(days=45))
+
+        stats = purge_saas_db(db_path, max_age_days=30, now=now, dry_run=True)
+
+        assert stats.dropped == 2
+        assert len(store.list_scan_results(context.org_id)) == 1
+
+    def test_erases_subject_from_saas_scan_results(self, tmp_path):
+        db_path = tmp_path / "saas.db"
+        store = SaaSStore(db_path)
+        context = store.create_user_with_org(email="owner@example.com", password="long-password-1")
+        now = datetime(2026, 5, 1, tzinfo=timezone.utc)
+        self._seed_scan(store, context, "person@example.com", now)
+        self._seed_scan(store, context, "safe-email", now)
+
+        stats = erase_subject_from_saas_db(db_path, "person@example.com")
+
+        assert stats.dropped == 1
+        assert [row["email_id"] for row in store.list_scan_results(context.org_id)] == ["safe-email"]

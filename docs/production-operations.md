@@ -98,7 +98,8 @@ For a data subject erasure:
 python main.py purge --target all --by-address person@example.com
 ```
 
-Run daily in production:
+Run daily in production. `--target all` includes JSONL results, alerts, analyst
+feedback, SaaS user scan rows in `data/saas.db`, and sender profiles:
 
 ```cron
 37 2 * * * cd /srv/Automated-Phishing-Detection && /usr/bin/python3 main.py purge --target all >> logs/retention.log 2>&1

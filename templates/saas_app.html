@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PhishDetect App</title>
+  <link rel="stylesheet" href="/static/saas.css">
+</head>
+<body>
+  <main class="saas-shell">
+    <section class="auth-view" id="authView">
+      <div class="auth-copy">
+        <span class="eyebrow">PhishDetect account</span>
+        <h1>Scan payment emails with account-scoped history and plan limits.</h1>
+        <p>Free accounts run core payment checks. Paid API-backed analyzers stay locked until the organization has the right plan.</p>
+      </div>
+
+      <div class="auth-panel">
+        <div class="tabs" role="tablist">
+          <button class="tab active" type="button" data-auth-tab="login">Login</button>
+          <button class="tab" type="button" data-auth-tab="signup">Create account</button>
+        </div>
+
+        <form id="loginForm" class="auth-form">
+          <label>Email <input name="email" type="email" autocomplete="email" required></label>
+          <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+          <button type="submit">Login</button>
+        </form>
+
+        <form id="signupForm" class="auth-form hidden">
+          <label>Email <input name="email" type="email" autocomplete="email" required></label>
+          <label>Password <input name="password" type="password" autocomplete="new-password" minlength="10" required></label>
+          <label>Organization <input name="org_name" type="text" autocomplete="organization"></label>
+          <button type="submit">Create free account</button>
+        </form>
+
+        <div class="notice" id="authNotice" hidden></div>
+      </div>
+    </section>
+
+    <section class="app-view hidden" id="appView">
+      <header class="app-header">
+        <div>
+          <span class="eyebrow" id="orgLabel">Workspace</span>
+          <h1>Payment Scam Firewall</h1>
+        </div>
+        <button type="button" id="logoutButton">Logout</button>
+      </header>
+
+      <section class="account-strip">
+        <div>
+          <span class="label">Plan</span>
+          <strong id="planName">Free</strong>
+        </div>
+        <div>
+          <span class="label">Monthly scans</span>
+          <strong id="usageText">0 / 5</strong>
+          <div class="meter" aria-hidden="true"><span id="usageBar"></span></div>
+        </div>
+        <div>
+          <span class="label">Email</span>
+          <strong id="userEmail">-</strong>
+        </div>
+      </section>
+
+      <section class="work-grid">
+        <article class="scan-panel">
+          <span class="eyebrow">Manual scan</span>
+          <h2>Upload a suspicious .eml</h2>
+          <form id="scanForm" class="scan-form">
+            <input id="emailFile" name="file" type="file" accept=".eml,message/rfc822" required>
+            <button type="submit">Analyze email</button>
+          </form>
+          <div class="notice" id="scanNotice" hidden></div>
+        </article>
+
+        <article class="result-panel" id="resultPanel">
+          <span class="eyebrow">Latest result</span>
+          <h2 id="resultTitle">No scan yet</h2>
+          <div class="decision-stack" id="decisionStack"></div>
+        </article>
+      </section>
+
+      <section class="feature-section">
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">Plan gates</span>
+            <h2>Locked checks are explicit before any paid API runs</h2>
+          </div>
+          <p>Each analyzer uses the same feature slugs as billing, quotas, and the public demo.</p>
+        </div>
+        <div class="feature-grid" id="featureGrid"></div>
+      </section>
+
+      <section class="history-section">
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">Private history</span>
+            <h2>Organization-scoped scans</h2>
+          </div>
+        </div>
+        <div class="history-list" id="historyList"></div>
+      </section>
+    </section>
+  </main>
+  <script src="/static/saas.js"></script>
+</body>
+</html>

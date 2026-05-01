@@ -1,0 +1,119 @@
+from __future__ import annotations
+
+import pytest
+
+from src.saas.database import (
+    DuplicateEmailError,
+    InvalidCredentialsError,
+    SaaSStore,
+)
+
+
+def test_signup_creates_user_org_subscription_and_context(tmp_path):
+    store = SaaSStore(tmp_path / "saas.db")
+
+    context = store.create_user_with_org(
+        email="Owner@Example.com",
+        password="correct horse battery",
+        org_name="Example Finance",
+    )
+
+    assert context.email == "owner@example.com"
+    assert context.org_name == "Example Finance"
+    assert context.role == "owner"
+    assert context.plan_slug == "free"
+    assert context.monthly_scan_quota == 5
+    assert context.monthly_scan_used == 0
+
+
+def test_signup_rejects_duplicate_email(tmp_path):
+    store = SaaSStore(tmp_path / "saas.db")
+    store.create_user_with_org(email="a@example.com", password="long-password-1")
+
+    with pytest.raises(DuplicateEmailError):
+        store.create_user_with_org(email="A@example.com", password="long-password-2")
+
+
+def test_authenticate_rejects_bad_password(tmp_path):
+    store = SaaSStore(tmp_path / "saas.db")
+    store.create_user_with_org(email="a@example.com", password="long-password-1")
+
+    with pytest.raises(InvalidCredentialsError):
+        store.authenticate("a@example.com", "wrong-password")
+
+
+def test_free_plan_locks_paid_features_and_records_lock(tmp_path):
+    store = SaaSStore(tmp_path / "saas.db")
+    context = store.create_user_with_org(email="a@example.com", password="long-password-1")
+
+    decision = store.check_entitlement(
+        org_id=context.org_id,
+        user_id=context.user_id,
+        feature_slug="url_reputation",
+    )
+
+    assert decision.available is False
+    assert decision.required_plan_name == "Starter"
+    assert store.feature_lock_count(context.org_id) == 1
+
+
+def test_manual_scan_quota_counts_monthly_usage(tmp_path):
+    store = SaaSStore(tmp_path / "saas.db")
+    context = store.create_user_with_org(email="a@example.com", password="long-password-1")
+    for index in range(5):
+        store.record_usage_event(
+            org_id=context.org_id,
+            user_id=context.user_id,
+            feature_slug="manual_scan",
+            idempotency_key=f"scan-{index}",
+        )
+
+    decision = store.check_entitlement(
+        org_id=context.org_id,
+        user_id=context.user_id,
+        feature_slug="manual_scan",
+        enforce_scan_quota=True,
+    )
+
+    assert decision.available is False
+    assert decision.limit_kind == "quota"
+    assert decision.used == 5
+    assert decision.remaining == 0
+
+
+def test_paid_plan_unlocks_starter_features(tmp_path):
+    store = SaaSStore(tmp_path / "saas.db")
+    context = store.create_user_with_org(email="a@example.com", password="long-password-1")
+    store.set_subscription(org_id=context.org_id, plan_slug="starter")
+
+    decision = store.check_entitlement(
+        org_id=context.org_id,
+        user_id=context.user_id,
+        feature_slug="url_reputation",
+    )
+
+    assert decision.available is True
+    assert decision.current_plan == "starter"
+
+
+def test_scan_history_is_tenant_scoped(tmp_path):
+    store = SaaSStore(tmp_path / "saas.db")
+    alice = store.create_user_with_org(email="alice@example.com", password="long-password-1")
+    bob = store.create_user_with_org(email="bob@example.com", password="long-password-2")
+    scan_id = store.create_scan_job(
+        org_id=alice.org_id,
+        user_id=alice.user_id,
+        source="manual_upload",
+    )
+    store.record_scan_result(
+        org_id=alice.org_id,
+        user_id=alice.user_id,
+        scan_job_id=scan_id,
+        email_id="email-1",
+        verdict="SUSPICIOUS",
+        payment_decision="VERIFY",
+        result={"email_id": "email-1"},
+    )
+
+    assert len(store.list_scan_results(alice.org_id)) == 1
+    assert store.list_scan_results(bob.org_id) == []

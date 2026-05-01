@@ -87,4 +87,7 @@ pipeline:
   dashboard_port: 8000                # env: DASHBOARD_PORT
   analyst_api_token: ""               # env: ANALYST_API_TOKEN
   public_demo_mode: false             # env: PUBLIC_DEMO_MODE
+  saas_db_path: "data/saas.db"         # env: SAAS_DB_PATH
+  saas_session_secret: ""             # env: SAAS_SESSION_SECRET
+  saas_public_signup_enabled: false    # env: SAAS_PUBLIC_SIGNUP_ENABLED
   max_concurrent_browser: 3

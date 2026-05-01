@@ -10,13 +10,22 @@ from src.feedback.email_lookup import EmailLookupIndex
 from src.models import AnalyzerResult, PipelineResult, Verdict
 from src.reporting.dashboard import PhishingDashboard
 from src.security.web_security import CSRF_COOKIE_NAME, SESSION_COOKIE_NAME, TokenVerifier
+from src.saas.auth import SaaSSessionManager
 
 
-def _build_app_with_token(token: str = "secret", public_demo_mode: bool = False):
+def _build_app_with_token(
+    token: str = "secret",
+    public_demo_mode: bool = False,
+    saas_db_path: str = "data/test_saas_session.db",
+    saas_public_signup_enabled: bool = False,
+):
     app_wrapper = PhishingDetectionApp.__new__(PhishingDetectionApp)
     app_wrapper.config = PipelineConfig(
         analyst_api_token=token,
         public_demo_mode=public_demo_mode,
+        saas_db_path=saas_db_path,
+        saas_session_secret=f"{token}-saas-session",
+        saas_public_signup_enabled=saas_public_signup_enabled,
     )
     app_wrapper.pipeline = MagicMock()
     app_wrapper.report_gen = MagicMock()
@@ -24,6 +33,8 @@ def _build_app_with_token(token: str = "secret", public_demo_mode: bool = False)
     app_wrapper.sigma_exporter = MagicMock()
     app_wrapper.dashboard = PhishingDashboard(template_dir="./templates")
     app_wrapper.token_verifier = TokenVerifier(token)
+    app_wrapper.saas_session_manager = SaaSSessionManager(f"{token}-saas-session")
+    app_wrapper._saas_store = None
     app_wrapper._monitor = None
     app_wrapper._upload_results = []
     app_wrapper.email_index = EmailLookupIndex(jsonl_path="data/results.jsonl")
@@ -102,6 +113,8 @@ def test_dashboard_static_assets_are_served_without_session():
         ("/static/dashboard.js", "function renderTable"),
         ("/static/dashboard-report.css", ".report-progress"),
         ("/static/demo.css", ".demo-page"),
+        ("/static/saas.css", ".saas-shell"),
+        ("/static/saas.js", "/api/saas/session"),
         ("/static/shared.css", ".feedback-modal"),
         ("/static/shared.js", "product-feedback-open"),
     ]:
@@ -138,6 +151,21 @@ def test_public_demo_opens_without_session_when_enabled():
     assert "without mailbox or paid API access" in response.text
     assert "No live mailbox" in response.text
     assert "/static/demo.css" in response.text
+
+
+def test_user_app_shell_opens_without_analyst_session():
+    client = TestClient(
+        _build_app_with_token(),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    response = client.get("/app")
+
+    assert response.status_code == 200
+    assert "/static/saas.css" in response.text
+    assert "/static/saas.js" in response.text
+    assert "PhishDetect account" in response.text
 
 
 def test_public_demo_status_declares_locked_capabilities():

@@ -81,6 +81,9 @@ class PipelineConfig:
     dashboard_port: int = 8000
     analyst_api_token: str = ""
     public_demo_mode: bool = False
+    saas_db_path: str = "data/saas.db"
+    saas_session_secret: str = ""
+    saas_public_signup_enabled: bool = False
     max_concurrent_browser: int = 3
     # Privacy / data retention. Stored email metadata in
     # data/results.jsonl is regulated PII under Australian Privacy Act
@@ -141,6 +144,12 @@ class PipelineConfig:
             dashboard_port=int(os.getenv("DASHBOARD_PORT", "8000")),
             analyst_api_token=os.getenv("ANALYST_API_TOKEN", ""),
             public_demo_mode=_coerce_bool(os.getenv("PUBLIC_DEMO_MODE"), False),
+            saas_db_path=os.getenv("SAAS_DB_PATH", "data/saas.db"),
+            saas_session_secret=os.getenv("SAAS_SESSION_SECRET", ""),
+            saas_public_signup_enabled=_coerce_bool(
+                os.getenv("SAAS_PUBLIC_SIGNUP_ENABLED"),
+                False,
+            ),
             max_concurrent_browser=3,
             data_retention_days=int(os.getenv("DATA_RETENTION_DAYS", "30")),
         )
@@ -225,6 +234,14 @@ class PipelineConfig:
             dashboard_port=int(_get(pipeline_data, "dashboard_port", "DASHBOARD_PORT", 8000)),
             analyst_api_token=_get(pipeline_data, "analyst_api_token", "ANALYST_API_TOKEN"),
             public_demo_mode=_coerce_bool(_get(pipeline_data, "public_demo_mode", "PUBLIC_DEMO_MODE", False)),
+            saas_db_path=_get(pipeline_data, "saas_db_path", "SAAS_DB_PATH", "data/saas.db"),
+            saas_session_secret=_get(pipeline_data, "saas_session_secret", "SAAS_SESSION_SECRET", ""),
+            saas_public_signup_enabled=_coerce_bool(_get(
+                pipeline_data,
+                "saas_public_signup_enabled",
+                "SAAS_PUBLIC_SIGNUP_ENABLED",
+                False,
+            )),
             max_concurrent_browser=int(pipeline_data.get("max_concurrent_browser", 3)),
             data_retention_days=int(_get(pipeline_data, "data_retention_days", "DATA_RETENTION_DAYS", 30)),
         )

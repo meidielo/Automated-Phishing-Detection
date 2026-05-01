@@ -67,6 +67,7 @@ data/payment_scam_dataset*/
 data/results.jsonl
 data/alerts.jsonl
 data/feedback.db
+data/saas.db
 data/sender_profiles.db
 
 # ===== Account Credentials & Tokens =====

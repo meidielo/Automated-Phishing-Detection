@@ -2,8 +2,11 @@
 
 This document defines the product direction for turning the single-operator
 phishing detector into a user-login product. The current public demo is
-sample-only. A real SaaS launch must add tenant isolation before letting users
-connect mailboxes or store private scan results.
+sample-only. The repository now includes a SQLite-backed SaaS foundation for
+normal user login, organization-scoped scan storage, plan limits, and locked
+analyzer responses. Public signup remains disabled by default so operators do
+not accidentally accept visitor email uploads before privacy, abuse, and support
+controls are ready.
 
 ## Product Model
 
@@ -25,6 +28,33 @@ Stripe should use Billing APIs with Checkout Sessions in subscription mode.
 Use Stripe Customer Portal for upgrades, cancellation, and payment method
 updates. Do not build manual renewal loops.
 
+## Current Implementation
+
+Implemented foundation:
+
+- `/app` serves the normal user account shell.
+- `/api/saas/auth/signup`, `/api/saas/auth/login`, and
+  `/api/saas/auth/logout` use signed user sessions plus CSRF protection.
+- `src/saas/database.py` creates `users`, `organizations`, `memberships`,
+  `subscriptions`, `mail_accounts`, `scan_jobs`, `scan_results`,
+  `usage_events`, `feature_locks`, and `audit_logs`.
+- `/api/saas/analyze/upload` stores results in `scan_results`, not the shared
+  analyst `data/results.jsonl` log.
+- The pipeline accepts a per-request `feature_gate`; locked analyzers return
+  `feature_locked` metadata with the required tier before paid API clients are
+  loaded.
+- Free accounts are limited to 5 manual scans/month and core payment checks.
+- `python main.py purge --target saas` and `--target all` purge old SaaS scan,
+  usage, lock, and audit rows under the same retention window as other runtime
+  artifacts.
+
+Not implemented yet:
+
+- Stripe Checkout Session creation and webhook signature verification.
+- Customer Portal upgrade/cancel flow.
+- Production Postgres migrations.
+- Per-user mailbox OAuth or IMAP token storage.
+
 ## Initial Plans
 
 Plan entitlements live in `src/billing/plans.py` so the UI, API gates, usage
@@ -37,9 +67,10 @@ checks, and Stripe webhook handlers share one catalog.
 | Pro | AUD 49 | 1000 | 3 | SMEs that receive invoices by email |
 | Business | AUD 149 | 5000 | 10 | Finance teams and agencies |
 
-Free should not run paid API-backed analyzers. Starter unlocks reputation and
-domain checks. Pro unlocks mailbox monitoring, LLM BEC reasoning, and browser
-URL detonation. Business adds team audit controls and higher budgets.
+Free should not run paid API-backed analyzers. Starter unlocks reputation,
+domain, brand, sender-profile, and private-history checks. Pro unlocks mailbox
+monitoring, LLM BEC reasoning, attachment sandboxing, and browser URL
+detonation. Business adds team audit controls and higher budgets.
 
 ## Database Tables
 
@@ -62,6 +93,10 @@ development and single-operator demos.
 Tenant isolation rule: every query for user-visible data must include `org_id`
 from the authenticated session. Tests must prove user A cannot read user B's
 mailboxes, scans, feedback labels, usage rows, subscription state, or audit logs.
+
+The current SQLite store follows that rule for SaaS scan history. The analyst
+dashboard and legacy mailbox monitor are still single-operator surfaces guarded
+by `ANALYST_API_TOKEN`.
 
 ## Usage Gate
 
@@ -93,10 +128,11 @@ The frontend should show the result as a locked analyzer row, not as an error.
 
 Safe implementation order:
 
-1. Add database schema and tenant-scoped query helpers.
-2. Add account login with signed user sessions and CSRF.
-3. Move scan results from `results.jsonl` display paths into `scan_results`.
-4. Add usage tracking and feature gates.
+1. Add database schema and tenant-scoped query helpers. **Done for the SaaS path.**
+2. Add account login with signed user sessions and CSRF. **Done.**
+3. Move user scan results from `results.jsonl` display paths into
+   `scan_results`. **Done for `/api/saas/analyze/upload`.**
+4. Add usage tracking and feature gates. **Done for manual scans and analyzers.**
 5. Add Stripe Checkout and webhook subscription sync.
 6. Add per-user mailbox connection.
 7. Add tenant isolation tests before enabling real mailbox access.

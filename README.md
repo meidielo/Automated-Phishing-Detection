@@ -212,9 +212,25 @@ See `config.yaml` for all available options with inline documentation.
 
 Set `PUBLIC_DEMO_MODE=true` to expose `/demo` as a sample-only public preview. This is intentionally not an auth bypass for the real app: `/`, `/dashboard`, `/monitor`, `/accounts`, live upload analysis, mailbox monitoring, feedback learning, and account management still require the analyst token.
 
-The demo page uses fixed sample content and `/api/demo/status` advertises the locked capabilities. Keep `ANALYST_API_TOKEN` configured before exposing the deployment publicly. A real multi-user version needs per-user OAuth or IMAP credentials, encrypted per-user tokens, and user-scoped result storage so each person only sees their own mailbox.
+The demo page uses fixed sample content and `/api/demo/status` advertises the locked capabilities. Keep `ANALYST_API_TOKEN` configured before exposing the deployment publicly. A real multi-user mailbox version still needs per-user OAuth or IMAP credentials and encrypted per-user tokens so each person only sees their own mailbox.
 
-`/api/demo/plans` exposes the public plan and feature-lock catalog used by the demo. The same plan slugs are intended to back Stripe Billing, quota checks, and database-stored user accounts later. See [`docs/saas-architecture.md`](docs/saas-architecture.md) for the user/org database schema, tenant isolation rules, and subscription rollout order.
+`/api/demo/plans` exposes the public plan and feature-lock catalog used by the demo. The same plan slugs now back the SaaS account foundation and are intended to back Stripe Billing webhook state later. See [`docs/saas-architecture.md`](docs/saas-architecture.md) for the user/org database schema, tenant isolation rules, and subscription rollout order.
+
+### SaaS account mode
+
+`/app` serves a normal user-login shell separate from the analyst dashboard. It uses signed user sessions, CSRF protection, and `data/saas.db` for `users`, `organizations`, `memberships`, `subscriptions`, `scan_jobs`, `scan_results`, `usage_events`, `feature_locks`, and `audit_logs`.
+
+Public signup is off by default:
+
+```bash
+SAAS_SESSION_SECRET=change-me-to-a-long-random-secret
+SAAS_DB_PATH=data/saas.db
+SAAS_PUBLIC_SIGNUP_ENABLED=false
+```
+
+When signup is enabled, free accounts get 5 manual scans/month. `/api/saas/analyze/upload` stores user scans in the tenant-scoped SaaS DB instead of the shared analyst `data/results.jsonl` log. Expensive analyzers check plan entitlements before loading clients; locked checks return structured `feature_locked` metadata so the UI can show the required tier instead of burning paid API quota.
+
+Stripe Checkout creation is intentionally not active until real Stripe price IDs and webhook signature verification are configured. `/api/saas/billing/checkout` currently reports missing Stripe configuration rather than pretending billing is live.
 
 ## API Keys Required
 
@@ -308,7 +324,7 @@ The static Sigma rule library in [`sigma_rules/`](sigma_rules/) ships hand-writt
 
 ## Testing
 
-The test suite has **1090 tests across 53 test modules** (unit + integration), exercising every analyzer, the decision engine override rules (including the cycle 7 ordering fix that catches pure-text BEC), the cross-analyzer calibration pass (ADR 0001) with explicit cap-ceiling tests, the persistent email_id lookup index (ADR 0002) with cross-restart smoking-gun tests, scoring confidence capping, IOC export, the Sigma exporter, the URL reputation dead-domain confidence downgrade, credential encryption migration, the LLM determinism contract, the generic phishing ML baseline, the payment-fraud dataset/eval/train/demo workflow, the body_html sanitizer with hostile XSS payloads, retention and per-subject erasure across results, alerts, feedback, and sender profiles, dashboard self-hosted chart assets/fallback rendering under a strict dashboard CSP, public demo mode guardrails, plan/feature-lock metadata, the privacy-safe shared feedback modal, Docker Playwright version pinning, operational backup/health scripts, and the web security middleware (bearer auth, browser session auth with CSRF, SSRF guard, security headers). CI runs the full suite plus a Playwright dashboard chart smoke check on every push and PR against a fresh checkout from the hash-pinned lock file. CI-bites verified by deliberate-red sanity check on a throwaway branch.
+The test suite has **1109 tests across 56 test modules** (unit + integration), exercising every analyzer, the decision engine override rules (including the cycle 7 ordering fix that catches pure-text BEC), the cross-analyzer calibration pass (ADR 0001) with explicit cap-ceiling tests, the persistent email_id lookup index (ADR 0002) with cross-restart smoking-gun tests, scoring confidence capping, IOC export, the Sigma exporter, the URL reputation dead-domain confidence downgrade, credential encryption migration, the LLM determinism contract, the generic phishing ML baseline, the payment-fraud dataset/eval/train/demo workflow, the body_html sanitizer with hostile XSS payloads, retention and per-subject erasure across results, alerts, feedback, SaaS scan rows, and sender profiles, dashboard self-hosted chart assets/fallback rendering under a strict dashboard CSP, public demo mode guardrails, SaaS account/session/quota gates, plan/feature-lock metadata, the privacy-safe shared feedback modal, Docker Playwright version pinning, operational backup/health scripts, and the web security middleware (bearer auth, browser session auth with CSRF, user session auth with CSRF, SSRF guard, security headers). CI runs the full suite plus a Playwright dashboard chart smoke check on every push and PR against a fresh checkout from the hash-pinned lock file. CI-bites verified by deliberate-red sanity check on a throwaway branch.
 
 ```bash
 # Run all tests
@@ -398,7 +414,7 @@ For tunnel-backed services (like phishanalyze), routes are configured in the Clo
 
 ## Data retention & privacy
 
-Stored email/result artifacts in `data/results.jsonl`, `data/alerts.jsonl`, `data/feedback.db`, and `data/sender_profiles.db` can contain regulated personal information under the Australian Privacy Act and the EU GDPR. The pipeline ships with a 30-day default retention window and a `purge` CLI subcommand:
+Stored email/result artifacts in `data/results.jsonl`, `data/alerts.jsonl`, `data/feedback.db`, `data/saas.db`, and `data/sender_profiles.db` can contain regulated personal information under the Australian Privacy Act and the EU GDPR. The pipeline ships with a 30-day default retention window and a `purge` CLI subcommand:
 
 ```bash
 # Show what would be deleted without modifying the file

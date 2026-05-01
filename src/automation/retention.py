@@ -98,6 +98,21 @@ class SenderProfileRetentionStats:
 
 
 @dataclass
+class SaaSRetentionStats:
+    """Summary of one SaaS account DB purge run."""
+
+    path: str
+    cutoff: datetime
+    kept: int
+    dropped: int
+    dry_run: bool
+
+    @property
+    def total_seen(self) -> int:
+        return self.kept + self.dropped
+
+
+@dataclass
 class ErasureStats:
     """Summary of one per-subject erasure run."""
 
@@ -397,6 +412,13 @@ def erase_subject_from_alerts_jsonl(
     return erase_subject_from_results_jsonl(path, subject, dry_run=dry_run)
 
 
+def _sqlite_table_exists(cursor: sqlite3.Cursor, table: str) -> bool:
+    return bool(cursor.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        (table,),
+    ).fetchone())
+
+
 def _as_utc_naive(dt: datetime) -> datetime:
     """Normalize a datetime for SQLite DateTime comparisons."""
     if dt.tzinfo is not None:
@@ -557,6 +579,123 @@ async def erase_subject_from_feedback_db(
         subject=subject,
         kept=kept,
         dropped=drop_count,
+        dry_run=dry_run,
+    )
+
+
+def purge_saas_db(
+    db_path: Union[str, Path],
+    max_age_days: int,
+    *,
+    now: Optional[datetime] = None,
+    dry_run: bool = False,
+) -> SaaSRetentionStats:
+    """Purge old tenant-scoped SaaS scan, usage, lock, and audit rows."""
+    if max_age_days < 0:
+        raise ValueError(f"max_age_days must be >= 0, got {max_age_days}")
+
+    target = Path(db_path)
+    cutoff = (now or datetime.now(timezone.utc)) - timedelta(days=max_age_days)
+    if not target.exists():
+        return SaaSRetentionStats(
+            path=str(target),
+            cutoff=cutoff,
+            kept=0,
+            dropped=0,
+            dry_run=dry_run,
+        )
+
+    cutoff_text = cutoff.isoformat()
+    specs = [
+        ("scan_results", "created_at"),
+        ("scan_jobs", "created_at"),
+        ("usage_events", "occurred_at"),
+        ("feature_locks", "created_at"),
+        ("audit_logs", "created_at"),
+    ]
+    total = dropped = 0
+    with sqlite3.connect(target) as conn:
+        conn.execute("PRAGMA foreign_keys = ON")
+        cursor = conn.cursor()
+        for table, column in specs:
+            if not _sqlite_table_exists(cursor, table):
+                continue
+            count = cursor.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            drop_count = cursor.execute(
+                f"SELECT COUNT(*) FROM {table} WHERE {column} < ?",
+                (cutoff_text,),
+            ).fetchone()[0]
+            total += count
+            dropped += drop_count
+            if drop_count and not dry_run:
+                cursor.execute(f"DELETE FROM {table} WHERE {column} < ?", (cutoff_text,))
+        if not dry_run:
+            conn.commit()
+
+    kept = total - dropped
+    logger.info(
+        "Purged SaaS DB %s: kept=%d dropped=%d dry_run=%s cutoff=%s",
+        target, kept, dropped, dry_run, cutoff.isoformat(),
+    )
+    return SaaSRetentionStats(
+        path=str(target),
+        cutoff=cutoff,
+        kept=kept,
+        dropped=dropped,
+        dry_run=dry_run,
+    )
+
+
+def erase_subject_from_saas_db(
+    db_path: Union[str, Path],
+    subject: str,
+    *,
+    dry_run: bool = False,
+) -> ErasureStats:
+    """Remove SaaS scan/audit rows that mention an email address or email_id."""
+    subject = subject.strip()
+    if not subject:
+        raise ValueError("subject must not be empty")
+
+    target = Path(db_path)
+    if not target.exists():
+        return ErasureStats(path=str(target), subject=subject, kept=0, dropped=0, dry_run=dry_run)
+
+    needle = _sql_like_contains(subject)
+    specs = [
+        ("scan_results", "lower(email_id) LIKE ? ESCAPE '\\' OR lower(result_json) LIKE ? ESCAPE '\\'"),
+        ("audit_logs", "lower(metadata_json) LIKE ? ESCAPE '\\'"),
+    ]
+    total = dropped = 0
+    with sqlite3.connect(target) as conn:
+        conn.execute("PRAGMA foreign_keys = ON")
+        cursor = conn.cursor()
+        for table, predicate in specs:
+            if not _sqlite_table_exists(cursor, table):
+                continue
+            count = cursor.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            params = (needle, needle) if predicate.count("?") == 2 else (needle,)
+            drop_count = cursor.execute(
+                f"SELECT COUNT(*) FROM {table} WHERE {predicate}",
+                params,
+            ).fetchone()[0]
+            total += count
+            dropped += drop_count
+            if drop_count and not dry_run:
+                cursor.execute(f"DELETE FROM {table} WHERE {predicate}", params)
+        if not dry_run:
+            conn.commit()
+
+    kept = total - dropped
+    logger.info(
+        "Erased subject from SaaS DB %s: subject=%s kept=%d dropped=%d dry_run=%s",
+        target, subject, kept, dropped, dry_run,
+    )
+    return ErasureStats(
+        path=str(target),
+        subject=subject,
+        kept=kept,
+        dropped=dropped,
         dry_run=dry_run,
     )
 

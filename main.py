@@ -42,6 +42,15 @@ from src.security.web_security import (
 )
 from src.security.html_sanitizer import sanitize_email_html
 from src.feedback.email_lookup import EmailLookupIndex
+from src.saas import (
+    USER_CSRF_COOKIE_NAME,
+    USER_SESSION_COOKIE_NAME,
+    DuplicateEmailError,
+    InvalidCredentialsError,
+    SaaSSessionManager,
+    SaaSStore,
+)
+from src.saas.auth import USER_SESSION_MAX_AGE_SECONDS, verify_user_csrf
 
 
 # Configure logging
@@ -99,6 +108,100 @@ def _compact_monitor_record(record: dict) -> dict:
     return compact
 
 
+def _safe_api_value(value):
+    if hasattr(value, "value"):
+        return value.value
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return value
+
+
+def _serialize_analyzer_results(result) -> dict:
+    analyzer_results = {}
+    for name, ar in (result.analyzer_results or {}).items():
+        details = ar.details or {}
+        safe_details = {}
+        for key, value in details.items():
+            if key == "screenshots":
+                safe_details[key] = {url: "(base64 image)" for url in (value or {})}
+            elif isinstance(value, bytes):
+                safe_details[key] = "(binary data)"
+            else:
+                safe_details[key] = value
+        analyzer_results[name] = {
+            "risk_score": ar.risk_score,
+            "confidence": ar.confidence,
+            "details": safe_details,
+            "errors": ar.errors if ar.errors else None,
+        }
+    return analyzer_results
+
+
+def _payment_protection_from_analyzers(analyzer_results: dict) -> dict | None:
+    if "payment_fraud" not in analyzer_results:
+        return None
+    return analyzer_results["payment_fraud"].get("details")
+
+
+def _extracted_urls_payload(result) -> list[dict]:
+    return [
+        {"url": u.url, "source": u.source.value, "source_detail": u.source_detail}
+        if hasattr(u, "source")
+        else {
+            "url": u.url if hasattr(u, "url") else str(u),
+            "source": "unknown",
+            "source_detail": "",
+        }
+        for u in (result.extracted_urls or [])
+    ]
+
+
+def _headers_payload(email: EmailObject, result) -> dict:
+    iocs = result.iocs or {}
+    headers_raw = iocs.get("headers", {})
+    if hasattr(headers_raw, "__dict__"):
+        headers_out = {key: _safe_api_value(value) for key, value in vars(headers_raw).items()}
+    elif isinstance(headers_raw, dict):
+        headers_out = {key: _safe_api_value(value) for key, value in headers_raw.items()}
+    else:
+        headers_out = {}
+
+    headers_out["from_address"] = email.from_address or ""
+    headers_out["from_display_name"] = email.from_display_name or ""
+    headers_out["subject"] = email.subject or ""
+    headers_out["reply_to"] = email.reply_to or ""
+    headers_out["to_addresses"] = email.to_addresses or []
+
+    def _auth_str(val):
+        if val is True:
+            return "pass"
+        if val is False:
+            return "fail"
+        return "unknown"
+
+    headers_out["spf_result"] = _auth_str(headers_out.get("spf_pass"))
+    headers_out["dkim_result"] = _auth_str(headers_out.get("dkim_pass"))
+    headers_out["dmarc_result"] = _auth_str(headers_out.get("dmarc_pass"))
+    headers_out["reply_to_mismatch"] = headers_out.get("from_reply_to_mismatch", False)
+    return headers_out
+
+
+def _api_payload_from_pipeline(email: EmailObject, result, timestamp: str) -> dict:
+    analyzer_results = _serialize_analyzer_results(result)
+    return {
+        "email_id": result.email_id,
+        "verdict": result.verdict.value,
+        "overall_score": result.overall_score,
+        "overall_confidence": result.overall_confidence,
+        "timestamp": timestamp,
+        "analyzer_results": analyzer_results,
+        "payment_protection": _payment_protection_from_analyzers(analyzer_results),
+        "extracted_urls": _extracted_urls_payload(result),
+        "reasoning": result.reasoning if isinstance(result.reasoning, list) else [str(result.reasoning)],
+        "iocs": {"headers": _headers_payload(email, result)},
+    }
+
+
 class PhishingDetectionApp:
     """Main application orchestrator."""
 
@@ -113,6 +216,12 @@ class PhishingDetectionApp:
         self.token_verifier = TokenVerifier(
             getattr(self.config, "analyst_api_token", None)
         )
+        session_secret = (
+            getattr(self.config, "saas_session_secret", "")
+            or getattr(self.config, "analyst_api_token", "")
+        )
+        self.saas_session_manager = SaaSSessionManager(session_secret)
+        self._saas_store = None
         self._monitor = None  # set when IMAP monitor starts
         # Display-only: in-memory list of recent uploads for the monitor
         # page render. Capped at 200; NOT used for any lookup that needs
@@ -364,6 +473,89 @@ class PhishingDetectionApp:
                 samesite="strict",
             )
 
+        def _get_saas_store() -> SaaSStore:
+            if self._saas_store is None:
+                db_path = getattr(self.config, "saas_db_path", "data/saas.db")
+                self._saas_store = SaaSStore(db_path)
+            return self._saas_store
+
+        def _set_user_auth_cookies(response, request: Request, context) -> None:
+            if not self.saas_session_manager.enabled:
+                raise HTTPException(
+                    status_code=503,
+                    detail="User sessions are not configured on this server",
+                )
+            session_cookie = self.saas_session_manager.create_session_cookie(
+                user_id=context.user_id,
+                email=context.email,
+                org_id=context.org_id,
+            )
+            csrf_token = self.saas_session_manager.create_csrf_token()
+            secure_cookie = _is_secure_request(request)
+            response.set_cookie(
+                USER_SESSION_COOKIE_NAME,
+                session_cookie,
+                max_age=USER_SESSION_MAX_AGE_SECONDS,
+                httponly=True,
+                secure=secure_cookie,
+                samesite="strict",
+            )
+            response.set_cookie(
+                USER_CSRF_COOKIE_NAME,
+                csrf_token,
+                max_age=USER_SESSION_MAX_AGE_SECONDS,
+                httponly=False,
+                secure=secure_cookie,
+                samesite="strict",
+            )
+
+        def _clear_user_auth_cookies(response) -> None:
+            response.delete_cookie(USER_SESSION_COOKIE_NAME)
+            response.delete_cookie(USER_CSRF_COOKIE_NAME)
+
+        def _current_user_context(request: Request, *, require_csrf: bool = False):
+            if not self.saas_session_manager.enabled:
+                raise HTTPException(
+                    status_code=503,
+                    detail="User sessions are not configured on this server",
+                )
+            if require_csrf:
+                verify_user_csrf(request)
+            payload = self.saas_session_manager.session_payload(
+                request.cookies.get(USER_SESSION_COOKIE_NAME)
+            )
+            if payload is None:
+                raise HTTPException(status_code=401, detail="User login required")
+            context = _get_saas_store().get_account_context(str(payload["sub"]))
+            if context is None or context.org_id != payload.get("org_id"):
+                raise HTTPException(status_code=401, detail="User login required")
+            return context
+
+        def _saas_session_payload(request: Request) -> dict:
+            if not self.saas_session_manager.enabled:
+                return {
+                    "auth_enabled": False,
+                    "authenticated": False,
+                    "public_signup_enabled": bool(
+                        getattr(self.config, "saas_public_signup_enabled", False)
+                    ),
+                    "account": None,
+                }
+            payload = self.saas_session_manager.session_payload(
+                request.cookies.get(USER_SESSION_COOKIE_NAME)
+            )
+            context = _get_saas_store().get_account_context(str(payload["sub"])) if payload else None
+            return {
+                "auth_enabled": True,
+                "authenticated": context is not None,
+                "public_signup_enabled": bool(
+                    getattr(self.config, "saas_public_signup_enabled", False)
+                ),
+                "account": context.to_dict() if context else None,
+                "csrf_cookie": USER_CSRF_COOKIE_NAME,
+                "csrf_header": "x-csrf-token",
+            }
+
         @app.get("/login", response_class=HTMLResponse)
         async def login_page(request: Request, next: str = "/dashboard"):
             """Serve the dashboard login page."""
@@ -421,6 +613,222 @@ class PhishingDetectionApp:
                 "max_age_seconds": SESSION_MAX_AGE_SECONDS,
                 "public_demo_mode": _demo_enabled(),
             }
+
+        @app.get("/app", response_class=HTMLResponse)
+        async def saas_app_page():
+            """Serve the user-login SaaS shell."""
+            app_path = Path("./templates/saas_app.html")
+            return HTMLResponse(content=_inject_shared(
+                app_path.read_text(encoding="utf-8")
+            ))
+
+        @app.get("/api/saas/session")
+        async def api_saas_session(request: Request):
+            """Return normal-user session, plan, and signup state."""
+            return _saas_session_payload(request)
+
+        @app.post("/api/saas/auth/signup")
+        async def api_saas_signup(request: Request):
+            """Create a free-tier user account when public signup is enabled."""
+            if not getattr(self.config, "saas_public_signup_enabled", False):
+                raise HTTPException(
+                    status_code=403,
+                    detail="Public signup is not enabled on this deployment",
+                )
+            if not self.saas_session_manager.enabled:
+                raise HTTPException(
+                    status_code=503,
+                    detail="User sessions are not configured on this server",
+                )
+            payload = await request.json()
+            email = str(payload.get("email", ""))
+            password = str(payload.get("password", ""))
+            org_name = str(payload.get("org_name", "") or "")
+            try:
+                context = _get_saas_store().create_user_with_org(
+                    email=email,
+                    password=password,
+                    org_name=org_name or None,
+                    plan_slug="free",
+                )
+            except DuplicateEmailError:
+                raise HTTPException(status_code=409, detail="An account already exists for this email")
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
+
+            response = JSONResponse({"status": "ok", "account": context.to_dict()})
+            _set_user_auth_cookies(response, request, context)
+            return response
+
+        @app.post("/api/saas/auth/login")
+        async def api_saas_login(request: Request):
+            """Log in a normal SaaS user with email/password."""
+            if not self.saas_session_manager.enabled:
+                raise HTTPException(
+                    status_code=503,
+                    detail="User sessions are not configured on this server",
+                )
+            payload = await request.json()
+            try:
+                context = _get_saas_store().authenticate(
+                    str(payload.get("email", "")),
+                    str(payload.get("password", "")),
+                )
+            except InvalidCredentialsError:
+                raise HTTPException(status_code=401, detail="Invalid email or password")
+            response = JSONResponse({"status": "ok", "account": context.to_dict()})
+            _set_user_auth_cookies(response, request, context)
+            return response
+
+        @app.post("/api/saas/auth/logout")
+        async def api_saas_logout(request: Request):
+            """Log out a normal SaaS user."""
+            _current_user_context(request, require_csrf=True)
+            response = JSONResponse({"status": "ok"})
+            _clear_user_auth_cookies(response)
+            return response
+
+        @app.get("/api/saas/plans")
+        async def api_saas_plans(request: Request):
+            """Return plan catalog and account-scoped usage for a signed-in user."""
+            context = _current_user_context(request)
+            payload = plan_payload(current_plan=context.plan_slug)
+            payload["usage"] = {
+                "manual_scan": {
+                    "used": context.monthly_scan_used,
+                    "quota": context.monthly_scan_quota,
+                    "remaining": context.monthly_scan_remaining,
+                }
+            }
+            payload["account"] = context.to_dict()
+            return payload
+
+        @app.get("/api/saas/scans")
+        async def api_saas_scans(request: Request, limit: int = Query(20, ge=1, le=100)):
+            """Return tenant-scoped scan history for the signed-in user's organization."""
+            context = _current_user_context(request)
+            return {
+                "account": context.to_dict(),
+                "results": _get_saas_store().list_scan_results(context.org_id, limit=limit),
+            }
+
+        @app.post("/api/saas/billing/checkout")
+        async def api_saas_billing_checkout(request: Request):
+            """Start a future Stripe Checkout flow, or explain what is missing."""
+            context = _current_user_context(request, require_csrf=True)
+            payload = await request.json()
+            target_plan = str(payload.get("plan", "")).strip().lower()
+            try:
+                from src.billing.plans import get_plan
+                plan = get_plan(target_plan)
+            except KeyError:
+                raise HTTPException(status_code=400, detail="Unknown plan")
+            if plan.slug == "free":
+                raise HTTPException(status_code=400, detail="Free does not need checkout")
+
+            import os as _os
+            missing = []
+            if not _os.getenv("STRIPE_SECRET_KEY"):
+                missing.append("STRIPE_SECRET_KEY")
+            if plan.stripe_price_env and not _os.getenv(plan.stripe_price_env):
+                missing.append(plan.stripe_price_env)
+            if missing:
+                return JSONResponse(
+                    status_code=503,
+                    content={
+                        "billing_available": False,
+                        "reason": "Stripe Billing is not configured on this deployment.",
+                        "missing_env": missing,
+                        "recommended_integration": (
+                            "Stripe Billing + Checkout Sessions in subscription mode, "
+                            "then mirror webhook subscription state into the database."
+                        ),
+                        "account": context.to_dict(),
+                    },
+                )
+
+            return JSONResponse(
+                status_code=501,
+                content={
+                    "billing_available": False,
+                    "reason": "Stripe SDK wiring is intentionally deferred until live prices are configured.",
+                    "plan": plan.slug,
+                    "account": context.to_dict(),
+                },
+            )
+
+        @app.post("/api/saas/analyze/upload")
+        async def api_saas_analyze_upload(request: Request, file: UploadFile = File(...)):
+            """Analyze an uploaded email for a signed-in user with plan gates."""
+            context = _current_user_context(request, require_csrf=True)
+            store = _get_saas_store()
+            scan_access = store.check_entitlement(
+                org_id=context.org_id,
+                user_id=context.user_id,
+                feature_slug="manual_scan",
+                enforce_scan_quota=True,
+            )
+            if not scan_access.available:
+                return JSONResponse(status_code=402, content={"locked": scan_access.to_dict()})
+
+            raw = await file.read()
+            if not raw:
+                raise HTTPException(status_code=400, detail="Empty file uploaded")
+
+            from src.extractors.eml_parser import EMLParser
+            parser = EMLParser()
+            email = parser.parse_bytes(raw)
+            if email is None:
+                raise HTTPException(status_code=422, detail="Could not parse email file")
+
+            def feature_gate(feature_slug: str) -> dict:
+                return store.check_entitlement(
+                    org_id=context.org_id,
+                    user_id=context.user_id,
+                    feature_slug=feature_slug,
+                    enforce_scan_quota=False,
+                ).to_dict()
+
+            from datetime import datetime, timezone
+            scan_job_id = store.create_scan_job(
+                org_id=context.org_id,
+                user_id=context.user_id,
+                source="manual_upload",
+            )
+            try:
+                result = await self.pipeline.analyze(email, feature_gate=feature_gate)
+                timestamp = datetime.now(timezone.utc).isoformat()
+                response_payload = _api_payload_from_pipeline(email, result, timestamp)
+                payment = response_payload.get("payment_protection") or {}
+                store.record_usage_event(
+                    org_id=context.org_id,
+                    user_id=context.user_id,
+                    feature_slug="manual_scan",
+                    quantity=1,
+                    idempotency_key=scan_job_id,
+                )
+                store.record_scan_result(
+                    org_id=context.org_id,
+                    user_id=context.user_id,
+                    scan_job_id=scan_job_id,
+                    email_id=result.email_id,
+                    verdict=result.verdict.value,
+                    payment_decision=payment.get("decision") if isinstance(payment, dict) else None,
+                    result=response_payload,
+                )
+                store.complete_scan_job(scan_job_id, "completed")
+            except Exception:
+                store.complete_scan_job(scan_job_id, "failed")
+                raise
+
+            updated_context = store.get_account_context(context.user_id)
+            response_payload["account"] = updated_context.to_dict() if updated_context else context.to_dict()
+            response_payload["feature_locks"] = [
+                item
+                for item in response_payload["analyzer_results"].values()
+                if (item.get("details") or {}).get("message") == "feature_locked"
+            ]
+            return response_payload
 
         @app.get("/demo", response_class=HTMLResponse)
         async def public_demo():
@@ -1800,7 +2208,7 @@ Quick Start:
     )
     purge_parser.add_argument(
         "--target",
-        choices=["jsonl", "alerts", "feedback", "sender-profiles", "all"],
+        choices=["jsonl", "alerts", "feedback", "saas", "sender-profiles", "all"],
         default="jsonl",
         help="Data store to purge. Default preserves the legacy JSONL-only behavior.",
     )
@@ -1825,6 +2233,11 @@ Quick Start:
         "--alerts-path",
         default="data/alerts.jsonl",
         help="Path to the alert JSONL file to purge.",
+    )
+    purge_parser.add_argument(
+        "--saas-db",
+        default="data/saas.db",
+        help="Path to the SaaS account SQLite DB to purge.",
     )
     purge_parser.add_argument(
         "--sender-profiles-db",
@@ -1918,10 +2331,12 @@ Quick Start:
             erase_subject_from_alerts_jsonl,
             erase_subject_from_feedback_db,
             erase_subject_from_results_jsonl,
+            erase_subject_from_saas_db,
             erase_subject_from_sender_profiles_db,
             purge_alerts_jsonl,
             purge_feedback_db,
             purge_results_jsonl,
+            purge_saas_db,
             purge_sender_profiles_db,
         )
         config = PipelineConfig.from_env()
@@ -1961,6 +2376,17 @@ Quick Start:
                 print(f"  subject: {feedback_erasure.subject}")
                 print(f"  kept:    {feedback_erasure.kept}")
                 print(f"  dropped: {feedback_erasure.dropped}")
+            if args.target in ("saas", "all"):
+                saas_erasure = erase_subject_from_saas_db(
+                    args.saas_db,
+                    args.by_address,
+                    dry_run=args.dry_run,
+                )
+                prefix = "[DRY RUN] " if args.dry_run else ""
+                print(f"{prefix}Erased subject from SaaS DB {saas_erasure.path}")
+                print(f"  subject: {saas_erasure.subject}")
+                print(f"  kept:    {saas_erasure.kept}")
+                print(f"  dropped: {saas_erasure.dropped}")
             if args.target in ("sender-profiles", "all"):
                 sender_erasure = erase_subject_from_sender_profiles_db(
                     args.sender_profiles_db,
@@ -2060,6 +2486,18 @@ Quick Start:
             print(f"  keep recent: {feedback_stats.keep_recent}")
             print(f"  kept:        {feedback_stats.kept}")
             print(f"  dropped:     {feedback_stats.dropped}")
+
+        if args.target in ("saas", "all"):
+            saas_stats = purge_saas_db(
+                args.saas_db,
+                max_age_days=max_age,
+                dry_run=args.dry_run,
+            )
+            prefix = "[DRY RUN] " if args.dry_run else ""
+            print(f"{prefix}SaaS DB {saas_stats.path}")
+            print(f"  cutoff:  {saas_stats.cutoff.isoformat()}")
+            print(f"  kept:    {saas_stats.kept}")
+            print(f"  dropped: {saas_stats.dropped}")
 
         if args.target in ("sender-profiles", "all"):
             sender_stats = purge_sender_profiles_db(

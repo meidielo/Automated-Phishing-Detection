@@ -44,13 +44,15 @@ At minimum, fill in:
 - `ANTHROPIC_API_KEY`
 - `GOOGLE_SAFE_BROWSING_API_KEY`
 - `ANALYST_API_TOKEN` (generate one: `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`)
+- `SAAS_SESSION_SECRET` (generate separately: `python3 -c "import secrets; print(secrets.token_urlsafe(48))"`)
 
 Optional public preview:
 - Set `PUBLIC_DEMO_MODE=true` only if you want `/demo` to be reachable without login. It is sample-only: it does not expose live upload analysis, mailbox monitoring, paid API-backed checks, feedback learning, dashboard data, or account management.
 - `/api/demo/plans` is also public in demo mode. It exposes non-secret plan and lock metadata only, so visitors can see which analyzers require Starter, Pro, or Business.
+- Leave `SAAS_PUBLIC_SIGNUP_ENABLED=false` until the deployment is ready to accept visitor email uploads. `/app` and `/api/saas/*` support normal user accounts, tenant-scoped scan storage, and free-tier quota gates, but public signup is an explicit deployment decision.
 
 Future subscription setup:
-- Fill `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and `STRIPE_PRICE_*` only after the user/org database and webhook subscription mirror are implemented. Until then, the plan catalog is display and entitlement metadata only.
+- Fill `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and `STRIPE_PRICE_*` only after webhook signature verification and live Checkout are enabled. Until then, `/api/saas/billing/checkout` reports missing Stripe configuration instead of pretending billing is live.
 
 Avoid `$` in `.env` values unless you know how to escape Docker Compose
 interpolation. If `docker compose config` prints warnings about a variable that

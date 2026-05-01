@@ -73,7 +73,8 @@ Status is one of:
 | **Multi-container Docker Compose browser split** - URL detonation connects to a separate `browser-sandbox` Playwright service via `PLAYWRIGHT_WS_ENDPOINT`. | `docker-compose.yml`, `docker-compose.production.yml`, `src/analyzers/url_detonation.py` |
 | **Public sample-only demo mode** - `/demo` can be exposed without analyst login while live analysis, mailbox monitoring, paid API-backed checks, feedback learning, dashboard data, and account management remain token-protected. | `PUBLIC_DEMO_MODE`, `main.py`, `templates/demo.html`, `static/demo.css` |
 | **Plan-aware feature locks** - public demo shows Free/Starter/Pro/Business analyzer locks, and `/api/demo/plans` exposes reusable plan metadata for future Stripe Billing and DB-backed quota gates. | `src/billing/plans.py`, `templates/demo.html`, `docs/saas-architecture.md` |
-| 1090 tests (53 test modules) | unit + integration |
+| **SaaS account and quota foundation** - `/app` adds normal user login, signed user sessions with CSRF, SQLite `users`/`organizations`/`subscriptions`/`scan_results`/`usage_events`, tenant-scoped user scan history, free-tier scan quota, and analyzer feature gates that return locked tier metadata before paid clients load. Public signup stays disabled by default. | `src/saas/`, `src/billing/entitlements.py`, `main.py`, `templates/saas_app.html`, `static/saas.*` |
+| 1109 tests (56 test modules) | unit + integration |
 
 ---
 
@@ -87,8 +88,8 @@ The payment dataset has tooling, synthetic seed data, public-advisory-derived `V
 ### Per-user mailbox isolation
 The public demo deliberately does not connect visitor mailboxes. A real user-owned mailbox product needs OAuth or user-provided IMAP credentials per user, encrypted per-user tokens, user-scoped result storage, per-user retention/deletion, and tests proving one user cannot see another user's mailbox, scans, or feedback labels.
 
-### Database-backed accounts and subscriptions
-Move from the analyst-token single-operator model to normal user login with `users`, `organizations`, `memberships`, `subscriptions`, `scan_jobs`, `scan_results`, and `usage_events`. Stripe Billing should update subscription state through webhooks; expensive analyzers should check `src/billing/plans.py` feature slugs before running. See `docs/saas-architecture.md`.
+### Stripe Checkout and webhook subscription sync
+The database now stores organization subscription state, but live Stripe Checkout creation and webhook signature verification are intentionally not active until real Stripe price IDs are configured. Next step: create Checkout Sessions in subscription mode, verify `STRIPE_WEBHOOK_SECRET`, mirror status/plan/current-period into `subscriptions`, and add Customer Portal links for self-service upgrades/cancellation.
 
 ### Audit trail for feedback labels
 Append-only log of who relabeled what. Closes residual risk **R2**. Required before the project is honest about being multi-analyst.
@@ -106,7 +107,7 @@ When an analyst marks an email CONFIRMED_PHISHING, push the URL/domain/hash IOCs
 
 ## In progress
 
-*(none currently — last shipped pass was the detection-engineering reframing: ATT&CK mapping, threat model, Sigma exports.)*
+*(none currently. Last shipped pass was the SaaS account and quota foundation.)*
 
 ---
 
@@ -114,8 +115,8 @@ When an analyst marks an email CONFIRMED_PHISHING, push the URL/domain/hash IOCs
 
 These were genuinely evaluated and decided against, at least for now. The reasoning is here so future-me doesn't relitigate.
 
-### Multi-tenant namespace isolation
-**Why deferred:** the project is single-operator by design. Adding tenant separation means rewriting the feedback DB schema, the credential vault, and the dashboard. Public demo mode is sample-only and does not change that boundary. A real multi-user mailbox product should start from the planned per-user mailbox isolation work above. Documented as non-goal #4 in `THREAT_MODEL.md`.
+### Full multi-tenant mailbox and analyst-dashboard namespace isolation
+**Why deferred:** the SaaS path now isolates user manual scans by `org_id`, but the legacy analyst dashboard, feedback DB, credential vault, and mailbox monitor remain single-operator/admin surfaces. A real multi-user mailbox product should start from the planned per-user mailbox isolation work above before exposing OAuth/IMAP connection to visitors.
 
 ### gVisor / Firecracker for browser sandbox
 **Why deferred:** Docker container isolation is good enough for a single-operator portfolio deployment. gVisor is the right answer for production, but the operational burden (kernel compat, debuggability) is too high for solo maintenance.
@@ -151,7 +152,7 @@ Restating the explicit non-goals from `THREAT_MODEL.md` §7 here so they live ne
 - **Mail filtering / blocking.** Verdicts are advisory. Routing is the operator's job.
 - **SOAR functionality.** No automated remediation, ticket creation, or user notification.
 - **EDR / post-compromise detection.** T1078 full, T1098, T1606 — out of scope.
-- **Multi-tenant SaaS deployment.** Single operator, single trust domain.
+- **Visitor-owned mailbox SaaS deployment.** User manual scans are tenant-scoped, but live mailbox connection remains out of scope until per-user OAuth/IMAP isolation is implemented.
 - **Active takedown of phishing infrastructure.** Identification only.
 
 ---
