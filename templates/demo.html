@@ -10,6 +10,7 @@
   <header class="demo-topbar">
     <a class="demo-logo" href="/demo">PhishDetect</a>
     <div class="demo-actions">
+      <a href="#plans">Plans</a>
       <a href="/login">Analyst login</a>
     </div>
   </header>
@@ -23,6 +24,21 @@
         paid API-backed checks, feedback learning, and account management require
         analyst access.
       </p>
+    </section>
+
+    <section class="plan-strip" aria-label="Free tier usage preview">
+      <div>
+        <span class="eyebrow">Free preview</span>
+        <h2>5 manual scans/month before upgrade</h2>
+        <p>Good for trying the payment firewall. Paid API-backed analyzers unlock only after login and subscription.</p>
+      </div>
+      <div class="usage-meter" aria-label="Free tier scan usage">
+        <div class="usage-top">
+          <span>Demo usage</span>
+          <strong>0 / 5 scans</strong>
+        </div>
+        <div class="usage-track" aria-hidden="true"><span></span></div>
+      </div>
     </section>
 
     <section class="demo-grid" aria-label="Demo limitations and sample result">
@@ -109,6 +125,119 @@
           <strong>Block payment release</strong>
         </div>
       </article>
+    </section>
+
+    <section class="entitlement-section" aria-label="Analyzer access by plan">
+      <div class="section-heading">
+        <div>
+          <span class="eyebrow">Plan-aware scanner</span>
+          <h2>Show locked checks before they burn paid API quota</h2>
+        </div>
+        <p>
+          Free users can see exactly which checks ran and which checks are locked.
+          The same feature slugs are exposed by `/api/demo/plans` for future Stripe
+          and database-backed account logic.
+        </p>
+      </div>
+
+      <div class="feature-lock-grid">
+        <article class="feature-card available">
+          <span class="feature-status">Included in Free</span>
+          <h3>Header authentication</h3>
+          <p>SPF, DKIM, DMARC, reply-to, and sender-domain checks.</p>
+        </article>
+        <article class="feature-card available">
+          <span class="feature-status">Included in Free</span>
+          <h3>Payment scam rules</h3>
+          <p>Bank-detail change, urgency, invoice, and executive-transfer signals.</p>
+        </article>
+        <article class="feature-card locked">
+          <span class="feature-status">Starter</span>
+          <h3>URL reputation</h3>
+          <p>VirusTotal, Safe Browsing, AbuseIPDB, and urlscan-backed URL checks.</p>
+        </article>
+        <article class="feature-card locked">
+          <span class="feature-status">Starter</span>
+          <h3>Domain intelligence</h3>
+          <p>WHOIS, domain age, hosting, and suspicious registration signals.</p>
+        </article>
+        <article class="feature-card locked">
+          <span class="feature-status">Pro</span>
+          <h3>Mailbox monitoring</h3>
+          <p>Continuous user-owned mailbox polling with per-user result isolation.</p>
+        </article>
+        <article class="feature-card locked">
+          <span class="feature-status">Pro</span>
+          <h3>LLM BEC reasoning</h3>
+          <p>LLM-backed social-engineering and payment-intent analysis.</p>
+        </article>
+        <article class="feature-card locked">
+          <span class="feature-status">Pro</span>
+          <h3>Browser URL detonation</h3>
+          <p>Sandboxed browser visits, redirects, login-form checks, and screenshots.</p>
+        </article>
+        <article class="feature-card locked">
+          <span class="feature-status">Business</span>
+          <h3>Team audit trail</h3>
+          <p>Role boundaries, feedback-label audit logs, and finance-team exports.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="pricing-section" id="plans" aria-label="Subscription plans">
+      <div class="section-heading">
+        <div>
+          <span class="eyebrow">Subscription design</span>
+          <h2>Simple tiers, clear API budgets</h2>
+        </div>
+        <p>
+          Stripe Billing should own subscription state. The app database should
+          store users, organizations, scan usage, and the Stripe customer/subscription IDs.
+        </p>
+      </div>
+
+      <div class="pricing-grid">
+        <article class="price-card">
+          <span class="tier">Free</span>
+          <strong>$0</strong>
+          <p>5 manual scans/month. No mailbox connection or paid API checks.</p>
+          <ul>
+            <li>Header authentication</li>
+            <li>Payment scam rules</li>
+            <li>Locked analyzer preview</li>
+          </ul>
+        </article>
+        <article class="price-card">
+          <span class="tier">Starter</span>
+          <strong>$19/mo</strong>
+          <p>100 scans/month with private scan history and reputation checks.</p>
+          <ul>
+            <li>URL reputation</li>
+            <li>Domain intelligence</li>
+            <li>One mailbox budget</li>
+          </ul>
+        </article>
+        <article class="price-card highlighted">
+          <span class="tier">Pro</span>
+          <strong>$49/mo</strong>
+          <p>1,000 scans/month for SMEs that receive invoices by email.</p>
+          <ul>
+            <li>Mailbox monitoring</li>
+            <li>LLM BEC reasoning</li>
+            <li>Browser URL detonation</li>
+          </ul>
+        </article>
+        <article class="price-card">
+          <span class="tier">Business</span>
+          <strong>$149/mo</strong>
+          <p>5,000 scans/month with team controls and higher mailbox/API budgets.</p>
+          <ul>
+            <li>10 mailbox budget</li>
+            <li>Team audit trail</li>
+            <li>Export-ready evidence</li>
+          </ul>
+        </article>
+      </div>
     </section>
   </main>
 </body>

@@ -23,6 +23,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from uvicorn import run
 
+from src.billing.plans import plan_payload
 from src.config import PipelineConfig
 from src.models import EmailObject
 from src.orchestrator.pipeline import PhishingPipeline
@@ -450,6 +451,13 @@ class PhishingDetectionApp:
                     "checks, feedback learning, and account management."
                 ),
             }
+
+        @app.get("/api/demo/plans")
+        async def api_demo_plans():
+            """Return public, non-secret plan and feature-lock metadata."""
+            if not _demo_enabled():
+                raise HTTPException(status_code=404, detail="Public demo mode is not enabled")
+            return plan_payload(current_plan="free")
 
         @app.get("/", response_class=HTMLResponse)
         async def index():

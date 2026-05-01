@@ -72,7 +72,8 @@ Status is one of:
 | **Redacted Gmail-derived payment samples** - local ignored payment dataset now includes redacted real Gmail search-summary examples plus 25 full-body invoice/receipt/payment examples and fresh decision eval/ML exports. Raw mail is not committed. | `data/payment_scam_dataset/` (ignored), `scripts/payment_dataset.py readiness` |
 | **Multi-container Docker Compose browser split** - URL detonation connects to a separate `browser-sandbox` Playwright service via `PLAYWRIGHT_WS_ENDPOINT`. | `docker-compose.yml`, `docker-compose.production.yml`, `src/analyzers/url_detonation.py` |
 | **Public sample-only demo mode** - `/demo` can be exposed without analyst login while live analysis, mailbox monitoring, paid API-backed checks, feedback learning, dashboard data, and account management remain token-protected. | `PUBLIC_DEMO_MODE`, `main.py`, `templates/demo.html`, `static/demo.css` |
-| 1082 tests (52 test modules) | unit + integration |
+| **Plan-aware feature locks** - public demo shows Free/Starter/Pro/Business analyzer locks, and `/api/demo/plans` exposes reusable plan metadata for future Stripe Billing and DB-backed quota gates. | `src/billing/plans.py`, `templates/demo.html`, `docs/saas-architecture.md` |
+| 1090 tests (53 test modules) | unit + integration |
 
 ---
 
@@ -85,6 +86,9 @@ The payment dataset has tooling, synthetic seed data, public-advisory-derived `V
 
 ### Per-user mailbox isolation
 The public demo deliberately does not connect visitor mailboxes. A real user-owned mailbox product needs OAuth or user-provided IMAP credentials per user, encrypted per-user tokens, user-scoped result storage, per-user retention/deletion, and tests proving one user cannot see another user's mailbox, scans, or feedback labels.
+
+### Database-backed accounts and subscriptions
+Move from the analyst-token single-operator model to normal user login with `users`, `organizations`, `memberships`, `subscriptions`, `scan_jobs`, `scan_results`, and `usage_events`. Stripe Billing should update subscription state through webhooks; expensive analyzers should check `src/billing/plans.py` feature slugs before running. See `docs/saas-architecture.md`.
 
 ### Audit trail for feedback labels
 Append-only log of who relabeled what. Closes residual risk **R2**. Required before the project is honest about being multi-analyst.

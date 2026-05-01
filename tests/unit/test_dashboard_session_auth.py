@@ -160,6 +160,38 @@ def test_public_demo_status_declares_locked_capabilities():
     assert payload["user_mailboxes"] == "not_connected_in_public_demo"
 
 
+def test_public_demo_plan_catalog_declares_free_locks():
+    client = TestClient(
+        _build_app_with_token(public_demo_mode=True),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    response = client.get("/api/demo/plans")
+
+    payload = response.json()
+    features = {feature["slug"]: feature for feature in payload["features"]}
+    assert response.status_code == 200
+    assert payload["current_plan"] == "free"
+    assert payload["billing_recommendation"] == "Stripe Billing + Checkout Sessions + Customer Portal"
+    assert features["payment_rules"]["available"] is True
+    assert features["url_reputation"]["available"] is False
+    assert features["url_reputation"]["required_plan_name"] == "Starter"
+    assert features["url_detonation"]["required_plan_name"] == "Pro"
+
+
+def test_public_demo_plan_catalog_is_not_available_by_default():
+    client = TestClient(
+        _build_app_with_token(),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    response = client.get("/api/demo/plans")
+
+    assert response.status_code == 404
+
+
 def test_public_demo_does_not_bypass_real_analysis_or_dashboard_auth():
     client = TestClient(
         _build_app_with_token(public_demo_mode=True),

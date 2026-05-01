@@ -47,6 +47,10 @@ At minimum, fill in:
 
 Optional public preview:
 - Set `PUBLIC_DEMO_MODE=true` only if you want `/demo` to be reachable without login. It is sample-only: it does not expose live upload analysis, mailbox monitoring, paid API-backed checks, feedback learning, dashboard data, or account management.
+- `/api/demo/plans` is also public in demo mode. It exposes non-secret plan and lock metadata only, so visitors can see which analyzers require Starter, Pro, or Business.
+
+Future subscription setup:
+- Fill `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and `STRIPE_PRICE_*` only after the user/org database and webhook subscription mirror are implemented. Until then, the plan catalog is display and entitlement metadata only.
 
 Avoid `$` in `.env` values unless you know how to escape Docker Compose
 interpolation. If `docker compose config` prints warnings about a variable that
