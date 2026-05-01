@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "payment-scam-firewall": {
+      "type": "stdio",
+      "command": "C:\\Users\\meidi\\Documents\\personal project\\Automated Phishing Detection\\.venv\\Scripts\\python.exe",
+      "args": [
+        "C:\\Users\\meidi\\Documents\\personal project\\Automated Phishing Detection\\scripts\\payment_mcp_server.py"
+      ],
+      "env": {}
+    }
+  }
+}

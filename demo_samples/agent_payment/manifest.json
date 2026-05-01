@@ -1,0 +1,26 @@
+[
+  {
+    "filename": "safe_invoice.eml",
+    "expected_decision": "SAFE",
+    "scenario": "normal_invoice",
+    "source_type": "demo",
+    "split": "public_demo",
+    "title": "Normal invoice, saved supplier record"
+  },
+  {
+    "filename": "verify_supplier_portal.eml",
+    "expected_decision": "VERIFY",
+    "scenario": "verified_supplier_portal_update",
+    "source_type": "demo",
+    "split": "public_demo",
+    "title": "Supplier portal update pending verification"
+  },
+  {
+    "filename": "do_not_pay_bank_redirect.eml",
+    "expected_decision": "DO_NOT_PAY",
+    "scenario": "bank_detail_redirect",
+    "source_type": "demo",
+    "split": "public_demo",
+    "title": "Urgent bank-detail redirect"
+  }
+]

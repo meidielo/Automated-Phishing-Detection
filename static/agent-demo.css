@@ -1,0 +1,367 @@
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+.agent-topbar {
+  height: 56px;
+  padding: 0 32px;
+  border-bottom: 1px solid var(--nav-border);
+  background: var(--nav-bg);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.agent-logo,
+.agent-actions a {
+  color: var(--nav-link);
+  text-decoration: none;
+}
+
+.agent-logo {
+  color: var(--accent-light);
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.agent-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.agent-actions a,
+.sample-tabs button {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.agent-actions a {
+  padding: 7px 12px;
+}
+
+.agent-actions a:hover,
+.sample-tabs button:hover,
+.sample-tabs button.active {
+  background: var(--nav-hover-bg);
+  color: var(--text-primary);
+}
+
+.agent-shell {
+  width: min(1180px, calc(100% - 40px));
+  margin: 0 auto;
+  padding: 36px 0 64px;
+}
+
+.agent-workbench {
+  display: grid;
+  gap: 18px;
+}
+
+.agent-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.agent-kicker {
+  margin: 0 0 8px;
+  color: var(--accent-light);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.agent-head h1 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 42px;
+  line-height: 1.05;
+  letter-spacing: 0;
+}
+
+.mode-chip {
+  flex: 0 0 auto;
+  border: 1px solid var(--accent-border);
+  border-radius: 999px;
+  background: var(--accent-bg);
+  color: var(--accent-light);
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.sample-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.sample-tabs button {
+  min-height: 38px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.workbench-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(340px, 1.05fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.panel {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  padding: 20px;
+}
+
+.panel-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 16px;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.panel-title strong {
+  color: var(--text-primary);
+  text-transform: none;
+}
+
+.email-meta {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.email-meta div {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.email-meta div:last-child {
+  border-bottom: 0;
+}
+
+.email-meta dt {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.email-meta dd {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.decision-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.decision-main {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.decision-main span {
+  color: var(--text-primary);
+  font-size: 34px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.decision-main strong {
+  color: var(--warning-text);
+  font-size: 34px;
+  line-height: 1;
+}
+
+.risk-track {
+  height: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+}
+
+.risk-track span {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: linear-gradient(90deg, var(--v-clean), var(--v-suspicious), var(--v-phishing));
+  transition: width 0.2s ease;
+}
+
+#summary-text {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+.next-action {
+  margin: 0;
+  border-left: 3px solid var(--accent);
+  padding: 10px 12px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.signals-panel,
+.steps-panel {
+  align-self: stretch;
+}
+
+.signal-list {
+  display: grid;
+  gap: 10px;
+}
+
+.signal-item {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-tertiary);
+  padding: 14px;
+}
+
+.signal-item header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.signal-item strong {
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.severity {
+  border: 1px solid var(--warning-border);
+  border-radius: 999px;
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.signal-item p {
+  margin: 0 0 7px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.signal-item p:last-child {
+  margin-bottom: 0;
+}
+
+.steps-panel ol {
+  margin: 0;
+  padding-left: 22px;
+  color: var(--text-secondary);
+}
+
+.steps-panel li {
+  margin-bottom: 10px;
+  line-height: 1.5;
+}
+
+.steps-panel li:last-child {
+  margin-bottom: 0;
+}
+
+.json-panel pre {
+  max-height: 360px;
+  margin: 0;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--code-bg);
+  color: var(--text-secondary);
+  padding: 16px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.error-state {
+  border-color: var(--error-border);
+  background: var(--error-bg);
+  color: var(--error-text);
+}
+
+@media (max-width: 860px) {
+  .agent-topbar {
+    height: auto;
+    padding: 14px 20px;
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .agent-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .agent-shell {
+    width: min(100% - 28px, 1180px);
+    padding-top: 28px;
+  }
+
+  .agent-head {
+    flex-direction: column;
+  }
+
+  .agent-head h1 {
+    font-size: 34px;
+  }
+
+  .workbench-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .email-meta div {
+    grid-template-columns: 1fr;
+    gap: 5px;
+  }
+
+  .decision-main {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

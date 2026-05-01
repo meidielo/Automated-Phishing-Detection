@@ -1,0 +1,22 @@
+From: Northline Electrical Accounts <accounts@northline-electrical-billing.example>
+Reply-To: payments-team@mailbox.example
+To: Accounts Payable <accounts-payable@demo-business.example>
+Subject: Urgent updated bank details for outstanding invoice
+Date: Fri, 1 May 2026 08:45:00 +1000
+Message-ID: <do-not-pay-bank-redirect-001@northline-electrical-billing.example>
+Authentication-Results: mx.demo-business.example; spf=fail dkim=fail dmarc=fail
+
+Hi Accounts Payable,
+
+Please use our new bank details for the outstanding April invoice today. Do not
+use the old account details. Only reply to this email because the finance team is
+travelling and cannot take calls.
+
+Amount: $5,910.00
+BSB: 062-290
+Account number: 82345110
+
+Please process without delay to avoid a payment hold.
+
+Regards,
+Northline Electrical Accounts

@@ -1,0 +1,18 @@
+From: Metro Catering Billing <billing@metro-catering.example>
+To: Accounts Payable <accounts-payable@demo-business.example>
+Subject: April catering invoice and receipt
+Date: Wed, 29 Apr 2026 09:15:00 +1000
+Message-ID: <safe-invoice-001@metro-catering.example>
+Authentication-Results: mx.demo-business.example; spf=pass dkim=pass dmarc=pass
+
+Hi Accounts Payable,
+
+Thanks for using Metro Catering this month.
+
+The April invoice is ready in the supplier portal under PO-8842. This is not a
+request to change payment details, and no bank details are included in this
+email. Please continue using the saved supplier record and your normal approval
+workflow.
+
+Regards,
+Metro Catering Billing

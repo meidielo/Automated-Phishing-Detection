@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent Payment Demo - PhishDetect</title>
+  <link rel="stylesheet" href="/static/agent-demo.css">
+</head>
+<body>
+  <header class="agent-topbar">
+    <a class="agent-logo" href="/demo">PhishDetect</a>
+    <nav class="agent-actions" aria-label="Demo navigation">
+      <a href="/demo">Public demo</a>
+      <a href="/app">User app</a>
+      <a href="/login">Analyst login</a>
+    </nav>
+  </header>
+
+  <main class="agent-shell">
+    <section class="agent-workbench" aria-labelledby="agent-title">
+      <div class="agent-head">
+        <div>
+          <p class="agent-kicker">Agent tool</p>
+          <h1 id="agent-title">Payment email investigation</h1>
+        </div>
+        <div class="mode-chip">Sample-only</div>
+      </div>
+
+      <div class="sample-tabs" id="sample-tabs" aria-label="Sample decisions"></div>
+
+      <div class="workbench-grid">
+        <section class="panel email-panel" aria-label="Email sample">
+          <div class="panel-title">
+            <span>Email</span>
+            <strong id="email-decision">Loading</strong>
+          </div>
+          <dl class="email-meta" id="email-meta"></dl>
+        </section>
+
+        <section class="panel decision-panel" aria-label="Agent decision">
+          <div class="decision-main">
+            <span id="decision-label">Loading</span>
+            <strong id="risk-score">0.000</strong>
+          </div>
+          <div class="risk-track" aria-hidden="true"><span id="risk-fill"></span></div>
+          <p id="summary-text"></p>
+          <p class="next-action" id="next-action"></p>
+        </section>
+
+        <section class="panel signals-panel" aria-label="Evidence signals">
+          <div class="panel-title">
+            <span>Evidence</span>
+            <strong id="signal-count">0 signals</strong>
+          </div>
+          <div class="signal-list" id="signal-list"></div>
+        </section>
+
+        <section class="panel steps-panel" aria-label="Verification steps">
+          <div class="panel-title">
+            <span>Verification</span>
+            <strong>Human hold</strong>
+          </div>
+          <ol id="verification-steps"></ol>
+        </section>
+      </div>
+
+      <section class="panel json-panel" aria-label="Agent JSON output">
+        <div class="panel-title">
+          <span>Structured output</span>
+          <strong>JSON</strong>
+        </div>
+        <pre id="json-output">{}</pre>
+      </section>
+    </section>
+  </main>
+
+  <script src="/static/agent-demo.js" defer></script>
+</body>
+</html>

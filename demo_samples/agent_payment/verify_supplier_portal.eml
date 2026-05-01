@@ -1,0 +1,18 @@
+From: Northline Electrical Accounts <accounts@northline-electrical.example>
+To: Accounts Payable <accounts-payable@demo-business.example>
+Subject: Supplier portal bank detail update pending verification
+Date: Thu, 30 Apr 2026 11:20:00 +1000
+Message-ID: <verify-supplier-portal-001@northline-electrical.example>
+Authentication-Results: mx.demo-business.example; spf=pass dkim=pass dmarc=pass
+
+Hi Accounts Payable,
+
+Our supplier portal shows updated bank details for future invoices. No bank
+details are provided in this email.
+
+Please hold payment and complete the normal supplier master-data workflow before
+using the updated supplier record. This change requires second approval and
+verification with your existing saved supplier contact.
+
+Regards,
+Northline Electrical Accounts

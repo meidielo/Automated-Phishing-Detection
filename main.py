@@ -840,6 +840,16 @@ class PhishingDetectionApp:
                 demo_path.read_text(encoding="utf-8")
             ))
 
+        @app.get("/agent-demo", response_class=HTMLResponse)
+        async def agent_demo():
+            """Serve the sample-only agent payment analysis page."""
+            if not _demo_enabled():
+                raise HTTPException(status_code=404, detail="Public demo mode is not enabled")
+            demo_path = Path("./templates/agent_demo.html")
+            return HTMLResponse(content=_inject_shared(
+                demo_path.read_text(encoding="utf-8")
+            ))
+
         @app.get("/api/demo/status")
         async def api_demo_status():
             """Return public demo limitations. Never exposes mailbox or paid API data."""
@@ -856,9 +866,30 @@ class PhishingDetectionApp:
                 "message": (
                     "Public demo mode uses fixed sample content only. Analyst login is "
                     "required for live analysis, mailbox monitoring, paid API-backed "
-                    "checks, feedback learning, and account management."
+                    "checks, feedback learning, agent uploads, and account management."
                 ),
             }
+
+        @app.get("/api/demo/agent-payment-analysis")
+        async def api_demo_agent_payment_analysis(
+            decision: str | None = Query(default=None),
+        ):
+            """Return fixed sample agent-tool outputs for the public demo page."""
+            if not _demo_enabled():
+                raise HTTPException(status_code=404, detail="Public demo mode is not enabled")
+            allowed_decisions = {"SAFE", "VERIFY", "DO_NOT_PAY"}
+            if decision is not None and decision not in allowed_decisions:
+                raise HTTPException(status_code=400, detail="Unknown payment decision")
+            try:
+                from src.agent_tools.payment_email import analyze_demo_payment_samples
+
+                return await analyze_demo_payment_samples(decision=decision)
+            except Exception as exc:
+                logger.warning("Agent demo sample analysis failed: %s", exc)
+                raise HTTPException(
+                    status_code=503,
+                    detail="Agent demo samples are unavailable",
+                ) from exc
 
         @app.get("/api/demo/plans")
         async def api_demo_plans():

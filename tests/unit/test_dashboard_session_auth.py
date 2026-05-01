@@ -112,6 +112,8 @@ def test_dashboard_static_assets_are_served_without_session():
         ("/static/dashboard.css", ".chart-wrap"),
         ("/static/dashboard.js", "function renderTable"),
         ("/static/dashboard-report.css", ".report-progress"),
+        ("/static/agent-demo.css", ".agent-workbench"),
+        ("/static/agent-demo.js", "/api/demo/agent-payment-analysis"),
         ("/static/demo.css", ".demo-page"),
         ("/static/saas.css", ".saas-shell"),
         ("/static/saas.js", "/api/saas/session"),
@@ -131,10 +133,14 @@ def test_public_demo_is_not_available_by_default():
     )
 
     response = client.get("/demo")
+    agent_demo = client.get("/agent-demo")
     status = client.get("/api/demo/status")
+    agent_status = client.get("/api/demo/agent-payment-analysis")
 
     assert response.status_code == 404
+    assert agent_demo.status_code == 404
     assert status.status_code == 404
+    assert agent_status.status_code == 404
 
 
 def test_public_demo_opens_without_session_when_enabled():
@@ -151,6 +157,32 @@ def test_public_demo_opens_without_session_when_enabled():
     assert "without mailbox or paid API access" in response.text
     assert "No live mailbox" in response.text
     assert "/static/demo.css" in response.text
+
+
+def test_agent_demo_opens_and_returns_committed_samples_when_enabled():
+    client = TestClient(
+        _build_app_with_token(public_demo_mode=True),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    page = client.get("/agent-demo")
+    api = client.get("/api/demo/agent-payment-analysis")
+
+    payload = api.json()
+    assert page.status_code == 200
+    assert "Payment email investigation" in page.text
+    assert "/static/agent-demo.css" in page.text
+    assert "/static/agent-demo.js" in page.text
+    assert api.status_code == 200
+    assert payload["demo_mode"] is True
+    assert payload["sample_count"] == 3
+    assert {sample["decision"] for sample in payload["samples"]} == {
+        "SAFE",
+        "VERIFY",
+        "DO_NOT_PAY",
+    }
+    assert all(sample["source_type"] == "demo" for sample in payload["samples"])
 
 
 def test_user_app_shell_opens_without_analyst_session():

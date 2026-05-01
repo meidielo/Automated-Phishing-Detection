@@ -110,6 +110,9 @@ The `payment_fraud` analyzer turns email analysis into a business decision:
 Detected payment signals include changed bank details, payment-themed portal/action links, urgent payment pressure, approval bypass language, CEO/CFO transfer requests, reply-to mismatch, email authentication failure, free-email supplier requests, risky invoice attachments, and masked extraction of BSBs, account numbers, IBANs, SWIFT/BIC codes, PayIDs, ABNs, and amounts.
 
 See [`docs/payment-fraud-firewall.md`](docs/payment-fraud-firewall.md) for the product workflow and SME positioning.
+See [`docs/agent-payment-tool.md`](docs/agent-payment-tool.md) for the first
+agent-native tool contract, CLI, MCP stdio server, committed sample emails,
+connection snippets, narrative demo script, and sample-only demo page.
 
 To start a local payment-scam dataset:
 
