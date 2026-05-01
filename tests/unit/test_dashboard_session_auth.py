@@ -115,6 +115,7 @@ def test_dashboard_static_assets_are_served_without_session():
         ("/static/agent-demo.css", ".agent-workbench"),
         ("/static/agent-demo.js", "/api/demo/agent-payment-analysis"),
         ("/static/demo.css", ".demo-page"),
+        ("/static/product.css", ".product-hero"),
         ("/static/saas.css", ".saas-shell"),
         ("/static/saas.js", "/api/saas/session"),
         ("/static/shared.css", ".feedback-modal"),
@@ -198,6 +199,21 @@ def test_user_app_shell_opens_without_analyst_session():
     assert "/static/saas.css" in response.text
     assert "/static/saas.js" in response.text
     assert "PhishDetect account" in response.text
+
+
+def test_product_shell_opens_without_analyst_session():
+    client = TestClient(
+        _build_app_with_token(),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    response = client.get("/product")
+
+    assert response.status_code == 200
+    assert "Agent-ready payment scam firewall" in response.text
+    assert "/static/product.css" in response.text
+    assert "/static/product-dashboard.png" in response.text
 
 
 def test_public_demo_status_declares_locked_capabilities():

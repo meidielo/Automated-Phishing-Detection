@@ -1,0 +1,56 @@
+{
+  "manifest_version": "0.3",
+  "name": "payment-scam-firewall",
+  "display_name": "Payment Scam Firewall",
+  "version": "0.1.0",
+  "description": "Agent-ready payment email investigation for invoice scams, supplier impersonation, and bank-detail redirection.",
+  "long_description": "Adds one local MCP tool, analyze_payment_email, that inspects a .eml file through the Payment Scam Firewall project and returns SAFE, VERIFY, or DO_NOT_PAY with evidence and human verification steps. The bridge does not return full email bodies, raw headers, or attachment content.",
+  "author": {
+    "name": "Meidie"
+  },
+  "server": {
+    "type": "node",
+    "entry_point": "server/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": [
+        "${__dirname}/server/index.js"
+      ],
+      "env": {
+        "PAYMENT_FIREWALL_PROJECT_ROOT": "${user_config.project_root}",
+        "PAYMENT_FIREWALL_PYTHON": "${user_config.python_executable}"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "analyze_payment_email",
+      "description": "Analyze a local .eml invoice or payment email and return SAFE, VERIFY, or DO_NOT_PAY with evidence and verification steps."
+    }
+  ],
+  "user_config": {
+    "project_root": {
+      "type": "directory",
+      "title": "Payment Scam Firewall project folder",
+      "description": "Folder containing scripts/agent_payment_tool.py.",
+      "required": true,
+      "default": "C:\\Users\\meidi\\Documents\\personal project\\Automated Phishing Detection"
+    },
+    "python_executable": {
+      "type": "file",
+      "title": "Python executable",
+      "description": "Python executable with the project's dependencies installed.",
+      "required": true,
+      "default": "C:\\Users\\meidi\\Documents\\personal project\\Automated Phishing Detection\\.venv\\Scripts\\python.exe"
+    }
+  },
+  "compatibility": {
+    "claude_desktop": ">=1.0.0",
+    "platforms": [
+      "win32"
+    ],
+    "runtimes": {
+      "node": ">=18.0.0"
+    }
+  }
+}

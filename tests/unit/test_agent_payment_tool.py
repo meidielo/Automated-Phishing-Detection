@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -97,6 +98,69 @@ def test_agent_payment_demo_script_prints_three_decisions():
     assert "Tool decision: SAFE" in proc.stdout
     assert "Tool decision: VERIFY" in proc.stdout
     assert "Tool decision: DO_NOT_PAY" in proc.stdout
+
+
+def test_agent_mcp_live_demo_runs_full_jsonrpc_flow():
+    proc = subprocess.run(
+        [sys.executable, "scripts/agent_mcp_live_demo.py"],
+        cwd=Path(__file__).resolve().parents[2],
+        text=True,
+        capture_output=True,
+        timeout=30,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert "Live MCP client smoke demo" in proc.stdout
+    assert "Discovered tools: analyze_payment_email" in proc.stdout
+    assert "Decision: DO_NOT_PAY" in proc.stdout
+
+
+def test_desktop_extension_node_bridge_calls_python_tool():
+    project_root = Path(__file__).resolve().parents[2]
+    env = {
+        "PAYMENT_FIREWALL_PROJECT_ROOT": str(project_root),
+        "PAYMENT_FIREWALL_PYTHON": sys.executable,
+    }
+    messages = [
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {"name": "pytest", "version": "1.0"},
+            },
+        },
+        {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
+        {
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {
+                "name": "analyze_payment_email",
+                "arguments": {
+                    "email_path": str(project_root / "demo_samples" / "agent_payment" / "do_not_pay_bank_redirect.eml"),
+                    "include_email_metadata": False,
+                },
+            },
+        },
+    ]
+
+    proc = subprocess.run(
+        ["node", "desktop_extension/payment-scam-firewall/server/index.js"],
+        cwd=project_root,
+        input="\n".join(json.dumps(message) for message in messages) + "\n",
+        text=True,
+        capture_output=True,
+        timeout=30,
+        env={**os.environ, **env},
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    responses = [json.loads(line) for line in proc.stdout.splitlines()]
+    assert responses[1]["result"]["tools"][0]["name"] == "analyze_payment_email"
+    assert responses[2]["result"]["structuredContent"]["decision"] == "DO_NOT_PAY"
 
 
 def test_agent_payment_mcp_stdio_exposes_and_calls_tool(tmp_path):

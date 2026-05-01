@@ -72,6 +72,17 @@ It analyzes three committed samples:
 - `demo_samples/agent_payment/verify_supplier_portal.eml`
 - `demo_samples/agent_payment/do_not_pay_bank_redirect.eml`
 
+Run the live MCP smoke demo:
+
+```bash
+python scripts/agent_mcp_live_demo.py
+```
+
+That script starts `scripts/payment_mcp_server.py` over stdio, runs
+`initialize`, discovers `analyze_payment_email` with `tools/list`, and calls it
+with `tools/call`. The captured storyline is in
+[`docs/agent-payment-demo-transcript.md`](agent-payment-demo-transcript.md).
+
 ## MCP Server
 
 Run the stdio MCP server:
@@ -94,9 +105,30 @@ The implementation follows the MCP 2025-06-18 shape:
 
 ## Claude Desktop Setup
 
-Claude Desktop now prefers desktop extensions for broad distribution, but a
-local stdio config is still useful for development and private demos. Use the
-ready-made config snippet in:
+Claude Desktop now prefers desktop extensions for broad distribution. This repo
+contains a local-development MCPB bundle in:
+
+```text
+desktop_extension/payment-scam-firewall
+```
+
+The bundle starts a small Node server and bridges to the Python CLI in this
+repository. It asks for:
+
+- the project folder
+- the Python executable with this repo's dependencies installed
+
+Build the `.mcpb` archive from the repo root:
+
+```powershell
+$zip = "desktop_extension\payment-scam-firewall-0.1.0.zip"
+$mcpb = "desktop_extension\payment-scam-firewall-0.1.0.mcpb"
+Compress-Archive -Path desktop_extension\payment-scam-firewall\* -DestinationPath $zip -Force
+Move-Item $zip $mcpb -Force
+```
+
+For direct stdio development without installing the extension, use the config
+snippet in:
 
 ```text
 docs/mcp/claude-desktop-payment-scam-firewall.json
@@ -194,3 +226,32 @@ The UI calls:
 That endpoint only runs fixed committed samples from `demo_samples/agent_payment`.
 It does not connect a mailbox, accept public uploads, call paid APIs, or write
 feedback labels.
+
+## Product Shell
+
+The public product shell is available at:
+
+```text
+/product
+```
+
+It positions the product as an agent-ready payment scam firewall, links to the
+agent demo, and uses the existing dashboard screenshot as the visual asset.
+
+## Per-User Mailbox Boundary
+
+Real mailbox support is tracked in:
+
+```text
+docs/per-user-mailbox-rollout.md
+```
+
+The SaaS DB now has safe metadata helpers for mailbox records:
+
+- `register_mail_account`
+- `list_mail_accounts`
+- `set_mail_account_status`
+
+These helpers store provider/status/token-reference metadata only. They do not
+accept or store raw mailbox credentials. Live OAuth/IMAP authorization still
+requires a separate user-consented flow.

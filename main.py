@@ -11,6 +11,7 @@ import asyncio
 import html
 import json
 import logging
+import os
 import sys
 from collections import deque
 from pathlib import Path
@@ -24,6 +25,17 @@ from fastapi.staticfiles import StaticFiles
 from uvicorn import run
 
 from src.billing.plans import plan_payload
+from src.billing.stripe_client import (
+    StripeAPIError,
+    StripeBillingClient,
+    StripeConfigError,
+    StripeWebhookError,
+    missing_checkout_env,
+    plan_slug_for_price_id,
+    price_id_for_plan,
+    stripe_config_from_env,
+    verify_stripe_webhook,
+)
 from src.config import PipelineConfig
 from src.models import EmailObject
 from src.orchestrator.pipeline import PhishingPipeline
@@ -620,6 +632,14 @@ class PhishingDetectionApp:
             app_path = Path("./templates/saas_app.html")
             return HTMLResponse(content=_inject_shared(
                 app_path.read_text(encoding="utf-8")
+            ))
+
+        @app.get("/product", response_class=HTMLResponse)
+        async def product_page():
+            """Serve the public product shell for the payment scam firewall."""
+            product_path = Path("./templates/product.html")
+            return HTMLResponse(content=_inject_shared(
+                product_path.read_text(encoding="utf-8")
             ))
 
         @app.get("/api/saas/session")

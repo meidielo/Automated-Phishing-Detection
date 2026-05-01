@@ -12,6 +12,7 @@ from src.feedback.email_lookup import EmailLookupIndex
 from src.models import AnalyzerResult, PipelineResult, Verdict
 from src.reporting.dashboard import PhishingDashboard
 from src.saas.auth import SaaSSessionManager, USER_CSRF_COOKIE_NAME
+from src.saas.database import SaaSStore
 from src.security.web_security import TokenVerifier
 
 
@@ -139,3 +140,40 @@ def test_saas_manual_scan_quota_returns_locked_response(tmp_path):
 
     assert statuses[:5] == [200, 200, 200, 200, 200]
     assert statuses[5] == 402
+
+
+def test_saas_store_mail_account_metadata_is_org_scoped(tmp_path):
+    store = SaaSStore(tmp_path / "saas.db")
+    owner = store.create_user_with_org(
+        email="owner@example.com",
+        password="correct horse battery",
+        org_name="Example Finance",
+    )
+    other = store.create_user_with_org(
+        email="other@example.com",
+        password="correct horse battery",
+        org_name="Other Finance",
+    )
+
+    account = store.register_mail_account(
+        org_id=owner.org_id,
+        user_id=owner.user_id,
+        provider="gmail",
+        external_account_id="owner@example.com",
+        encrypted_token_ref="vault://mail/owner",
+        status="pending",
+    )
+    store.set_mail_account_status(
+        org_id=owner.org_id,
+        mail_account_id=account.id,
+        status="active",
+        actor_user_id=owner.user_id,
+    )
+
+    owner_accounts = store.list_mail_accounts(owner.org_id)
+    other_accounts = store.list_mail_accounts(other.org_id)
+
+    assert len(owner_accounts) == 1
+    assert owner_accounts[0].id == account.id
+    assert owner_accounts[0].status == "active"
+    assert other_accounts == []

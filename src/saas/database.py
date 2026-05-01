@@ -47,6 +47,21 @@ class AccountContext:
         return asdict(self)
 
 
+@dataclass(frozen=True)
+class MailAccountRecord:
+    id: str
+    org_id: str
+    user_id: str
+    provider: str
+    external_account_id: str | None
+    encrypted_token_ref: str | None
+    status: str
+    created_at: str
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
 class SaaSStore:
     """Small production-shaped account store for local SQLite deployments."""
 
@@ -258,6 +273,41 @@ class SaaSStore:
             )
             conn.commit()
 
+    def set_org_stripe_customer(self, *, org_id: str, stripe_customer_id: str) -> None:
+        """Persist the Stripe customer that owns an organization's billing."""
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE organizations SET stripe_customer_id = ? WHERE id = ?",
+                (stripe_customer_id, org_id),
+            )
+            self._write_audit(
+                conn,
+                org_id=org_id,
+                actor_user_id=None,
+                action="stripe.customer.linked",
+                target_type="stripe_customer",
+                target_id=stripe_customer_id,
+                metadata={},
+                now=utc_now_iso(),
+            )
+            conn.commit()
+
+    def get_org_id_for_stripe_customer(self, stripe_customer_id: str) -> str | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT id FROM organizations WHERE stripe_customer_id = ?",
+                (stripe_customer_id,),
+            ).fetchone()
+            return row["id"] if row else None
+
+    def get_org_id_for_stripe_subscription(self, stripe_subscription_id: str) -> str | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT org_id FROM subscriptions WHERE stripe_subscription_id = ?",
+                (stripe_subscription_id,),
+            ).fetchone()
+            return row["org_id"] if row else None
+
     def check_entitlement(
         self,
         *,
@@ -359,6 +409,126 @@ class SaaSStore:
             )
             conn.commit()
         return scan_job_id
+
+    def register_mail_account(
+        self,
+        *,
+        org_id: str,
+        user_id: str,
+        provider: str,
+        external_account_id: str | None,
+        encrypted_token_ref: str | None,
+        status: str = "pending",
+    ) -> MailAccountRecord:
+        provider = (provider or "").strip().lower()
+        if provider not in {"gmail", "outlook", "imap"}:
+            raise ValueError("provider must be gmail, outlook, or imap")
+        if status not in {"pending", "active", "error", "disabled"}:
+            raise ValueError("status must be pending, active, error, or disabled")
+
+        now = utc_now_iso()
+        mail_account_id = new_id("mail")
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO mail_accounts (
+                    id, org_id, user_id, provider, external_account_id,
+                    encrypted_token_ref, status, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    mail_account_id,
+                    org_id,
+                    user_id,
+                    provider,
+                    external_account_id,
+                    encrypted_token_ref,
+                    status,
+                    now,
+                ),
+            )
+            self._write_audit(
+                conn,
+                org_id=org_id,
+                actor_user_id=user_id,
+                action="mail_account.registered",
+                target_type="mail_account",
+                target_id=mail_account_id,
+                metadata={"provider": provider, "status": status},
+                now=now,
+            )
+            conn.commit()
+        return MailAccountRecord(
+            id=mail_account_id,
+            org_id=org_id,
+            user_id=user_id,
+            provider=provider,
+            external_account_id=external_account_id,
+            encrypted_token_ref=encrypted_token_ref,
+            status=status,
+            created_at=now,
+        )
+
+    def list_mail_accounts(self, org_id: str) -> list[MailAccountRecord]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, org_id, user_id, provider, external_account_id,
+                       encrypted_token_ref, status, created_at
+                FROM mail_accounts
+                WHERE org_id = ?
+                ORDER BY created_at DESC
+                """,
+                (org_id,),
+            ).fetchall()
+            return [
+                MailAccountRecord(
+                    id=row["id"],
+                    org_id=row["org_id"],
+                    user_id=row["user_id"],
+                    provider=row["provider"],
+                    external_account_id=row["external_account_id"],
+                    encrypted_token_ref=row["encrypted_token_ref"],
+                    status=row["status"],
+                    created_at=row["created_at"],
+                )
+                for row in rows
+            ]
+
+    def set_mail_account_status(
+        self,
+        *,
+        org_id: str,
+        mail_account_id: str,
+        status: str,
+        actor_user_id: str | None = None,
+    ) -> None:
+        if status not in {"pending", "active", "error", "disabled"}:
+            raise ValueError("status must be pending, active, error, or disabled")
+        now = utc_now_iso()
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE mail_accounts
+                SET status = ?
+                WHERE id = ? AND org_id = ?
+                """,
+                (status, mail_account_id, org_id),
+            )
+            if cursor.rowcount == 0:
+                raise ValueError("mail account not found for organization")
+            self._write_audit(
+                conn,
+                org_id=org_id,
+                actor_user_id=actor_user_id,
+                action="mail_account.status_updated",
+                target_type="mail_account",
+                target_id=mail_account_id,
+                metadata={"status": status},
+                now=now,
+            )
+            conn.commit()
 
     def complete_scan_job(self, scan_job_id: str, status: str = "completed") -> None:
         with self._connect() as conn:

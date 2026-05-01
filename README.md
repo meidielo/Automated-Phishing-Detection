@@ -112,7 +112,8 @@ Detected payment signals include changed bank details, payment-themed portal/act
 See [`docs/payment-fraud-firewall.md`](docs/payment-fraud-firewall.md) for the product workflow and SME positioning.
 See [`docs/agent-payment-tool.md`](docs/agent-payment-tool.md) for the first
 agent-native tool contract, CLI, MCP stdio server, committed sample emails,
-connection snippets, narrative demo script, and sample-only demo page.
+connection snippets, MCPB desktop-extension bundle, narrative demo scripts,
+product shell, and sample-only demo page.
 
 To start a local payment-scam dataset:
 
