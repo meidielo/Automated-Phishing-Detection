@@ -361,6 +361,12 @@ class MultiAccountMonitor:
 _SENSITIVE_FIELDS = ("password", "client_secret")
 
 
+def _account_key(acct: dict) -> str:
+    """Stable identity used to replace a reconnected mailbox entry."""
+    identifier = acct.get("email") or acct.get("user") or acct.get("type") or ""
+    return str(identifier).strip().lower()
+
+
 def _encrypt_sensitive(acct: dict) -> dict:
     """Encrypt sensitive fields in an account dict before storing."""
     from src.security.credentials import encrypt_password
@@ -500,6 +506,12 @@ def add_account_to_file(acct: dict, path: str = ACCOUNTS_FILE):
             existing = json.loads(accounts_path.read_text())
         except Exception:
             pass
+
+    # Reconnecting the same mailbox should replace the stale encrypted
+    # credential, not leave two indistinguishable account chips in the UI.
+    new_key = _account_key(acct)
+    if new_key:
+        existing = [item for item in existing if _account_key(item) != new_key]
 
     # Encrypt sensitive fields before writing to disk
     encrypted_acct = _encrypt_sensitive(acct)

@@ -281,6 +281,60 @@ class PhishingDetectionApp:
         # email_id -> record across restarts. See ADR 0002.
         self.email_index = EmailLookupIndex(jsonl_path="data/results.jsonl")
 
+    async def _start_monitor_background(self) -> dict:
+        """Start or restart mailbox monitoring from current configuration."""
+        if self._monitor:
+            try:
+                self._monitor.stop()
+            except Exception:
+                logger.warning("Failed to stop existing monitor before restart", exc_info=True)
+            self._monitor = None
+
+        try:
+            from src.automation.multi_account_monitor import MultiAccountMonitor
+
+            monitor = MultiAccountMonitor.from_config(self.config)
+            if monitor.providers:
+                self._monitor = monitor
+                asyncio.create_task(monitor.run())
+                accounts = [p.account_id for p in monitor.providers]
+                logger.info(
+                    "Multi-account monitor started: %s account(s) [%s]",
+                    len(accounts),
+                    ", ".join(accounts),
+                )
+                return {
+                    "started": True,
+                    "mode": "multi_account",
+                    "accounts": accounts,
+                }
+
+            if self.config.imap.user and self.config.imap.password:
+                from src.automation.email_monitor import EmailMonitor
+
+                self._monitor = EmailMonitor.from_config(self.config)
+                asyncio.create_task(self._monitor.run())
+                logger.info(
+                    "IMAP monitor started: %s@%s -> quarantine='%s'",
+                    self.config.imap.user,
+                    self.config.imap.host,
+                    self.config.imap.quarantine_folder,
+                )
+                return {
+                    "started": True,
+                    "mode": "imap",
+                    "accounts": [self.config.imap.user],
+                }
+
+            logger.info(
+                "No email accounts configured - monitor inactive. "
+                "Add accounts at /accounts or set IMAP env vars."
+            )
+            return {"started": False, "reason": "no_accounts"}
+        except Exception as e:
+            logger.error("Failed to start monitor: %s", e, exc_info=True)
+            return {"started": False, "reason": str(e)}
+
     async def analyze_email_file(self, email_path: str, output_format: str = "json"):
         """
         Analyze email from EML file.
@@ -1608,11 +1662,20 @@ class PhishingDetectionApp:
             monitor_recent = []
             monitor_stats_dict = {}
             is_running = False
+            configured_account_count = 0
+            active_account_count = 0
+
+            try:
+                from src.automation.multi_account_monitor import list_accounts
+                configured_account_count = len(list_accounts())
+            except Exception as e:
+                logger.warning("Could not read configured account count: %s", e)
 
             if self._monitor is not None:
                 monitor_recent = list(self._monitor._recent_results[-50:])
                 monitor_stats_dict = self._monitor.stats
                 is_running = self._monitor._running
+                active_account_count = int(monitor_stats_dict.get("accounts") or 0)
 
             # Merge upload results with monitor results
             all_recent = monitor_recent + list(self._upload_results[-50:])
@@ -1620,11 +1683,35 @@ class PhishingDetectionApp:
             all_recent.sort(key=lambda r: r.get("timestamp", ""), reverse=True)
             all_recent = all_recent[:50]
 
+            if is_running:
+                account_status = "running"
+                account_message = ""
+            elif configured_account_count > 0 and active_account_count == 0:
+                account_status = "credential_error"
+                account_message = (
+                    "Saved mailbox credentials could not be loaded. "
+                    "Set ACCOUNTS_ENCRYPTION_KEY permanently and reconnect the mailbox."
+                )
+            elif self._monitor is not None or bool(self.config.imap.user):
+                account_status = "stopped"
+                account_message = "Mailbox monitor is configured but not running."
+            else:
+                account_status = "none"
+                account_message = "No mailbox accounts are configured."
+
             return {
                 "running": is_running,
                 "stats": monitor_stats_dict,
                 "recent": all_recent,
-                "imap_configured": self._monitor is not None or bool(self.config.imap.user),
+                "imap_configured": (
+                    self._monitor is not None
+                    or bool(self.config.imap.user)
+                    or configured_account_count > 0
+                ),
+                "configured_account_count": configured_account_count,
+                "active_account_count": active_account_count,
+                "account_status": account_status,
+                "account_message": account_message,
                 "quarantine_folder": getattr(self._monitor, "quarantine_folder", None) if self._monitor else None,
             }
 
@@ -1691,6 +1778,7 @@ class PhishingDetectionApp:
                     detonate_single_url(url),
                     timeout=30,
                 )
+                result.pop("screenshot_bytes", None)
                 return result
             except ImportError:
                 raise HTTPException(
@@ -1768,15 +1856,20 @@ class PhishingDetectionApp:
 
                 token_path = f"data/gmail_token_{len(list_accounts_helper())}.json"
 
-                add_account_to_file({
-                    "type": "gmail",
-                    "email": payload.get("email", ""),
-                    "credentials_path": creds_path,
-                    "token_path": token_path,
-                })
+                try:
+                    add_account_to_file({
+                        "type": "gmail",
+                        "email": payload.get("email", ""),
+                        "credentials_path": creds_path,
+                        "token_path": token_path,
+                    })
+                except RuntimeError as e:
+                    raise HTTPException(status_code=503, detail=str(e)) from e
+                monitor_result = await self._start_monitor_background()
                 return {
                     "status": "added",
                     "type": "gmail",
+                    "monitor": monitor_result,
                     "note": "OAuth authentication needed. Run 'python main.py add-account gmail' to complete auth flow, or authenticate via the Gmail provider on first monitor start.",
                 }
 
@@ -1787,15 +1880,20 @@ class PhishingDetectionApp:
 
                 token_path = f"data/outlook_token_{len(list_accounts_helper())}.json"
 
-                add_account_to_file({
-                    "type": "outlook",
-                    "email": payload.get("email", ""),
-                    "client_id": client_id,
-                    "token_path": token_path,
-                })
+                try:
+                    add_account_to_file({
+                        "type": "outlook",
+                        "email": payload.get("email", ""),
+                        "client_id": client_id,
+                        "token_path": token_path,
+                    })
+                except RuntimeError as e:
+                    raise HTTPException(status_code=503, detail=str(e)) from e
+                monitor_result = await self._start_monitor_background()
                 return {
                     "status": "added",
                     "type": "outlook",
+                    "monitor": monitor_result,
                     "note": "Device code authentication needed on first monitor start.",
                 }
 
@@ -1808,15 +1906,19 @@ class PhishingDetectionApp:
                 if not all([host, user, password]):
                     raise HTTPException(status_code=400, detail="IMAP requires host, user, and password")
 
-                add_account_to_file({
-                    "type": "imap",
-                    "host": host,
-                    "port": port,
-                    "user": user,
-                    "password": password,
-                    "folder": payload.get("folder", "INBOX"),
-                })
-                return {"status": "added", "type": "imap", "email": user}
+                try:
+                    add_account_to_file({
+                        "type": "imap",
+                        "host": host,
+                        "port": port,
+                        "user": user,
+                        "password": password,
+                        "folder": payload.get("folder", "INBOX"),
+                    })
+                except RuntimeError as e:
+                    raise HTTPException(status_code=503, detail=str(e)) from e
+                monitor_result = await self._start_monitor_background()
+                return {"status": "added", "type": "imap", "email": user, "monitor": monitor_result}
 
             else:
                 raise HTTPException(status_code=400, detail=f"Unknown account type: {acct_type}")
@@ -2402,35 +2504,9 @@ class PhishingDetectionApp:
 
         # Start monitor in background — uses MultiAccountMonitor if accounts.json
         # exists, falls back to legacy IMAP monitor if IMAP env vars are set
-        from src.automation.multi_account_monitor import MultiAccountMonitor, load_providers_from_file
-
         @app.on_event("startup")
         async def start_monitor():
-            try:
-                monitor = MultiAccountMonitor.from_config(self.config)
-                if monitor.providers:
-                    self._monitor = monitor
-                    asyncio.create_task(monitor.run())
-                    accounts = [p.account_id for p in monitor.providers]
-                    logger.info(
-                        f"Multi-account monitor started: {len(accounts)} account(s) "
-                        f"[{', '.join(accounts)}]"
-                    )
-                elif self.config.imap.user and self.config.imap.password:
-                    from src.automation.email_monitor import EmailMonitor
-                    self._monitor = EmailMonitor.from_config(self.config)
-                    asyncio.create_task(self._monitor.run())
-                    logger.info(
-                        f"IMAP monitor started: {self.config.imap.user}@"
-                        f"{self.config.imap.host} → quarantine='{self.config.imap.quarantine_folder}'"
-                    )
-                else:
-                    logger.info(
-                        "No email accounts configured — monitor inactive. "
-                        "Add accounts at /accounts or set IMAP env vars."
-                    )
-            except Exception as e:
-                logger.error(f"Failed to start monitor: {e}", exc_info=True)
+            await self._start_monitor_background()
 
         @app.on_event("shutdown")
         async def stop_monitor():

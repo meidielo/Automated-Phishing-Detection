@@ -676,3 +676,69 @@ def test_session_post_accepts_csrf_header():
     )
 
     assert response.status_code == 200
+
+
+def test_monitor_stats_reports_saved_account_reconnect_state(monkeypatch):
+    client = TestClient(
+        _build_app_with_token(),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+    client.post("/login", data={"token": "secret", "next": "/monitor"})
+
+    import src.automation.multi_account_monitor as multi_account_monitor
+
+    monkeypatch.setattr(
+        multi_account_monitor,
+        "list_accounts",
+        lambda: [{"type": "imap", "user": "meidie@example.com", "password": "********"}],
+    )
+
+    response = client.get("/api/monitor/stats")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["account_status"] == "credential_error"
+    assert payload["configured_account_count"] == 1
+    assert payload["active_account_count"] == 0
+    assert payload["imap_configured"] is True
+    assert "reconnect" in payload["account_message"].lower()
+
+
+def test_detonate_url_endpoint_sanitizes_raw_screenshot_bytes(monkeypatch):
+    client = TestClient(
+        _build_app_with_token(),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+    client.post("/login", data={"token": "secret", "next": "/monitor"})
+    csrf = client.cookies.get(CSRF_COOKIE_NAME)
+
+    import main as main_module
+    import src.analyzers.url_detonation as url_detonation
+
+    monkeypatch.setattr(main_module.default_ssrf_guard, "assert_safe", lambda url: None)
+
+    async def fake_detonate(url: str):
+        return {
+            "url": url,
+            "page_loaded": True,
+            "screenshot_bytes": b"\x89PNG\r\n",
+            "screenshot_b64": "base64-image",
+        }
+
+    monkeypatch.setattr(url_detonation, "detonate_single_url", fake_detonate)
+
+    response = client.post(
+        "/api/detonate-url",
+        json={"url": "https://example.com"},
+        headers={
+            "X-CSRF-Token": csrf,
+            "Origin": "https://testserver",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["screenshot_b64"] == "base64-image"
+    assert "screenshot_bytes" not in payload

@@ -77,7 +77,11 @@ def _get_or_create_passphrase() -> str:
 
     except Exception as e:
         logger.error(f"Failed to save encryption passphrase to .env: {e}")
-        os.environ["ACCOUNTS_ENCRYPTION_KEY"] = passphrase
+        raise RuntimeError(
+            "ACCOUNTS_ENCRYPTION_KEY is not set and .env is not writable. "
+            "Set a stable ACCOUNTS_ENCRYPTION_KEY before storing email "
+            "account passwords."
+        ) from e
 
     return passphrase
 

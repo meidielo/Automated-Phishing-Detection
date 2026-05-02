@@ -27,6 +27,8 @@ from src.automation.multi_account_monitor import (
     _decrypt_sensitive,
     _encrypt_sensitive,
     _migrate_plaintext_passwords,
+    add_account_to_file,
+    list_accounts,
 )
 from src.security.credentials import is_encrypted
 
@@ -174,3 +176,33 @@ class TestMigratePlaintextPasswords:
         contents = path.read_text()
         assert "VerySecretPassword!" not in contents
         assert "OAuthClientSecretXYZ" not in contents
+
+
+class TestAddAccount:
+    def test_reconnecting_same_mailbox_replaces_stale_record(self, isolated_passphrase, tmp_path):
+        path = tmp_path / "accounts.json"
+
+        add_account_to_file(
+            {"type": "imap", "user": "meidie@example.com", "password": "old-pass"},
+            str(path),
+        )
+        add_account_to_file(
+            {"type": "imap", "user": "meidie@example.com", "password": "new-pass"},
+            str(path),
+        )
+
+        accounts = json.loads(path.read_text())
+        assert len(accounts) == 1
+        assert accounts[0]["user"] == "meidie@example.com"
+        assert is_encrypted(accounts[0]["password"])
+        assert "old-pass" not in path.read_text()
+        assert "new-pass" not in path.read_text()
+
+        safe_accounts = list_accounts(str(path))
+        assert safe_accounts == [
+            {
+                "type": "imap",
+                "user": "meidie@example.com",
+                "password": "••••••••",
+            }
+        ]

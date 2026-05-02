@@ -133,6 +133,13 @@
     .acct-msg.ok { background: var(--v-clean-bg); border: 1px solid var(--v-clean-border); color: var(--v-clean); display: block; }
     .acct-msg.err { background: var(--v-phishing-bg); border: 1px solid var(--v-phishing-border); color: var(--v-phishing); display: block; }
     .no-accounts { color: var(--text-muted); font-size: 13px; margin-top: 10px; }
+    .monitor-warning {
+      display: none; margin: -12px 0 28px; padding: 12px 16px;
+      border-radius: 8px; border: 1px solid var(--v-suspicious-border);
+      background: var(--v-suspicious-bg); color: var(--v-suspicious);
+      font-size: 13px; line-height: 1.5;
+    }
+    .monitor-warning.show { display: block; }
 
     /* ── Browse inbox modal ── */
     .browse-table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -317,6 +324,8 @@
       <div class="acct-msg" id="acct-msg"></div>
     </div>
   </div>
+
+  <div class="monitor-warning" id="monitor-warning"></div>
 
   <!-- Stats -->
   <div class="stats-row" id="stats-row">
@@ -534,13 +543,25 @@
       var d = await r.json();
       var pill = document.getElementById('status-pill');
       var txt  = document.getElementById('status-text');
+      var warn = document.getElementById('monitor-warning');
       if (d.running) {
         pill.className = 'status-pill running'; txt.textContent = 'Running';
         document.querySelector('.dot').classList.add('pulse');
+      } else if (d.account_status === 'credential_error') {
+        pill.className = 'status-pill unconfigured'; txt.textContent = 'Reconnect account';
       } else if (d.imap_configured === false && (!d.stats || !d.stats.accounts)) {
         pill.className = 'status-pill unconfigured'; txt.textContent = 'No accounts';
       } else {
         pill.className = 'status-pill stopped'; txt.textContent = 'Stopped';
+      }
+      if (warn) {
+        if (d.account_status === 'credential_error') {
+          warn.textContent = d.account_message || 'Saved mailbox credentials could not be loaded. Reconnect the mailbox.';
+          warn.classList.add('show');
+        } else {
+          warn.textContent = '';
+          warn.classList.remove('show');
+        }
       }
       var s = d.stats || {};
       set('s-processed',   s.emails_processed != null ? s.emails_processed : '—');
@@ -848,10 +869,18 @@
         body: JSON.stringify({ url: url }),
       });
 
-      var data = await r.json();
+      var raw = await r.text();
+      var data = {};
+      if (raw) {
+        try {
+          data = JSON.parse(raw);
+        } catch(parseError) {
+          data = { detail: raw.slice(0, 300) };
+        }
+      }
 
       if (!r.ok) {
-        resultSlot.innerHTML = '<div class="det-result"><strong style="color:var(--v-phishing)">Error:</strong> ' + esc(data.detail || 'Unknown error') + '</div>';
+        resultSlot.innerHTML = '<div class="det-result"><strong style="color:var(--v-phishing)">Error:</strong> ' + esc(data.detail || ('HTTP ' + r.status)) + '</div>';
         resetDetonateBtn(btn, urlItem);
         return;
       }

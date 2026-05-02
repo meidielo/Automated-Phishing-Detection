@@ -17,6 +17,7 @@ Tests cover:
 import json
 import os
 import base64
+import builtins
 
 import pytest
 from unittest.mock import patch
@@ -258,3 +259,18 @@ class TestPassphraseGeneration:
         assert os.environ["ACCOUNTS_ENCRYPTION_KEY"] == passphrase
         # Should be persisted
         assert "ACCOUNTS_ENCRYPTION_KEY" in env_file.read_text()
+
+    def test_missing_passphrase_fails_when_env_cannot_be_persisted(self, creds, monkeypatch, tmp_path):
+        monkeypatch.delenv("ACCOUNTS_ENCRYPTION_KEY", raising=False)
+        monkeypatch.chdir(tmp_path)
+
+        real_open = builtins.open
+
+        def deny_env_write(*args, **kwargs):
+            if args and str(args[0]) == ".env":
+                raise PermissionError("read-only app directory")
+            return real_open(*args, **kwargs)
+
+        with patch("builtins.open", side_effect=deny_env_write):
+            with pytest.raises(RuntimeError, match="ACCOUNTS_ENCRYPTION_KEY"):
+                creds._get_or_create_passphrase()

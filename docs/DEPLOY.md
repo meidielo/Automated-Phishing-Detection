@@ -45,6 +45,11 @@ At minimum, fill in:
 - `GOOGLE_SAFE_BROWSING_API_KEY`
 - `ANALYST_API_TOKEN` (generate one: `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`)
 - `SAAS_SESSION_SECRET` (generate separately: `python3 -c "import secrets; print(secrets.token_urlsafe(48))"`)
+- `ACCOUNTS_ENCRYPTION_KEY` if you will store monitored mailbox credentials
+  (generate separately: `python3 -c "import secrets; print(secrets.token_urlsafe(48))"`).
+  Set this before adding accounts and keep it stable across rebuilds. If it is
+  missing or changed, previously saved mailbox passwords cannot be decrypted
+  and those mailboxes must be reconnected.
 
 Optional public preview:
 - Set `PUBLIC_DEMO_MODE=true` only if you want `/demo` to be reachable without login. It is sample-only: it does not expose live upload analysis, mailbox monitoring, paid API-backed checks, feedback learning, dashboard data, or account management.
