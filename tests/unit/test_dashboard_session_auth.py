@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock
 
 from fastapi.testclient import TestClient
@@ -153,7 +154,7 @@ def test_dashboard_static_assets_are_served_without_session():
         assert expected in response.text
 
 
-def test_public_demo_is_not_available_by_default():
+def test_disabled_public_demo_pages_redirect_to_product_by_default():
     client = TestClient(
         _build_app_with_token(),
         base_url="https://testserver",
@@ -165,8 +166,10 @@ def test_public_demo_is_not_available_by_default():
     status = client.get("/api/demo/status")
     agent_status = client.get("/api/demo/agent-payment-analysis")
 
-    assert response.status_code == 404
-    assert agent_demo.status_code == 404
+    assert response.status_code == 303
+    assert response.headers["location"] == "/product"
+    assert agent_demo.status_code == 303
+    assert agent_demo.headers["location"] == "/product"
     assert status.status_code == 404
     assert agent_status.status_code == 404
 
@@ -260,8 +263,34 @@ def test_product_shell_opens_without_analyst_session():
 
     assert response.status_code == 200
     assert "Agent-ready payment scam firewall" in response.text
+    assert 'href="/agent-demo"' not in response.text
+    assert 'href="/demo"' not in response.text
+    assert 'href="/app">Open user app</a>' in response.text
     assert "/static/product.css" in response.text
     assert "/static/product-dashboard.png" in response.text
+
+
+def test_product_shell_links_demo_pages_only_when_demo_is_enabled():
+    client = TestClient(
+        _build_app_with_token(public_demo_mode=True),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    response = client.get("/product")
+
+    assert response.status_code == 200
+    assert 'href="/agent-demo">Agent demo</a>' in response.text
+    assert 'href="/demo">Public demo</a>' in response.text
+    assert 'href="/agent-demo">Open agent demo</a>' in response.text
+
+
+def test_shared_controls_use_icon_theme_and_page_scoped_logout():
+    script = Path("static/shared.js").read_text(encoding="utf-8")
+
+    assert "function themeIcon(nextTheme)" in script
+    assert "aria-label', label" in script
+    assert "if (isAnalystPage()) installAnalystLogout(nav);" in script
 
 
 def test_public_demo_status_declares_locked_capabilities():

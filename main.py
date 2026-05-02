@@ -495,6 +495,22 @@ class PhishingDetectionApp:
                 '</div>'
             )
 
+        def _product_demo_nav_links() -> str:
+            if not _demo_enabled():
+                return ""
+            return '<a href="/agent-demo">Agent demo</a><a href="/demo">Public demo</a>'
+
+        def _product_hero_actions() -> str:
+            if _demo_enabled():
+                return (
+                    '<a class="primary-action" href="/agent-demo">Open agent demo</a>'
+                    '<a class="secondary-action" href="/app">Try the app shell</a>'
+                )
+            return (
+                '<a class="primary-action" href="/app">Open user app</a>'
+                '<a class="secondary-action" href="/login">Analyst login</a>'
+            )
+
         def _render_login(next_path: str, error_message: str = "") -> HTMLResponse:
             login_path = Path("./templates/login.html")
             html_content = (
@@ -798,8 +814,13 @@ class PhishingDetectionApp:
         async def product_page():
             """Serve the public product shell for the payment scam firewall."""
             product_path = Path("./templates/product.html")
-            return HTMLResponse(content=_inject_shared(
+            html_content = (
                 product_path.read_text(encoding="utf-8")
+                .replace("{{DEMO_NAV_LINKS}}", _product_demo_nav_links())
+                .replace("{{HERO_ACTIONS}}", _product_hero_actions())
+            )
+            return HTMLResponse(content=_inject_shared(
+                html_content
             ))
 
         @app.get("/api/saas/session")
@@ -1101,7 +1122,7 @@ class PhishingDetectionApp:
         async def public_demo():
             """Serve the safe public demo page without opening analyst APIs."""
             if not _demo_enabled():
-                raise HTTPException(status_code=404, detail="Public demo mode is not enabled")
+                return RedirectResponse(url="/product", status_code=303)
             demo_path = Path("./templates/demo.html")
             return HTMLResponse(content=_inject_shared(
                 demo_path.read_text(encoding="utf-8")
@@ -1111,7 +1132,7 @@ class PhishingDetectionApp:
         async def agent_demo():
             """Serve the sample-only agent payment analysis page."""
             if not _demo_enabled():
-                raise HTTPException(status_code=404, detail="Public demo mode is not enabled")
+                return RedirectResponse(url="/product", status_code=303)
             demo_path = Path("./templates/agent_demo.html")
             return HTMLResponse(content=_inject_shared(
                 demo_path.read_text(encoding="utf-8")

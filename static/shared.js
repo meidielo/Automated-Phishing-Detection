@@ -45,13 +45,49 @@
     try { theme = localStorage.getItem('phishdetect-theme') || 'dark'; } catch(e) {}
     document.documentElement.setAttribute('data-theme', theme);
 
+    function themeIcon(nextTheme) {
+      if (nextTheme === 'light') {
+        return [
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"',
+          ' stroke-width="2" stroke-linecap="round" stroke-linejoin="round"',
+          ' aria-hidden="true">',
+          '<circle cx="12" cy="12" r="4"></circle>',
+          '<path d="M12 2v2"></path>',
+          '<path d="M12 20v2"></path>',
+          '<path d="m4.93 4.93 1.41 1.41"></path>',
+          '<path d="m17.66 17.66 1.41 1.41"></path>',
+          '<path d="M2 12h2"></path>',
+          '<path d="M20 12h2"></path>',
+          '<path d="m6.34 17.66-1.41 1.41"></path>',
+          '<path d="m19.07 4.93-1.41 1.41"></path>',
+          '</svg>',
+        ].join('');
+      }
+      return [
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"',
+        ' stroke-width="2" stroke-linecap="round" stroke-linejoin="round"',
+        ' aria-hidden="true">',
+        '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"></path>',
+        '</svg>',
+      ].join('');
+    }
+
+    function updateThemeButtons(activeTheme) {
+      var nextTheme = activeTheme === 'dark' ? 'light' : 'dark';
+      var label = 'Switch to ' + nextTheme + ' mode';
+      document.querySelectorAll('.theme-toggle').forEach(function(btn) {
+        btn.innerHTML = themeIcon(nextTheme);
+        btn.setAttribute('aria-label', label);
+        btn.setAttribute('title', label);
+      });
+    }
+
     window.toggleTheme = function() {
       var current = document.documentElement.getAttribute('data-theme') || 'dark';
       var next = current === 'dark' ? 'light' : 'dark';
       document.documentElement.setAttribute('data-theme', next);
       try { localStorage.setItem('phishdetect-theme', next); } catch(e) {}
-      var btn = document.querySelector('.theme-toggle');
-      if (btn) btn.textContent = next === 'dark' ? 'Light' : 'Dark';
+      updateThemeButtons(next);
     };
 
     function installFeedback(nav) {
@@ -204,6 +240,32 @@
       });
     }
 
+    function isAnalystPage() {
+      return /^\/(analyze|dashboard|status|monitor|accounts)(\/|$)/.test(window.location.pathname);
+    }
+
+    function installAnalystLogout(nav) {
+      fetch('/api/auth/session', {credentials: 'same-origin'})
+        .then(function(response) {
+          return response.ok ? response.json() : null;
+        })
+        .then(function(session) {
+          if (!session || !session.auth_enabled || !session.authenticated) return;
+          var logoutBtn = document.createElement('button');
+          logoutBtn.className = 'logout-button';
+          logoutBtn.type = 'button';
+          logoutBtn.textContent = 'Logout';
+          logoutBtn.addEventListener('click', function() {
+            fetch('/api/auth/logout', {method: 'POST'})
+              .finally(function() {
+                window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname);
+              });
+          });
+          nav.appendChild(logoutBtn);
+        })
+        .catch(function() {});
+    }
+
     document.addEventListener('DOMContentLoaded', function() {
       var nav = document.querySelector('nav');
       if (!nav) return;
@@ -211,20 +273,10 @@
       var themeBtn = document.createElement('button');
       themeBtn.className = 'theme-toggle';
       themeBtn.type = 'button';
-      themeBtn.textContent = theme === 'dark' ? 'Light' : 'Dark';
       themeBtn.addEventListener('click', window.toggleTheme);
       nav.appendChild(themeBtn);
+      updateThemeButtons(document.documentElement.getAttribute('data-theme') || 'dark');
 
-      var logoutBtn = document.createElement('button');
-      logoutBtn.className = 'logout-button';
-      logoutBtn.type = 'button';
-      logoutBtn.textContent = 'Logout';
-      logoutBtn.addEventListener('click', function() {
-        fetch('/api/auth/logout', {method: 'POST'})
-          .finally(function() {
-            window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname);
-          });
-      });
-      nav.appendChild(logoutBtn);
+      if (isAnalystPage()) installAnalystLogout(nav);
     });
   })();
