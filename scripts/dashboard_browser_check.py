@@ -110,9 +110,9 @@ def _run_browser_check(base_url: str, token: str) -> dict:
                 verdictFallbackHidden: document.getElementById('verdictFallback').hidden,
                 trendsFallbackHidden: document.getElementById('trendsFallback').hidden,
                 tableAreaPresent: !!document.getElementById('tableArea'),
-                sharedCssLoaded: !!document.querySelector('link[href="/static/shared.css"]'),
-                dashboardCssLoaded: !!document.querySelector('link[href="/static/dashboard.css"]'),
-                dashboardJsLoaded: !!document.querySelector('script[src="/static/dashboard.js"]'),
+                sharedCssLoaded: !!document.querySelector('link[href^="/static/shared.css"]'),
+                dashboardCssLoaded: !!document.querySelector('link[href^="/static/dashboard.css"]'),
+                dashboardJsLoaded: !!document.querySelector('script[src^="/static/dashboard.js"]'),
               };
             }"""
         )
