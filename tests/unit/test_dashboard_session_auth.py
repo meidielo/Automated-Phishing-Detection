@@ -755,7 +755,25 @@ def test_monitor_stats_reports_saved_account_reconnect_state(monkeypatch):
     assert payload["configured_account_count"] == 1
     assert payload["active_account_count"] == 0
     assert payload["imap_configured"] is True
-    assert "reconnect" in payload["account_message"].lower()
+    assert "different key" in payload["account_message"].lower()
+    assert "fresh app password" in payload["account_message"].lower()
+
+
+def test_monitor_page_guides_mailbox_reconnect():
+    client = TestClient(
+        _build_app_with_token(),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+    client.post("/login", data={"token": "secret", "next": "/monitor"})
+
+    response = client.get("/monitor")
+
+    assert response.status_code == 200
+    body = response.text
+    assert "Reconnect Email" in body
+    assert "showReconnectForm" in body
+    assert "Re-enter the Gmail app password below using the same email address" in body
 
 
 def test_detonate_url_endpoint_sanitizes_raw_screenshot_bytes(monkeypatch):

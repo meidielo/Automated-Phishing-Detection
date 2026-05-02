@@ -50,6 +50,9 @@ At minimum, fill in:
   Set this before adding accounts and keep it stable across rebuilds. If it is
   missing or changed, previously saved mailbox passwords cannot be decrypted
   and those mailboxes must be reconnected.
+  When the monitor shows `Reconnect account`, keep the key as-is and re-enter
+  the mailbox app password once from `/monitor`; adding the same email replaces
+  the stale encrypted credential.
 
 Optional public preview:
 - Set `PUBLIC_DEMO_MODE=true` only if you want `/demo` to be reachable without login. It is sample-only: it does not expose live upload analysis, mailbox monitoring, paid API-backed checks, feedback learning, dashboard data, or account management.

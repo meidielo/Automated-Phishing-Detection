@@ -1704,8 +1704,9 @@ class PhishingDetectionApp:
             elif configured_account_count > 0 and active_account_count == 0:
                 account_status = "credential_error"
                 account_message = (
-                    "Saved mailbox credentials could not be loaded. "
-                    "Set ACCOUNTS_ENCRYPTION_KEY permanently and reconnect the mailbox."
+                    "Saved mailbox credentials were encrypted with a different key "
+                    "or are corrupted. ACCOUNTS_ENCRYPTION_KEY is set now, but this "
+                    "mailbox must be reconnected once with a fresh app password."
                 )
             elif self._monitor is not None or bool(self.config.imap.user):
                 account_status = "stopped"

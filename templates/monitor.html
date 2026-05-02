@@ -441,7 +441,26 @@
   }
 
   // ── Account panel ──
+  var latestAccounts = [];
+  var lastAccountStatus = '';
+
   function toggleAddForm() { document.getElementById('acct-add-form').classList.toggle('open'); }
+
+  function showReconnectForm() {
+    var form = document.getElementById('acct-add-form');
+    var toggle = document.getElementById('acct-toggle-btn');
+    var emailInput = document.getElementById('add-email');
+    if (form) form.classList.add('open');
+    if (toggle) toggle.textContent = 'Reconnect Email';
+    if (emailInput && !emailInput.value && latestAccounts.length === 1) {
+      emailInput.value = latestAccounts[0].email || latestAccounts[0].user || '';
+    }
+  }
+
+  function resetAccountToggle() {
+    var toggle = document.getElementById('acct-toggle-btn');
+    if (toggle) toggle.textContent = '+ Add Email';
+  }
 
   async function loadAccounts() {
     try {
@@ -452,19 +471,21 @@
   }
 
   function renderAccountBadges(accounts) {
+    latestAccounts = accounts || [];
     var el = document.getElementById('acct-badges');
     var countEl = document.getElementById('acct-count');
-    if (!accounts || !accounts.length) {
+    if (!latestAccounts.length) {
       el.innerHTML = '<span class="no-accounts">No accounts connected — click "+ Add Email" above</span>';
       countEl.textContent = '';
       return;
     }
-    countEl.textContent = '(' + accounts.length + ')';
-    el.innerHTML = accounts.map(function(a) {
+    countEl.textContent = '(' + latestAccounts.length + ')';
+    el.innerHTML = latestAccounts.map(function(a) {
       var email = a.email || a.user || 'unknown';
       return '<span class="acct-badge">&#9993; ' + esc(email) +
         '<span class="x" onclick="removeAcct(\'' + esc(email) + '\')">&times;</span></span>';
     }).join('');
+    if (lastAccountStatus === 'credential_error') showReconnectForm();
   }
 
   async function addAccount() {
@@ -547,16 +568,25 @@
       if (d.running) {
         pill.className = 'status-pill running'; txt.textContent = 'Running';
         document.querySelector('.dot').classList.add('pulse');
+        lastAccountStatus = 'running';
+        resetAccountToggle();
       } else if (d.account_status === 'credential_error') {
         pill.className = 'status-pill unconfigured'; txt.textContent = 'Reconnect account';
+        lastAccountStatus = 'credential_error';
+        showReconnectForm();
       } else if (d.imap_configured === false && (!d.stats || !d.stats.accounts)) {
         pill.className = 'status-pill unconfigured'; txt.textContent = 'No accounts';
+        lastAccountStatus = 'none';
+        resetAccountToggle();
       } else {
         pill.className = 'status-pill stopped'; txt.textContent = 'Stopped';
+        lastAccountStatus = 'stopped';
+        resetAccountToggle();
       }
       if (warn) {
         if (d.account_status === 'credential_error') {
-          warn.textContent = d.account_message || 'Saved mailbox credentials could not be loaded. Reconnect the mailbox.';
+          warn.textContent = (d.account_message || 'Saved mailbox credentials could not be loaded. Reconnect the mailbox.') +
+            ' Re-enter the Gmail app password below using the same email address.';
           warn.classList.add('show');
         } else {
           warn.textContent = '';
