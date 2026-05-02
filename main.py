@@ -16,6 +16,7 @@ import re
 import sys
 from collections import deque
 from pathlib import Path
+from time import monotonic
 
 from dotenv import load_dotenv
 load_dotenv(override=True)  # override=True so .env values win over empty system env vars
@@ -60,10 +61,16 @@ from src.saas import (
     USER_SESSION_COOKIE_NAME,
     DuplicateEmailError,
     InvalidCredentialsError,
+    PasswordResetTokenError,
     SaaSSessionManager,
     SaaSStore,
 )
 from src.saas.auth import USER_SESSION_MAX_AGE_SECONDS, verify_user_csrf
+from src.saas.email_delivery import (
+    EmailDeliveryError,
+    PasswordResetEmail,
+    SMTPPasswordResetMailer,
+)
 
 
 # Configure logging
@@ -562,6 +569,27 @@ class PhishingDetectionApp:
                 self._saas_store = SaaSStore(db_path)
             return self._saas_store
 
+        def _password_reset_mailer() -> SMTPPasswordResetMailer:
+            return SMTPPasswordResetMailer(getattr(self.config, "smtp", None))
+
+        password_reset_attempts: dict[str, deque[float]] = {}
+
+        def _check_password_reset_rate_limit(request: Request, email: str) -> None:
+            window_seconds = 3600
+            max_attempts = 5
+            client_host = request.client.host if request.client else "unknown"
+            key = f"{client_host}:{email.strip().lower()}"
+            now = monotonic()
+            attempts = password_reset_attempts.setdefault(key, deque())
+            while attempts and now - attempts[0] > window_seconds:
+                attempts.popleft()
+            if len(attempts) >= max_attempts:
+                raise HTTPException(
+                    status_code=429,
+                    detail="Too many password reset requests. Try again later.",
+                )
+            attempts.append(now)
+
         def _set_user_auth_cookies(response, request: Request, context) -> None:
             if not self.saas_session_manager.enabled:
                 raise HTTPException(
@@ -885,6 +913,79 @@ class PhishingDetectionApp:
                 )
             except InvalidCredentialsError:
                 raise HTTPException(status_code=401, detail="Invalid email or password")
+            response = JSONResponse({"status": "ok", "account": context.to_dict()})
+            _set_user_auth_cookies(response, request, context)
+            return response
+
+        @app.post("/api/saas/auth/password-reset/request")
+        async def api_saas_password_reset_request(request: Request):
+            """Request a password reset email without leaking account existence."""
+            if not self.saas_session_manager.enabled:
+                raise HTTPException(
+                    status_code=503,
+                    detail="User sessions are not configured on this server",
+                )
+            payload = await request.json()
+            email = str(payload.get("email", "")).strip()
+            if not email:
+                raise HTTPException(status_code=400, detail="Email is required")
+            _check_password_reset_rate_limit(request, email)
+
+            mailer = _password_reset_mailer()
+            delivery_configured = mailer.enabled
+            if delivery_configured:
+                token = _get_saas_store().create_password_reset_token(
+                    email,
+                    ttl_minutes=getattr(self.config, "password_reset_token_ttl_minutes", 30),
+                )
+                if token:
+                    from urllib.parse import quote
+                    ttl_minutes = getattr(self.config, "password_reset_token_ttl_minutes", 30)
+                    reset_url = _external_url(request, f"/app?reset_token={quote(token)}")
+                    try:
+                        mailer.send_password_reset(
+                            PasswordResetEmail(
+                                to_email=email,
+                                reset_url=reset_url,
+                                ttl_minutes=ttl_minutes,
+                            )
+                        )
+                    except EmailDeliveryError as exc:
+                        logger.warning("Password reset email delivery failed: %s", exc)
+                        raise HTTPException(
+                            status_code=503,
+                            detail="Password reset email could not be sent",
+                        ) from exc
+
+            return {
+                "status": "ok",
+                "email_delivery_configured": delivery_configured,
+                "message": (
+                    "If this email belongs to an account, a password reset link "
+                    "will be sent."
+                ),
+            }
+
+        @app.post("/api/saas/auth/password-reset/confirm")
+        async def api_saas_password_reset_confirm(request: Request):
+            """Set a new password from a one-time reset token."""
+            if not self.saas_session_manager.enabled:
+                raise HTTPException(
+                    status_code=503,
+                    detail="User sessions are not configured on this server",
+                )
+            payload = await request.json()
+            token = str(payload.get("token", "")).strip()
+            new_password = str(payload.get("password", ""))
+            if not token:
+                raise HTTPException(status_code=400, detail="Reset token is required")
+            try:
+                context = _get_saas_store().reset_password_with_token(token, new_password)
+            except PasswordResetTokenError:
+                raise HTTPException(status_code=400, detail="Invalid or expired reset link")
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
+
             response = JSONResponse({"status": "ok", "account": context.to_dict()})
             _set_user_auth_cookies(response, request, context)
             return response

@@ -230,7 +230,23 @@ Public signup is off by default:
 SAAS_SESSION_SECRET=change-me-to-a-long-random-secret
 SAAS_DB_PATH=data/saas.db
 SAAS_PUBLIC_SIGNUP_ENABLED=false
+PASSWORD_RESET_TOKEN_TTL_MINUTES=30
 ```
+
+Password reset is supported through `/api/saas/auth/password-reset/request` and `/api/saas/auth/password-reset/confirm`. Reset tokens are stored hashed, expire after `PASSWORD_RESET_TOKEN_TTL_MINUTES`, and are one-time use. Requests are rate-limited per client/email pair to reduce reset-link spam. Configure SMTP to send reset links through Zoho Mail or another transactional SMTP provider:
+
+```bash
+SMTP_HOST=smtp.zoho.com
+SMTP_PORT=587
+SMTP_USERNAME=alerts@example.com
+SMTP_PASSWORD=zoho-app-specific-password
+SMTP_FROM_EMAIL=alerts@example.com
+SMTP_FROM_NAME=PhishDetect
+SMTP_USE_SSL=false
+SMTP_STARTTLS=true
+```
+
+Zoho Mail supports `smtp.zoho.com` with SSL on port `465` or TLS/STARTTLS on port `587`. If Zoho two-factor authentication is enabled, use a Zoho application-specific password rather than the mailbox login password. If SMTP is not configured, the API returns a generic success response without sending mail so account existence is not leaked.
 
 When signup is enabled, free accounts get 5 manual scans/month. `/api/saas/analyze/upload` stores user scans in the tenant-scoped SaaS DB instead of the shared analyst `data/results.jsonl` log. Expensive analyzers check plan entitlements before loading clients; locked checks return structured `feature_locked` metadata so the UI can show the required tier instead of burning paid API quota.
 
@@ -328,7 +344,7 @@ The static Sigma rule library in [`sigma_rules/`](sigma_rules/) ships hand-writt
 
 ## Testing
 
-The test suite has **1139 tests across 57 test modules** (unit + integration), exercising every analyzer, the decision engine override rules (including the cycle 7 ordering fix that catches pure-text BEC), the cross-analyzer calibration pass (ADR 0001) with explicit cap-ceiling tests, the persistent email_id lookup index (ADR 0002) with cross-restart smoking-gun tests, scoring confidence capping, IOC export, the Sigma exporter, the URL reputation dead-domain confidence downgrade, credential encryption migration, the LLM determinism contract, the generic phishing ML baseline, the payment-fraud dataset/eval/train/demo workflow, the body_html sanitizer with hostile XSS payloads, retention and per-subject erasure across results, alerts, feedback, SaaS scan rows, and sender profiles, dashboard self-hosted chart assets/fallback rendering under a strict dashboard CSP, public demo mode guardrails, SaaS account/session/quota gates, Stripe Checkout/webhook subscription mirroring, plan/feature-lock metadata, static asset cache busting, public-root routing away from admin login, the privacy-safe shared feedback modal, Docker Playwright version pinning, operational backup/health scripts, and the web security middleware (bearer auth, browser session auth with CSRF, user session auth with CSRF, Stripe webhook signatures, SSRF guard, security headers). CI runs the full suite plus a Playwright dashboard chart smoke check on every push and PR against a fresh checkout from the hash-pinned lock file. CI-bites verified by deliberate-red sanity check on a throwaway branch.
+The test suite has **1149 tests across 57 test modules** (unit + integration), exercising every analyzer, the decision engine override rules (including the cycle 7 ordering fix that catches pure-text BEC), the cross-analyzer calibration pass (ADR 0001) with explicit cap-ceiling tests, the persistent email_id lookup index (ADR 0002) with cross-restart smoking-gun tests, scoring confidence capping, IOC export, the Sigma exporter, the URL reputation dead-domain confidence downgrade, credential encryption migration, the LLM determinism contract, the generic phishing ML baseline, the payment-fraud dataset/eval/train/demo workflow, the body_html sanitizer with hostile XSS payloads, retention and per-subject erasure across results, alerts, feedback, SaaS scan rows, and sender profiles, dashboard self-hosted chart assets/fallback rendering under a strict dashboard CSP, public demo mode guardrails, SaaS account/session/quota/password-reset gates, Stripe Checkout/webhook subscription mirroring, plan/feature-lock metadata, static asset cache busting, public-root routing away from admin login, the privacy-safe shared feedback modal, Docker Playwright version pinning, operational backup/health scripts, and the web security middleware (bearer auth, browser session auth with CSRF, user session auth with CSRF, Stripe webhook signatures, SSRF guard, security headers). CI runs the full suite plus a Playwright dashboard chart smoke check on every push and PR against a fresh checkout from the hash-pinned lock file. CI-bites verified by deliberate-red sanity check on a throwaway branch.
 
 ```bash
 # Run all tests

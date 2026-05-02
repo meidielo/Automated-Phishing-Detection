@@ -8,6 +8,12 @@
   const featureGrid = document.getElementById("featureGrid");
   const historyList = document.getElementById("historyList");
   const decisionStack = document.getElementById("decisionStack");
+  const authForms = {
+    login: document.getElementById("loginForm"),
+    signup: document.getElementById("signupForm"),
+    reset: document.getElementById("resetRequestForm"),
+    resetConfirm: document.getElementById("resetConfirmForm"),
+  };
 
   let csrfCookieName = "phishdetect_user_csrf";
 
@@ -214,17 +220,24 @@
       .replace(/'/g, "&#039;");
   }
 
+  function selectAuthTab(mode) {
+    document.querySelectorAll("[data-auth-tab]").forEach((tab) => {
+      tab.classList.toggle("active", tab.getAttribute("data-auth-tab") === mode);
+    });
+    authForms.login.classList.toggle("hidden", mode !== "login");
+    authForms.signup.classList.toggle("hidden", mode !== "signup");
+    authForms.reset.classList.toggle("hidden", mode !== "reset");
+    authForms.resetConfirm.classList.add("hidden");
+  }
+
   document.querySelectorAll("[data-auth-tab]").forEach((button) => {
     button.addEventListener("click", () => {
-      document.querySelectorAll("[data-auth-tab]").forEach((tab) => tab.classList.remove("active"));
-      button.classList.add("active");
-      const mode = button.getAttribute("data-auth-tab");
-      document.getElementById("loginForm").classList.toggle("hidden", mode !== "login");
-      document.getElementById("signupForm").classList.toggle("hidden", mode !== "signup");
+      hideNotice(authNotice);
+      selectAuthTab(button.getAttribute("data-auth-tab"));
     });
   });
 
-  document.getElementById("loginForm").addEventListener("submit", async (event) => {
+  authForms.login.addEventListener("submit", async (event) => {
     event.preventDefault();
     hideNotice(authNotice);
     const form = new FormData(event.currentTarget);
@@ -239,7 +252,7 @@
     }
   });
 
-  document.getElementById("signupForm").addEventListener("submit", async (event) => {
+  authForms.signup.addEventListener("submit", async (event) => {
     event.preventDefault();
     hideNotice(authNotice);
     const form = new FormData(event.currentTarget);
@@ -248,6 +261,37 @@
         method: "POST",
         body: JSON.stringify(Object.fromEntries(form.entries())),
       });
+      await loadSession();
+    } catch (error) {
+      showNotice(authNotice, error.message);
+    }
+  });
+
+  authForms.reset.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    hideNotice(authNotice);
+    const form = new FormData(event.currentTarget);
+    try {
+      const payload = await apiJson("/api/saas/auth/password-reset/request", {
+        method: "POST",
+        body: JSON.stringify(Object.fromEntries(form.entries())),
+      });
+      showNotice(authNotice, payload.message);
+    } catch (error) {
+      showNotice(authNotice, error.message);
+    }
+  });
+
+  authForms.resetConfirm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    hideNotice(authNotice);
+    const form = new FormData(event.currentTarget);
+    try {
+      await apiJson("/api/saas/auth/password-reset/confirm", {
+        method: "POST",
+        body: JSON.stringify(Object.fromEntries(form.entries())),
+      });
+      window.history.replaceState({}, "", "/app");
       await loadSession();
     } catch (error) {
       showNotice(authNotice, error.message);
@@ -316,5 +360,21 @@
     }
   });
 
-  loadSession().catch((error) => showNotice(authNotice, error.message));
+  function prepareResetLink() {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("reset_token");
+    if (!token) {
+      return false;
+    }
+    document.getElementById("resetToken").value = token;
+    selectAuthTab("reset");
+    authForms.reset.classList.add("hidden");
+    authForms.resetConfirm.classList.remove("hidden");
+    return true;
+  }
+
+  const hasResetToken = prepareResetLink();
+  if (!hasResetToken) {
+    loadSession().catch((error) => showNotice(authNotice, error.message));
+  }
 })();

@@ -9,7 +9,7 @@ import secrets
 import sqlite3
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterator
 
@@ -25,6 +25,10 @@ class DuplicateEmailError(ValueError):
 
 class InvalidCredentialsError(ValueError):
     """Raised when email/password authentication fails."""
+
+
+class PasswordResetTokenError(ValueError):
+    """Raised when a password reset token is invalid, used, or expired."""
 
 
 @dataclass(frozen=True)
@@ -167,6 +171,114 @@ class SaaSStore:
             )
             conn.commit()
             return context
+
+    def create_password_reset_token(
+        self,
+        email: str,
+        *,
+        ttl_minutes: int = 30,
+    ) -> str | None:
+        normalized_email = normalize_email(email)
+        token = secrets.token_urlsafe(32)
+        token_hash = hash_reset_token(token)
+        now = utc_now_iso()
+        expires_at = (datetime.now(timezone.utc) + timedelta(minutes=ttl_minutes)).isoformat()
+
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT id, disabled_at FROM users WHERE email = ?",
+                (normalized_email,),
+            ).fetchone()
+            if row is None or row["disabled_at"]:
+                return None
+            conn.execute(
+                """
+                UPDATE password_reset_tokens
+                SET used_at = ?
+                WHERE user_id = ? AND used_at IS NULL
+                """,
+                (now, row["id"]),
+            )
+            conn.execute(
+                """
+                INSERT INTO password_reset_tokens (
+                    id, user_id, token_hash, created_at, expires_at
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (new_id("prt"), row["id"], token_hash, now, expires_at),
+            )
+            conn.commit()
+        return token
+
+    def reset_password_with_token(self, token: str, new_password: str) -> AccountContext:
+        validate_password(new_password)
+        token_hash = hash_reset_token(token)
+        now_dt = datetime.now(timezone.utc)
+        now = now_dt.isoformat()
+
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT prt.id, prt.user_id, prt.expires_at, prt.used_at, u.disabled_at
+                FROM password_reset_tokens prt
+                JOIN users u ON u.id = prt.user_id
+                WHERE prt.token_hash = ?
+                """,
+                (token_hash,),
+            ).fetchone()
+            if row is None or row["used_at"] or row["disabled_at"]:
+                raise PasswordResetTokenError("invalid or expired reset token")
+            try:
+                expires_at = datetime.fromisoformat(row["expires_at"])
+            except ValueError as exc:
+                raise PasswordResetTokenError("invalid or expired reset token") from exc
+            if expires_at < now_dt:
+                conn.execute(
+                    "UPDATE password_reset_tokens SET used_at = ? WHERE id = ?",
+                    (now, row["id"]),
+                )
+                conn.commit()
+                raise PasswordResetTokenError("invalid or expired reset token")
+
+            conn.execute(
+                "UPDATE users SET password_hash = ? WHERE id = ?",
+                (hash_password(new_password), row["user_id"]),
+            )
+            conn.execute(
+                """
+                UPDATE password_reset_tokens
+                SET used_at = ?
+                WHERE user_id = ? AND used_at IS NULL
+                """,
+                (now, row["user_id"]),
+            )
+            org_row = conn.execute(
+                """
+                SELECT org_id FROM memberships
+                WHERE user_id = ?
+                ORDER BY created_at ASC
+                LIMIT 1
+                """,
+                (row["user_id"],),
+            ).fetchone()
+            if org_row is not None:
+                self._write_audit(
+                    conn,
+                    org_id=org_row["org_id"],
+                    actor_user_id=row["user_id"],
+                    action="user.password_reset",
+                    target_type="user",
+                    target_id=row["user_id"],
+                    metadata={},
+                    now=now,
+                )
+            conn.commit()
+
+        context = self.get_account_context(row["user_id"])
+        if context is None:
+            raise PasswordResetTokenError("invalid or expired reset token")
+        return context
 
     def get_account_context(self, user_id: str) -> AccountContext | None:
         with self._connect() as conn:
@@ -719,6 +831,10 @@ def verify_password(password: str, encoded: str) -> bool:
     return hmac.compare_digest(actual, expected)
 
 
+def hash_reset_token(token: str) -> str:
+    return hashlib.sha256((token or "").encode("utf-8")).hexdigest()
+
+
 def new_id(prefix: str) -> str:
     return f"{prefix}_{secrets.token_urlsafe(18)}"
 
@@ -741,6 +857,18 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TEXT NOT NULL,
     disabled_at TEXT
 );
+
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    used_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user
+ON password_reset_tokens(user_id);
 
 CREATE TABLE IF NOT EXISTS organizations (
     id TEXT PRIMARY KEY,

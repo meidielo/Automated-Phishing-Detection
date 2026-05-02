@@ -19,6 +19,7 @@
         <div class="tabs" role="tablist">
           <button class="tab active" type="button" data-auth-tab="login">Login</button>
           <button class="tab" type="button" data-auth-tab="signup">Create account</button>
+          <button class="tab" type="button" data-auth-tab="reset">Reset password</button>
         </div>
 
         <form id="loginForm" class="auth-form">
@@ -32,6 +33,17 @@
           <label>Password <input name="password" type="password" autocomplete="new-password" minlength="10" required></label>
           <label>Organization <input name="org_name" type="text" autocomplete="organization"></label>
           <button type="submit">Create free account</button>
+        </form>
+
+        <form id="resetRequestForm" class="auth-form hidden">
+          <label>Email <input name="email" type="email" autocomplete="email" required></label>
+          <button type="submit">Send reset link</button>
+        </form>
+
+        <form id="resetConfirmForm" class="auth-form hidden">
+          <input name="token" type="hidden" id="resetToken">
+          <label>New password <input name="password" type="password" autocomplete="new-password" minlength="10" required></label>
+          <button type="submit">Set new password</button>
         </form>
 
         <div class="notice" id="authNotice" hidden></div>

@@ -35,9 +35,13 @@ Implemented foundation:
 - `/app` serves the normal user account shell.
 - `/api/saas/auth/signup`, `/api/saas/auth/login`, and
   `/api/saas/auth/logout` use signed user sessions plus CSRF protection.
+- `/api/saas/auth/password-reset/request` and
+  `/api/saas/auth/password-reset/confirm` implement a normal reset-password
+  flow with one-time hashed reset tokens and SMTP delivery. The request route
+  returns the same generic response for known and unknown emails.
 - `src/saas/database.py` creates `users`, `organizations`, `memberships`,
-  `subscriptions`, `mail_accounts`, `scan_jobs`, `scan_results`,
-  `usage_events`, `feature_locks`, and `audit_logs`.
+  `password_reset_tokens`, `subscriptions`, `mail_accounts`, `scan_jobs`,
+  `scan_results`, `usage_events`, `feature_locks`, and `audit_logs`.
 - `/api/saas/analyze/upload` stores results in `scan_results`, not the shared
   analyst `data/results.jsonl` log.
 - The pipeline accepts a per-request `feature_gate`; locked analyzers return
@@ -86,6 +90,7 @@ development and single-operator demos.
 | Table | Purpose | Key fields |
 |---|---|---|
 | `users` | Login identity | `id`, `email`, `password_hash` or OAuth subject, `created_at` |
+| `password_reset_tokens` | One-time password reset links | `user_id`, `token_hash`, `expires_at`, `used_at` |
 | `organizations` | Billing and tenant boundary | `id`, `name`, `stripe_customer_id`, `created_at` |
 | `memberships` | User to org mapping | `user_id`, `org_id`, `role` |
 | `subscriptions` | Stripe mirror | `org_id`, `stripe_subscription_id`, `plan_slug`, `status`, `current_period_end` |
@@ -136,11 +141,12 @@ Safe implementation order:
 
 1. Add database schema and tenant-scoped query helpers. **Done for the SaaS path.**
 2. Add account login with signed user sessions and CSRF. **Done.**
-3. Move user scan results from `results.jsonl` display paths into
+3. Add password reset via SMTP with hashed one-time tokens. **Done.**
+4. Move user scan results from `results.jsonl` display paths into
    `scan_results`. **Done for `/api/saas/analyze/upload`.**
-4. Add usage tracking and feature gates. **Done for manual scans and analyzers.**
-5. Add Stripe Checkout and webhook subscription sync. **Done for the SaaS path.**
-6. Add per-user mailbox connection.
-7. Add tenant isolation tests before enabling real mailbox access.
+5. Add usage tracking and feature gates. **Done for manual scans and analyzers.**
+6. Add Stripe Checkout and webhook subscription sync. **Done for the SaaS path.**
+7. Add per-user mailbox connection.
+8. Add tenant isolation tests before enabling real mailbox access.
 
-Do not connect visitor mailboxes until steps 1, 2, 3, and 7 are complete.
+Do not connect visitor mailboxes until steps 1, 2, 4, and 8 are complete.

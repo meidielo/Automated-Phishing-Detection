@@ -5,6 +5,7 @@ import hmac
 import json
 import time
 from datetime import datetime, timezone
+from urllib.parse import parse_qs, urlparse
 from unittest.mock import MagicMock
 
 from fastapi.testclient import TestClient
@@ -138,6 +139,20 @@ class FakeStripeBillingClient:
         return {"id": "bps_test", "url": "https://billing.stripe.com/p/session/test"}
 
 
+class FakePasswordResetMailer:
+    enabled = True
+    fail = False
+    sent = []
+
+    def __init__(self, config):
+        self.config = config
+
+    def send_password_reset(self, email):
+        if self.fail:
+            raise app_main.EmailDeliveryError("delivery failed")
+        self.sent.append(email)
+
+
 def test_saas_signup_disabled_by_default(tmp_path):
     client = TestClient(
         _build_saas_app(tmp_path, signup_enabled=False),
@@ -184,6 +199,130 @@ def test_saas_manual_scan_quota_returns_locked_response(tmp_path):
 
     assert statuses[:5] == [200, 200, 200, 200, 200]
     assert statuses[5] == 402
+
+
+def test_saas_password_reset_disabled_smtp_returns_generic_ok(tmp_path):
+    client = TestClient(
+        _build_saas_app(tmp_path, signup_enabled=True),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    assert _signup(client).status_code == 200
+    response = client.post(
+        "/api/saas/auth/password-reset/request",
+        json={"email": "owner@example.com"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["email_delivery_configured"] is False
+
+
+def test_saas_password_reset_request_is_rate_limited(tmp_path):
+    client = TestClient(
+        _build_saas_app(tmp_path, signup_enabled=True),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    assert _signup(client).status_code == 200
+    statuses = [
+        client.post(
+            "/api/saas/auth/password-reset/request",
+            json={"email": "owner@example.com"},
+        ).status_code
+        for _ in range(6)
+    ]
+
+    assert statuses[:5] == [200, 200, 200, 200, 200]
+    assert statuses[5] == 429
+
+
+def test_saas_password_reset_request_and_confirm(tmp_path, monkeypatch):
+    monkeypatch.setattr(app_main, "SMTPPasswordResetMailer", FakePasswordResetMailer)
+    FakePasswordResetMailer.enabled = True
+    FakePasswordResetMailer.fail = False
+    FakePasswordResetMailer.sent = []
+    client = TestClient(
+        _build_saas_app(tmp_path, signup_enabled=True),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    assert _signup(client).status_code == 200
+    request = client.post(
+        "/api/saas/auth/password-reset/request",
+        json={"email": "owner@example.com"},
+    )
+    token = parse_qs(urlparse(FakePasswordResetMailer.sent[0].reset_url).query)["reset_token"][0]
+    confirm = client.post(
+        "/api/saas/auth/password-reset/confirm",
+        json={"token": token, "password": "new secure password"},
+    )
+    old_login = client.post(
+        "/api/saas/auth/login",
+        json={"email": "owner@example.com", "password": "correct horse battery"},
+    )
+    new_login = client.post(
+        "/api/saas/auth/login",
+        json={"email": "owner@example.com", "password": "new secure password"},
+    )
+    replay = client.post(
+        "/api/saas/auth/password-reset/confirm",
+        json={"token": token, "password": "another secure password"},
+    )
+
+    assert request.status_code == 200
+    assert request.json()["email_delivery_configured"] is True
+    assert FakePasswordResetMailer.sent[0].to_email == "owner@example.com"
+    assert confirm.status_code == 200
+    assert confirm.json()["account"]["email"] == "owner@example.com"
+    assert old_login.status_code == 401
+    assert new_login.status_code == 200
+    assert replay.status_code == 400
+
+
+def test_saas_password_reset_unknown_email_does_not_send_or_leak(tmp_path, monkeypatch):
+    monkeypatch.setattr(app_main, "SMTPPasswordResetMailer", FakePasswordResetMailer)
+    FakePasswordResetMailer.enabled = True
+    FakePasswordResetMailer.fail = False
+    FakePasswordResetMailer.sent = []
+    client = TestClient(
+        _build_saas_app(tmp_path, signup_enabled=True),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    response = client.post(
+        "/api/saas/auth/password-reset/request",
+        json={"email": "missing@example.com"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["email_delivery_configured"] is True
+    assert "If this email belongs" in response.json()["message"]
+    assert FakePasswordResetMailer.sent == []
+
+
+def test_saas_password_reset_delivery_failure_returns_503(tmp_path, monkeypatch):
+    monkeypatch.setattr(app_main, "SMTPPasswordResetMailer", FakePasswordResetMailer)
+    FakePasswordResetMailer.enabled = True
+    FakePasswordResetMailer.fail = True
+    FakePasswordResetMailer.sent = []
+    client = TestClient(
+        _build_saas_app(tmp_path, signup_enabled=True),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    assert _signup(client).status_code == 200
+    response = client.post(
+        "/api/saas/auth/password-reset/request",
+        json={"email": "owner@example.com"},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Password reset email could not be sent"
 
 
 def test_saas_checkout_reports_missing_stripe_config(tmp_path, monkeypatch):

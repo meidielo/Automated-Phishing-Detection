@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 
 from src.saas.database import (
     DuplicateEmailError,
     InvalidCredentialsError,
+    PasswordResetTokenError,
     SaaSStore,
 )
 
@@ -40,6 +43,41 @@ def test_authenticate_rejects_bad_password(tmp_path):
 
     with pytest.raises(InvalidCredentialsError):
         store.authenticate("a@example.com", "wrong-password")
+
+
+def test_password_reset_token_updates_password_once(tmp_path):
+    store = SaaSStore(tmp_path / "saas.db")
+    context = store.create_user_with_org(email="a@example.com", password="long-password-1")
+
+    token = store.create_password_reset_token("A@example.com", ttl_minutes=30)
+    reset_context = store.reset_password_with_token(token, "new-long-password-2")
+
+    assert reset_context.user_id == context.user_id
+    assert store.authenticate("a@example.com", "new-long-password-2").user_id == context.user_id
+    with pytest.raises(InvalidCredentialsError):
+        store.authenticate("a@example.com", "long-password-1")
+    with pytest.raises(PasswordResetTokenError):
+        store.reset_password_with_token(token, "another-long-password-3")
+
+
+def test_password_reset_token_missing_email_is_generic_none(tmp_path):
+    store = SaaSStore(tmp_path / "saas.db")
+
+    assert store.create_password_reset_token("missing@example.com", ttl_minutes=30) is None
+
+
+def test_password_reset_token_expires(tmp_path):
+    store = SaaSStore(tmp_path / "saas.db")
+    store.create_user_with_org(email="a@example.com", password="long-password-1")
+    token = store.create_password_reset_token("a@example.com", ttl_minutes=30)
+    expired = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+
+    with store._connect() as conn:
+        conn.execute("UPDATE password_reset_tokens SET expires_at = ?", (expired,))
+        conn.commit()
+
+    with pytest.raises(PasswordResetTokenError):
+        store.reset_password_with_token(token, "new-long-password-2")
 
 
 def test_free_plan_locks_paid_features_and_records_lock(tmp_path):

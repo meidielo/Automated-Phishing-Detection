@@ -48,6 +48,18 @@ class IMAPConfig:
 
 
 @dataclass
+class SMTPConfig:
+    host: str = ""
+    port: int = 587
+    username: str = ""
+    password: str = ""
+    from_email: str = ""
+    from_name: str = "PhishDetect"
+    use_ssl: bool = False
+    starttls: bool = True
+
+
+@dataclass
 class ScoringConfig:
     weights: dict[str, float] = field(default_factory=lambda: {
         "header_analysis": 0.10,
@@ -72,6 +84,7 @@ class ScoringConfig:
 class PipelineConfig:
     api: APIConfig = field(default_factory=APIConfig)
     imap: IMAPConfig = field(default_factory=IMAPConfig)
+    smtp: SMTPConfig = field(default_factory=SMTPConfig)
     scoring: ScoringConfig = field(default_factory=ScoringConfig)
     max_concurrent_analyzers: int = 10
     url_detonation_timeout: int = 30
@@ -84,6 +97,7 @@ class PipelineConfig:
     saas_db_path: str = "data/saas.db"
     saas_session_secret: str = ""
     saas_public_signup_enabled: bool = False
+    password_reset_token_ttl_minutes: int = 30
     max_concurrent_browser: int = 3
     # Privacy / data retention. Stored email metadata in
     # data/results.jsonl is regulated PII under Australian Privacy Act
@@ -133,9 +147,20 @@ class PipelineConfig:
             folder=os.getenv("IMAP_FOLDER", "INBOX"),
             quarantine_folder=os.getenv("IMAP_QUARANTINE_FOLDER", "Quarantine"),
         )
+        smtp = SMTPConfig(
+            host=os.getenv("SMTP_HOST", ""),
+            port=int(os.getenv("SMTP_PORT", "587")),
+            username=os.getenv("SMTP_USERNAME", ""),
+            password=os.getenv("SMTP_PASSWORD", ""),
+            from_email=os.getenv("SMTP_FROM_EMAIL", ""),
+            from_name=os.getenv("SMTP_FROM_NAME", "PhishDetect"),
+            use_ssl=_coerce_bool(os.getenv("SMTP_USE_SSL"), False),
+            starttls=_coerce_bool(os.getenv("SMTP_STARTTLS"), True),
+        )
         return cls(
             api=api,
             imap=imap,
+            smtp=smtp,
             max_concurrent_analyzers=int(os.getenv("MAX_CONCURRENT_ANALYZERS", "10")),
             url_detonation_timeout=int(os.getenv("URL_DETONATION_TIMEOUT_SECONDS", "30")),
             pipeline_timeout=int(os.getenv("ANALYSIS_PIPELINE_TIMEOUT_SECONDS", "120")),
@@ -150,6 +175,7 @@ class PipelineConfig:
                 os.getenv("SAAS_PUBLIC_SIGNUP_ENABLED"),
                 False,
             ),
+            password_reset_token_ttl_minutes=int(os.getenv("PASSWORD_RESET_TOKEN_TTL_MINUTES", "30")),
             max_concurrent_browser=3,
             data_retention_days=int(os.getenv("DATA_RETENTION_DAYS", "30")),
         )
@@ -212,6 +238,18 @@ class PipelineConfig:
             poll_interval_seconds=int(imap_data.get("poll_interval_seconds", 60)),
         )
 
+        smtp_data = data.get("smtp", {})
+        smtp = SMTPConfig(
+            host=_get(smtp_data, "host", "SMTP_HOST", ""),
+            port=int(_get(smtp_data, "port", "SMTP_PORT", 587)),
+            username=_get(smtp_data, "username", "SMTP_USERNAME", ""),
+            password=_get(smtp_data, "password", "SMTP_PASSWORD", ""),
+            from_email=_get(smtp_data, "from_email", "SMTP_FROM_EMAIL", ""),
+            from_name=_get(smtp_data, "from_name", "SMTP_FROM_NAME", "PhishDetect"),
+            use_ssl=_coerce_bool(_get(smtp_data, "use_ssl", "SMTP_USE_SSL", False)),
+            starttls=_coerce_bool(_get(smtp_data, "starttls", "SMTP_STARTTLS", True)),
+        )
+
         scoring_data = data.get("scoring", {})
         scoring_cfg = ScoringConfig()
         if "weights" in scoring_data:
@@ -225,6 +263,7 @@ class PipelineConfig:
         return cls(
             api=api,
             imap=imap,
+            smtp=smtp,
             scoring=scoring_cfg,
             max_concurrent_analyzers=int(_get(pipeline_data, "max_concurrent_analyzers", "MAX_CONCURRENT_ANALYZERS", 10)),
             url_detonation_timeout=int(_get(pipeline_data, "url_detonation_timeout", "URL_DETONATION_TIMEOUT_SECONDS", 30)),
@@ -241,6 +280,12 @@ class PipelineConfig:
                 "saas_public_signup_enabled",
                 "SAAS_PUBLIC_SIGNUP_ENABLED",
                 False,
+            )),
+            password_reset_token_ttl_minutes=int(_get(
+                pipeline_data,
+                "password_reset_token_ttl_minutes",
+                "PASSWORD_RESET_TOKEN_TTL_MINUTES",
+                30,
             )),
             max_concurrent_browser=int(pipeline_data.get("max_concurrent_browser", 3)),
             data_retention_days=int(_get(pipeline_data, "data_retention_days", "DATA_RETENTION_DAYS", 30)),

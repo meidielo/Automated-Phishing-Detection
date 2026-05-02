@@ -36,6 +36,16 @@ imap:
   folder: "INBOX"             # env: IMAP_FOLDER
   poll_interval_seconds: 60
 
+smtp:
+  host: "smtp.zoho.com"       # env: SMTP_HOST
+  port: 587                   # env: SMTP_PORT
+  username: ""                # env: SMTP_USERNAME
+  password: ""                # env: SMTP_PASSWORD
+  from_email: ""              # env: SMTP_FROM_EMAIL
+  from_name: "PhishDetect"    # env: SMTP_FROM_NAME
+  use_ssl: false              # env: SMTP_USE_SSL
+  starttls: true              # env: SMTP_STARTTLS
+
 # ── Scoring & Verdict Configuration ───────────────────────────────
 scoring:
   # Analyzer weights. Intended to sum to 1.0 but the decision engine
@@ -90,4 +100,5 @@ pipeline:
   saas_db_path: "data/saas.db"         # env: SAAS_DB_PATH
   saas_session_secret: ""             # env: SAAS_SESSION_SECRET
   saas_public_signup_enabled: false    # env: SAAS_PUBLIC_SIGNUP_ENABLED
+  password_reset_token_ttl_minutes: 30  # env: PASSWORD_RESET_TOKEN_TTL_MINUTES
   max_concurrent_browser: 3

@@ -5,11 +5,17 @@ from .auth import (
     USER_SESSION_COOKIE_NAME,
     SaaSSessionManager,
 )
-from .database import DuplicateEmailError, InvalidCredentialsError, SaaSStore
+from .database import (
+    DuplicateEmailError,
+    InvalidCredentialsError,
+    PasswordResetTokenError,
+    SaaSStore,
+)
 
 __all__ = [
     "DuplicateEmailError",
     "InvalidCredentialsError",
+    "PasswordResetTokenError",
     "SaaSStore",
     "SaaSSessionManager",
     "USER_CSRF_COOKIE_NAME",
