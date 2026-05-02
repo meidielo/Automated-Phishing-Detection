@@ -10,6 +10,54 @@ Static demo screenshot generated from `docs/demo_screenshot.html` with realistic
 
 ![Dashboard](docs/demo_screenshot.png)
 
+## Agent-native Payment Scam Firewall Demo
+
+This repo now includes a sample-only product slice for invoice and payment
+scams. It exposes `analyze_payment_email` as a CLI and MCP tool so an AI
+accounts-payable agent can get a structured payment decision before money
+moves:
+
+```text
+SAFE | VERIFY | DO_NOT_PAY + evidence + next action
+```
+
+Fastest local proof:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\agent_payment_demo.py
+```
+
+The committed samples show three outcomes:
+
+| Sample | Decision | Action |
+|---|---:|---|
+| `safe_invoice.eml` | `SAFE` | Continue normal payment approval. |
+| `verify_supplier_portal.eml` | `VERIFY` | Hold payment for out-of-band verification. |
+| `do_not_pay_bank_redirect.eml` | `DO_NOT_PAY` | Block payment release until verification is complete. |
+
+The Gemini CLI demo proves the agent boundary: Gemini calls the local
+`payment-scam-firewall` MCP server, receives the tool result, and writes an AP
+team note grounded in that evidence. See
+[`docs/gemini-mcp-demo-kit.md`](docs/gemini-mcp-demo-kit.md) for the recording
+script and [`docs/agent-payment-three-case-transcript.md`](docs/agent-payment-three-case-transcript.md)
+for the three-case transcript.
+
+Run the product shell locally:
+
+```powershell
+.\.venv\Scripts\python.exe main.py serve --host 127.0.0.1 --port 8766
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8766/product
+```
+
+Safety boundary: the public demo uses committed samples only. It does not
+connect visitor mailboxes, call paid APIs, release payments, expose full email
+bodies, or write feedback labels.
+
 ## Project Arc
 
 This started as a working phishing detection pipeline with a foundation problem: an external audit identified 21 findings including 7 P0 security and correctness issues. The codebase was ambitious but the perimeter was unauthenticated, the SSRF surface was a textbook Capital-One-class primitive, the LinkedIn FP that survived four prior fix attempts was rooted in a missing architectural primitive (cross-analyzer context sharing), and the BEC detection claim was load-bearing on real samples accidentally containing URLs.
@@ -22,6 +70,7 @@ The full cycle history with commit hashes, audit-item closures per cycle, and di
 
 | Reader | Start here |
 |---|---|
+| Product reviewer / demo | [`docs/gemini-mcp-demo-kit.md`](docs/gemini-mcp-demo-kit.md) -> [`docs/agent-payment-three-case-transcript.md`](docs/agent-payment-three-case-transcript.md) |
 | Hiring manager / 90-second skim | [`HISTORY.md`](HISTORY.md) — arc summary + per-cycle table |
 | Detection engineer | [`docs/MITRE_ATTACK_MAPPING.md`](docs/MITRE_ATTACK_MAPPING.md) → [`sigma_rules/`](sigma_rules/) |
 | Security reviewer | [`THREAT_MODEL.md`](THREAT_MODEL.md) → [`SECURITY.md`](SECURITY.md) |
@@ -114,6 +163,8 @@ See [`docs/agent-payment-tool.md`](docs/agent-payment-tool.md) for the first
 agent-native tool contract, CLI, MCP stdio server, committed sample emails,
 connection snippets, MCPB desktop-extension bundle, narrative demo scripts,
 product shell, and sample-only demo page.
+See [`docs/gemini-mcp-demo-kit.md`](docs/gemini-mcp-demo-kit.md) for the
+Gemini CLI proof package and recording script.
 
 To start a local payment-scam dataset:
 
@@ -489,6 +540,8 @@ See [`docs/production-operations.md`](docs/production-operations.md) for cron, l
 | [`SECURITY.md`](SECURITY.md)                               | Vulnerability disclosure policy, supported versions, hardening guidance          |
 | [`docs/production-operations.md`](docs/production-operations.md) | Production backup, health, retention, alerting, and load-test runbook |
 | [`docs/saas-architecture.md`](docs/saas-architecture.md) | User login, tenant database, plan gates, and Stripe Billing rollout |
+| [`docs/gemini-mcp-demo-kit.md`](docs/gemini-mcp-demo-kit.md) | Gemini MCP demo prompt, recording flow, and safety rails |
+| [`docs/agent-payment-three-case-transcript.md`](docs/agent-payment-three-case-transcript.md) | SAFE, VERIFY, and DO_NOT_PAY transcript for the agent payment tool |
 | [`docs/EVALUATION.md`](docs/EVALUATION.md)                 | Evaluation methodology and corpus plan                                            |
 | [`docs/adr/0001-cross-analyzer-context-passing.md`](docs/adr/0001-cross-analyzer-context-passing.md) | ADR for the two-pass calibration design |
 | [`docs/adr/0002-persistent-email-id-lookup-for-feedback.md`](docs/adr/0002-persistent-email-id-lookup-for-feedback.md) | ADR for the persistent email_id lookup index |

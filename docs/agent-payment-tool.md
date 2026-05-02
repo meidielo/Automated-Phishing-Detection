@@ -183,6 +183,51 @@ docs/mcp/claude-code-project.mcp.example.json
 Copy that file to `.mcp.json` only when you want the project to auto-load the
 server in a compatible MCP client.
 
+## Gemini CLI Setup
+
+The same MCP server works in Gemini CLI. The local Windows demo uses a
+project-level Gemini config with machine-specific absolute paths, so keep it
+untracked.
+
+Install Gemini CLI:
+
+```powershell
+npm.cmd install -g @google/gemini-cli
+```
+
+Project config shape:
+
+```json
+{
+  "mcpServers": {
+    "payment-scam-firewall": {
+      "command": "C:\\Users\\meidi\\Documents\\personal project\\Automated Phishing Detection\\.venv\\Scripts\\python.exe",
+      "args": [
+        "C:\\Users\\meidi\\Documents\\personal project\\Automated Phishing Detection\\scripts\\payment_mcp_server.py"
+      ],
+      "timeout": 60000
+    }
+  }
+}
+```
+
+Verify it inside Gemini CLI:
+
+```text
+/mcp
+```
+
+Expected status:
+
+```text
+payment-scam-firewall - Ready (1 tool)
+```
+
+Then run the AP-agent prompt from
+[`docs/gemini-mcp-demo-kit.md`](gemini-mcp-demo-kit.md). The three-case CLI
+proof transcript is in
+[`docs/agent-payment-three-case-transcript.md`](agent-payment-three-case-transcript.md).
+
 ## Raw JSON-RPC Smoke Call
 
 PowerShell example:

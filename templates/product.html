@@ -43,13 +43,37 @@
       <div class="workflow-item">
         <span>2</span>
         <strong>Agent calls the tool</strong>
-        <p>`analyze_payment_email` returns structured risk, evidence, and safety metadata.</p>
+        <p><code>analyze_payment_email</code> returns structured risk, evidence, and safety metadata.</p>
       </div>
       <div class="workflow-item">
         <span>3</span>
         <strong>Finance gets a decision</strong>
         <p>SAFE proceeds normally. VERIFY and DO_NOT_PAY hold payment until independent checks are complete.</p>
       </div>
+    </section>
+
+    <section class="agent-proof-band" aria-label="Gemini MCP agent proof">
+      <div class="agent-proof-copy">
+        <span>Gemini MCP proof</span>
+        <h2>An AI AP agent called the firewall before release.</h2>
+        <p>
+          The recorded demo shows Gemini finding the local MCP server, calling
+          <code>analyze_payment_email</code>, receiving a DO_NOT_PAY result, and
+          writing a short AP team note grounded in the tool output.
+        </p>
+        <div class="sample-outcomes" aria-label="Sample decision coverage">
+          <span>SAFE sample</span>
+          <span>VERIFY sample</span>
+          <span>DO_NOT_PAY sample</span>
+        </div>
+      </div>
+      <figure class="agent-proof-media">
+        <img
+          src="/static/gemini-mcp-proof-slow.gif"
+          alt="Gemini CLI showing the payment-scam-firewall MCP server ready and analyzing a payment email sample."
+          loading="lazy"
+        >
+      </figure>
     </section>
 
     <section class="proof-grid" aria-label="Product proof points">

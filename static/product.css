@@ -125,6 +125,7 @@ main {
 }
 
 .workflow-band,
+.agent-proof-band,
 .proof-grid {
   display: grid;
   gap: 18px;
@@ -177,6 +178,81 @@ main {
   line-height: 1.55;
 }
 
+.agent-proof-band {
+  grid-template-columns: minmax(0, 0.9fr) minmax(360px, 1.1fr);
+  align-items: center;
+  gap: 30px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 32px 0;
+}
+
+.agent-proof-copy {
+  min-width: 0;
+}
+
+.agent-proof-copy > span {
+  color: var(--accent-light);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.agent-proof-copy h2 {
+  margin: 10px 0 12px;
+  color: var(--text-primary);
+  font-size: 34px;
+  line-height: 1.12;
+}
+
+.agent-proof-copy p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 17px;
+  line-height: 1.6;
+}
+
+.agent-proof-copy code,
+.workflow-item code {
+  color: var(--text-primary);
+  font-family: "Cascadia Mono", "Consolas", monospace;
+  font-size: 0.94em;
+}
+
+.sample-outcomes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.sample-outcomes span {
+  border: 1px solid var(--accent-border);
+  border-radius: 999px;
+  background: var(--accent-bg);
+  color: var(--accent-light);
+  font-size: 12px;
+  font-weight: 900;
+  padding: 7px 10px;
+}
+
+.agent-proof-media {
+  margin: 0;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  padding: 8px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.agent-proof-media img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+
 .proof-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -191,6 +267,7 @@ main {
 @media (max-width: 980px) {
   .product-hero,
   .workflow-band,
+  .agent-proof-band,
   .proof-grid {
     grid-template-columns: 1fr;
   }
@@ -201,6 +278,10 @@ main {
 
   .hero-copy h1 {
     font-size: 42px;
+  }
+
+  .agent-proof-copy h2 {
+    font-size: 30px;
   }
 }
 
@@ -230,6 +311,14 @@ main {
   }
 
   .hero-copy p {
+    font-size: 16px;
+  }
+
+  .agent-proof-copy h2 {
+    font-size: 26px;
+  }
+
+  .agent-proof-copy p {
     font-size: 16px;
   }
 }
