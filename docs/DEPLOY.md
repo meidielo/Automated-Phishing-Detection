@@ -121,9 +121,18 @@ bash scripts/docker_deploy.sh
 
 The deploy script fast-forwards git, rebuilds the app image with the new code,
 pulls the browser/tunnel images when possible, removes orphaned old containers,
-requires `CLOUDFLARE_TUNNEL_TOKEN` for the production tunnel, and waits for
-the orchestrator container to become healthy plus `cloudflared-tunnel` to stay
-running.
+injects the current git SHA into the image for `/api/health` and static asset
+cache busting, requires `CLOUDFLARE_TUNNEL_TOKEN` for the production tunnel,
+and waits for the orchestrator container to become healthy plus
+`cloudflared-tunnel` to stay running.
+
+After deploy, confirm the active build:
+
+```bash
+curl -s https://phishanalyze.mdpstudio.com.au/api/health
+```
+
+The `build_sha` value should match `git rev-parse --short=12 HEAD`.
 
 ## Operations
 

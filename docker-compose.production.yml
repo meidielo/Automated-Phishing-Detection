@@ -23,6 +23,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        APP_BUILD_SHA: ${APP_BUILD_SHA:-unknown}
     container_name: phishing-orchestrator
     init: true
     # Cloudflare Tunnel connects to the Docker network. The host mapping is

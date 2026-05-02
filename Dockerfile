@@ -47,12 +47,15 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 # layered over it has no effect on Linux).
 RUN useradd -m -u 1000 phishing
 
+ARG APP_BUILD_SHA=unknown
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     LOG_LEVEL=INFO \
     DASHBOARD_PORT=8000 \
     APP_UID=1000 \
-    APP_GID=1000
+    APP_GID=1000 \
+    APP_BUILD_SHA=$APP_BUILD_SHA \
+    STATIC_ASSET_VERSION=$APP_BUILD_SHA
 
 # Healthcheck without curl — uses Python's urllib (already in stdlib).
 # Smaller image, smaller attack surface, no extra package to track for

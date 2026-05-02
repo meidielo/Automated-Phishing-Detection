@@ -30,6 +30,9 @@ fi
 
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     git pull --ff-only
+    export APP_BUILD_SHA="${APP_BUILD_SHA:-$(git rev-parse --short=12 HEAD)}"
+else
+    export APP_BUILD_SHA="${APP_BUILD_SHA:-unknown}"
 fi
 
 docker compose -f "$COMPOSE_FILE" pull browser-sandbox cloudflared || true

@@ -201,6 +201,27 @@ def test_user_app_shell_opens_without_analyst_session():
     assert "PhishDetect account" in response.text
 
 
+def test_html_static_asset_urls_are_versioned(monkeypatch):
+    monkeypatch.setenv("APP_BUILD_SHA", "testbuild123")
+    monkeypatch.setenv("STATIC_ASSET_VERSION", "testbuild123")
+    client = TestClient(
+        _build_app_with_token(),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    response = client.get("/app")
+    health = client.get("/api/health")
+
+    assert response.status_code == 200
+    assert '/static/saas.css?v=testbuild123' in response.text
+    assert '/static/saas.js?v=testbuild123' in response.text
+    assert '/static/shared.css?v=testbuild123' in response.text
+    assert '/static/shared.js?v=testbuild123' in response.text
+    assert health.json()["build_sha"] == "testbuild123"
+    assert health.json()["static_asset_version"] == "testbuild123"
+
+
 def test_product_shell_opens_without_analyst_session():
     client = TestClient(
         _build_app_with_token(),

@@ -12,6 +12,7 @@ import html
 import json
 import logging
 import os
+import re
 import sys
 from collections import deque
 from pathlib import Path
@@ -71,6 +72,35 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+_STATIC_URL_RE = re.compile(
+    r"(?P<attr>\b(?:href|src)=)(?P<quote>[\"'])(?P<url>/static/[^\"'?>\s]+)"
+    r"(?:\?v=[^\"']*)?(?P=quote)"
+)
+
+
+def _asset_version_from_static_dir(static_dir: Path) -> str:
+    """Return a stable cache-busting version for static asset URLs."""
+    configured = (
+        os.getenv("STATIC_ASSET_VERSION")
+        or os.getenv("APP_BUILD_SHA")
+        or os.getenv("GIT_COMMIT")
+    )
+    if configured:
+        safe = re.sub(r"[^A-Za-z0-9_.-]", "", configured)[:64]
+        if safe:
+            return safe
+
+    newest = 0
+    if static_dir.exists():
+        for path in static_dir.rglob("*"):
+            if not path.is_file():
+                continue
+            try:
+                newest = max(newest, path.stat().st_mtime_ns)
+            except OSError:
+                continue
+    return str(newest or 0)
 
 
 def _tail_jsonl_records(log_path: Path, limit: int) -> list[dict]:
@@ -373,6 +403,8 @@ class PhishingDetectionApp:
         add_security_headers_middleware(app)
 
         static_dir = Path("./static")
+        static_asset_version = _asset_version_from_static_dir(static_dir)
+        build_sha = os.getenv("APP_BUILD_SHA") or os.getenv("GIT_COMMIT") or "unknown"
         if static_dir.exists():
             app.mount("/static", StaticFiles(directory=static_dir), name="static")
         else:
@@ -425,9 +457,24 @@ class PhishingDetectionApp:
         # Loaded once at startup, token placeholder replaced per-request.
         _shared_html_raw = Path("./templates/_shared.html").read_text(encoding="utf-8")
 
+        def _version_static_urls(html_text: str) -> str:
+            """Append the build/static version to HTML static asset references."""
+            if not static_asset_version:
+                return html_text
+
+            def _replace(match: re.Match) -> str:
+                attr = match.group("attr")
+                quote = match.group("quote")
+                url = match.group("url")
+                return f"{attr}{quote}{url}?v={static_asset_version}{quote}"
+
+            return _STATIC_URL_RE.sub(_replace, html_text)
+
         def _inject_shared(html: str) -> str:
             """Inject shared CSS/JS (auth, theme) before </head> in any page."""
-            return html.replace("</head>", _shared_html_raw + "\n</head>", 1)
+            return _version_static_urls(
+                html.replace("</head>", _shared_html_raw + "\n</head>", 1)
+            )
 
         def _demo_enabled() -> bool:
             return bool(getattr(self.config, "public_demo_mode", False))
@@ -1295,6 +1342,8 @@ class PhishingDetectionApp:
             return {
                 "status": "healthy",
                 "version": "1.0.0",
+                "build_sha": build_sha,
+                "static_asset_version": static_asset_version,
                 "pipeline": "ready",
             }
 
@@ -2112,6 +2161,8 @@ class PhishingDetectionApp:
                     # Only inject if not already present (avoid double-injection)
                     if "data-phishdetect-shared" not in body and "</head>" in body:
                         body = _inject_shared(body)
+                    else:
+                        body = _version_static_urls(body)
                     # Strip content-length so HTMLResponse recalculates it
                     # after injection makes the body longer. Stale content-length
                     # causes Cloudflare 520 errors.
