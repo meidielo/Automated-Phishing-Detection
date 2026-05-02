@@ -90,6 +90,7 @@
   async function apiJson(path, options) {
     const response = await fetch(path, {
       credentials: "same-origin",
+      referrerPolicy: "same-origin",
       headers: {
         "content-type": "application/json",
         "x-csrf-token": cookieValue(csrfCookieName),
@@ -108,6 +109,7 @@
     const response = await fetch(path, {
       method: "POST",
       credentials: "same-origin",
+      referrerPolicy: "same-origin",
       headers: {
         "x-csrf-token": cookieValue(csrfCookieName),
       },
@@ -675,9 +677,17 @@
     }
   });
 
-  document.getElementById("logoutButton").addEventListener("click", async () => {
-    await apiJson("/api/saas/auth/logout", { method: "POST", body: "{}" });
-    window.location.reload();
+  document.getElementById("logoutButton").addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    hideNotice(billingNotice);
+    try {
+      await apiJson("/api/saas/auth/logout", { method: "POST", body: "{}" });
+      await loadSession();
+    } catch (error) {
+      button.disabled = false;
+      showNotice(billingNotice, error.message || "Logout failed. Refresh and try again.");
+    }
   });
 
   document.getElementById("upgradeButton").addEventListener("click", () => {

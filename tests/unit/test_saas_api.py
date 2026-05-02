@@ -195,6 +195,33 @@ def test_saas_signup_session_plans_upload_and_history(tmp_path):
     assert history.json()["results"][0]["payment_decision"] == "VERIFY"
 
 
+def test_saas_logout_clears_user_session_with_csrf(tmp_path):
+    client = TestClient(
+        _build_saas_app(tmp_path, signup_enabled=True),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    assert _signup(client).status_code == 200
+    assert client.get("/api/saas/session").json()["authenticated"] is True
+
+    missing_csrf = client.post("/api/saas/auth/logout")
+    csrf = client.cookies.get(USER_CSRF_COOKIE_NAME)
+    logout = client.post(
+        "/api/saas/auth/logout",
+        headers={
+            "x-csrf-token": csrf,
+            "referer": "https://testserver/app",
+        },
+        json={},
+    )
+    session = client.get("/api/saas/session")
+
+    assert missing_csrf.status_code == 403
+    assert logout.status_code == 200
+    assert session.json()["authenticated"] is False
+
+
 def test_saas_manual_scan_quota_returns_locked_response(tmp_path):
     client = TestClient(
         _build_saas_app(tmp_path, signup_enabled=True),

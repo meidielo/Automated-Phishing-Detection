@@ -312,6 +312,15 @@ def test_user_app_shell_opens_without_analyst_session():
     assert "PhishAnalyze workspace" in response.text
 
 
+def test_user_app_fetches_preserve_same_origin_referrer_for_csrf():
+    script = Path("static/saas.js").read_text(encoding="utf-8")
+
+    assert script.count('referrerPolicy: "same-origin"') >= 2
+    assert 'await apiJson("/api/saas/auth/logout", { method: "POST", body: "{}" });' in script
+    assert "await loadSession();" in script
+    assert "Logout failed. Refresh and try again." in script
+
+
 def test_html_static_asset_urls_are_versioned(monkeypatch):
     monkeypatch.setenv("APP_BUILD_SHA", "testbuild123")
     monkeypatch.setenv("STATIC_ASSET_VERSION", "testbuild123")
