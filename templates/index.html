@@ -19,93 +19,94 @@
     nav {
       background: var(--nav-bg);
       border-bottom: 1px solid var(--nav-border);
-      padding: 0 56px;
-      min-height: 72px;
+      padding: 0 32px;
+      height: 56px;
       display: flex;
       align-items: center;
-      gap: 44px;
+      gap: 24px;
       position: sticky;
       top: 0;
       z-index: 100;
     }
     nav .logo {
-      font-size: 24px;
-      font-weight: 800;
+      font-size: 17px;
+      font-weight: 700;
       color: var(--accent);
       text-decoration: none;
       margin-right: auto;
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 8px;
       letter-spacing: 0;
     }
     nav .logo svg {
-      width: 28px;
-      height: 28px;
+      width: 20px;
+      height: 20px;
     }
     nav a {
       color: var(--nav-link);
       text-decoration: none;
-      font-size: 20px;
+      font-size: 14px;
       line-height: 1;
-      padding: 12px 18px;
-      border-radius: 8px;
+      padding: 6px 12px;
+      border-radius: 6px;
       transition: background .2s, color .2s;
     }
     nav a:hover, nav a.active { background: var(--nav-hover-bg); color: var(--text-primary); }
     nav .feedback-button,
     nav .logout-button {
-      min-height: 42px;
-      padding: 0 16px;
-      border-radius: 8px;
-      font-size: 18px;
+      min-height: 32px;
+      padding: 0 10px;
+      border-radius: 6px;
+      font-size: 14px;
     }
     nav .theme-toggle {
-      width: 56px;
-      height: 44px;
-      border-radius: 8px;
+      width: 38px;
+      height: 32px;
+      border-radius: 6px;
     }
     nav .theme-toggle svg {
-      width: 22px;
-      height: 22px;
+      width: 17px;
+      height: 17px;
     }
 
     /* ── Layout ── */
     .page {
-      width: min(1280px, calc(100vw - 48px));
+      max-width: 1300px;
+      width: min(1300px, calc(100vw - 48px));
       margin: 0 auto;
-      padding: 84px 0 72px;
+      padding: 36px 0 56px;
     }
 
     .hero {
-      text-align: center;
-      margin-bottom: 72px;
+      margin-bottom: 28px;
     }
     .hero h1 {
-      font-size: 52px;
-      line-height: 1.08;
-      font-weight: 850;
+      font-size: 26px;
+      line-height: 1.18;
+      font-weight: 700;
       letter-spacing: 0;
       color: var(--text-primary);
-      margin-bottom: 22px;
+      margin-bottom: 6px;
     }
     .hero p {
-      color: var(--text-secondary);
-      font-size: 24px;
+      max-width: 760px;
+      color: var(--text-muted);
+      font-size: 14px;
       line-height: 1.45;
     }
 
     /* ── Drop Zone ── */
     #drop-zone {
-      border: 3px dashed var(--border);
-      border-radius: 20px;
-      min-height: 356px;
-      padding: 54px 32px;
+      border: 2px dashed var(--border);
+      border-radius: 10px;
+      min-height: 220px;
+      padding: 32px 28px;
       text-align: center;
       cursor: pointer;
       transition: border-color .2s, background .2s, transform .2s;
       background: var(--bg-secondary);
-      margin-bottom: 24px;
+      margin-bottom: 16px;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -117,20 +118,20 @@
       transform: translateY(-1px);
     }
     #drop-zone svg {
-      width: 72px;
-      height: 72px;
+      width: 44px;
+      height: 44px;
       color: var(--text-muted);
-      margin-bottom: 34px;
+      margin-bottom: 18px;
     }
     #drop-zone h2 {
-      font-size: 28px;
+      font-size: 19px;
       line-height: 1.25;
       color: var(--text-secondary);
-      margin-bottom: 14px;
+      margin-bottom: 7px;
       letter-spacing: 0;
     }
     #drop-zone p {
-      font-size: 20px;
+      font-size: 13px;
       line-height: 1.45;
       color: var(--text-muted);
     }
@@ -144,12 +145,12 @@
       align-items: center;
       justify-content: center;
       gap: 8px;
-      min-width: 236px;
-      min-height: 62px;
-      padding: 14px 28px;
-      border-radius: 10px;
-      font-size: 22px;
-      font-weight: 800;
+      min-width: 150px;
+      min-height: 42px;
+      padding: 10px 18px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 700;
       cursor: pointer;
       border: none;
       -webkit-transition: opacity .2s, -webkit-transform .1s;
@@ -164,27 +165,27 @@
 
     .controls {
       display: flex;
-      gap: 12px;
-      justify-content: center;
-      margin: 36px 0 54px;
+      gap: 10px;
+      justify-content: flex-start;
+      margin: 0 0 32px;
     }
 
     @media(max-width:1500px) {
       nav {
-        padding: 0 40px;
-        gap: 28px;
+        padding: 0 32px;
+        gap: 24px;
       }
       nav a {
-        font-size: 18px;
-        padding: 11px 14px;
+        font-size: 14px;
+        padding: 6px 12px;
       }
       nav .feedback-button,
       nav .logout-button {
-        font-size: 16px;
-        padding: 0 14px;
+        font-size: 14px;
+        padding: 0 10px;
       }
       nav .theme-toggle {
-        width: 50px;
+        width: 38px;
       }
     }
 
@@ -203,7 +204,7 @@
       }
       .page {
         width: min(1040px, calc(100% - 32px));
-        padding-top: 64px;
+        padding-top: 32px;
       }
     }
 
@@ -235,38 +236,38 @@
       }
       .page {
         width: min(720px, calc(100% - 28px));
-        padding-top: 48px;
+        padding-top: 28px;
       }
       .hero {
-        margin-bottom: 42px;
+        margin-bottom: 22px;
       }
       .hero h1 {
-        font-size: 36px;
+        font-size: 24px;
         line-height: 1.12;
       }
       .hero p {
-        font-size: 18px;
+        font-size: 14px;
       }
       #drop-zone {
-        min-height: 288px;
-        padding: 36px 20px;
-        border-radius: 14px;
+        min-height: 190px;
+        padding: 28px 18px;
+        border-radius: 10px;
       }
       #drop-zone svg {
-        width: 58px;
-        height: 58px;
-        margin-bottom: 24px;
+        width: 40px;
+        height: 40px;
+        margin-bottom: 16px;
       }
       #drop-zone h2 {
-        font-size: 22px;
+        font-size: 18px;
       }
       #drop-zone p {
-        font-size: 16px;
+        font-size: 13px;
       }
       .btn {
         min-width: 100%;
-        min-height: 56px;
-        font-size: 18px;
+        min-height: 42px;
+        font-size: 14px;
       }
       .controls {
         flex-direction: column;

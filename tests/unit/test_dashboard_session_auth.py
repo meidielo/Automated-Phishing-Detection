@@ -489,6 +489,11 @@ def test_analyze_page_uses_global_feedback_control_not_inline_panel():
     assert "Email Risk Analyzer" in response.text
     assert 'id="drop-zone"' in response.text
     assert "Drop your .eml file here, or click to browse" in response.text
+    assert "height: 56px;" in response.text
+    assert "font-size: 26px;" in response.text
+    assert "min-height: 220px;" in response.text
+    assert "font-size: 52px;" not in response.text
+    assert "min-height: 356px;" not in response.text
     assert '/static/shared.css' in response.text
     assert '/static/shared.js' in response.text
     assert 'class="project-feedback"' not in response.text
