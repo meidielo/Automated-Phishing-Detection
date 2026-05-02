@@ -40,7 +40,7 @@ function countVerdicts(entries) {
 const VERDICT_META = [
   ['clean', 'Clean'],
   ['suspicious', 'Suspicious'],
-  ['likely_phishing', 'Likely'],
+  ['likely_phishing', 'Likely phishing'],
   ['confirmed_phishing', 'Confirmed'],
 ];
 
@@ -96,6 +96,7 @@ function renderFallbackCharts(entries) {
   setFallbackVisible('trendsChart', 'trendsFallback', true);
 
   const c = countVerdicts(entries);
+  renderVerdictLegend(c);
   const total = Math.max(1, entries.length);
   const verdictFallback = document.getElementById('verdictFallback');
   if (verdictFallback) {
@@ -152,6 +153,26 @@ function renderFallbackCharts(entries) {
   }
 }
 
+function renderVerdictLegend(counts) {
+  const legend = document.getElementById('verdictLegend');
+  if (!legend) return;
+
+  const total = VERDICT_META.reduce((sum, item) => sum + (counts[item[0]] || 0), 0);
+  legend.replaceChildren();
+  for (const [key, label] of VERDICT_META) {
+    const value = counts[key] || 0;
+    const percent = total ? Math.round((value / total) * 100) : 0;
+    const row = el('div', 'verdict-legend-row ' + key);
+    row.appendChild(el('span', 'verdict-legend-swatch'));
+    row.appendChild(el('span', 'verdict-legend-label', label));
+    const metric = el('span', 'verdict-legend-value');
+    metric.appendChild(document.createTextNode(String(value)));
+    metric.appendChild(el('span', 'verdict-legend-percent', ' / ' + percent + '%'));
+    row.appendChild(metric);
+    legend.appendChild(row);
+  }
+}
+
 // ── Charts ────────────────────────────────────────────────────────────────────
 function initCharts() {
   if (!window.Chart) {
@@ -181,7 +202,8 @@ function initCharts() {
       },
       options: {
         responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { position: 'bottom', labels: { color: '#94a3b8', font: { size: 12 }, padding: 14 } } }
+        cutout: '62%',
+        plugins: { legend: { display: false } }
       }
     });
 
@@ -221,6 +243,7 @@ function updateCharts(entries) {
   setFallbackVisible('trendsChart', 'trendsFallback', false);
 
   const c = countVerdicts(entries);
+  renderVerdictLegend(c);
   verdictChart.data.datasets[0].data = [c.clean, c.suspicious, c.likely_phishing, c.confirmed_phishing];
   verdictChart.update();
 

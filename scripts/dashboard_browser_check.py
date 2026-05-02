@@ -106,6 +106,8 @@ def _run_browser_check(base_url: str, token: str) -> dict:
               return {
                 chartLoaded: !!window.Chart,
                 verdictCanvasVisible: visible('verdictChart'),
+                verdictLegendVisible: visible('verdictLegend'),
+                verdictLegendText: (document.getElementById('verdictLegend') || {}).textContent || '',
                 trendsCanvasVisible: visible('trendsChart'),
                 verdictFallbackHidden: document.getElementById('verdictFallback').hidden,
                 trendsFallbackHidden: document.getElementById('trendsFallback').hidden,
@@ -148,6 +150,7 @@ def main() -> int:
     for key in (
         "chartLoaded",
         "verdictCanvasVisible",
+        "verdictLegendVisible",
         "trendsCanvasVisible",
         "verdictFallbackHidden",
         "trendsFallbackHidden",
@@ -164,6 +167,8 @@ def main() -> int:
         failures.append("browser console errors")
     if result.get("pageErrors"):
         failures.append("browser page errors")
+    if "Clean" not in result.get("verdictLegendText", ""):
+        failures.append("verdict legend labels")
 
     print(json.dumps(result, indent=2, sort_keys=True))
     if failures:

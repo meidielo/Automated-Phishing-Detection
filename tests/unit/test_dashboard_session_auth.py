@@ -142,6 +142,7 @@ def test_dashboard_uses_self_hosted_chart_asset_after_login():
     assert 'onchange=' not in response.text
     assert "cdn.jsdelivr" not in response.text
     assert 'id="verdictFallback"' in response.text
+    assert 'id="verdictLegend"' in response.text
     assert 'id="trendsFallback"' in response.text
 
     csp = response.headers["Content-Security-Policy"]
@@ -189,8 +190,8 @@ def test_dashboard_static_assets_are_served_without_session():
     )
 
     for asset_path, expected in [
-        ("/static/dashboard.css", ".chart-wrap"),
-        ("/static/dashboard.js", "function renderTable"),
+        ("/static/dashboard.css", ".verdict-legend-row"),
+        ("/static/dashboard.js", "function renderVerdictLegend"),
         ("/static/dashboard-report.css", ".report-progress"),
         ("/static/agent-demo.css", ".agent-workbench"),
         ("/static/agent-demo.js", "/api/demo/agent-payment-analysis"),
