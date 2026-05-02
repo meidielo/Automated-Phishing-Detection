@@ -1841,3 +1841,563 @@ input[type="file"] {
     font-size: 18px;
   }
 }
+
+/* Product style alignment. The public /product page is the design source of
+   truth; this keeps the account app in the same compact PhishAnalyze system. */
+:root,
+[data-theme="dark"] {
+  --saas-bg: var(--bg-primary);
+  --saas-bg-soft: var(--bg-tertiary);
+  --saas-surface: var(--bg-secondary);
+  --saas-surface-strong: var(--bg-tertiary);
+  --saas-border: var(--border);
+  --saas-border-soft: var(--border);
+  --saas-text: var(--text-primary);
+  --saas-muted: var(--text-muted);
+  --saas-dim: var(--text-secondary);
+  --saas-button: var(--accent);
+  --saas-button-text: #fff;
+  --saas-success: var(--v-clean);
+  --saas-warning: var(--v-suspicious);
+}
+
+[data-theme="light"] {
+  --saas-bg: var(--bg-primary);
+  --saas-bg-soft: var(--bg-tertiary);
+  --saas-surface: var(--bg-secondary);
+  --saas-surface-strong: var(--bg-tertiary);
+  --saas-border: var(--border);
+  --saas-border-soft: var(--border);
+  --saas-text: var(--text-primary);
+  --saas-muted: var(--text-muted);
+  --saas-dim: var(--text-secondary);
+  --saas-button: var(--accent);
+  --saas-button-text: #fff;
+  --saas-success: var(--v-clean);
+  --saas-warning: var(--v-suspicious);
+}
+
+body {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+.saas-shell {
+  width: auto;
+  max-width: none;
+  padding: 0 0 56px;
+}
+
+.saas-topbar {
+  height: 56px;
+  min-height: 56px;
+  margin: 0;
+  padding: 0 32px;
+  border-bottom: 1px solid var(--nav-border);
+  background: var(--nav-bg);
+  gap: 20px;
+}
+
+.saas-brand {
+  color: var(--accent-light);
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.saas-nav {
+  gap: 10px;
+}
+
+.saas-nav a,
+.subtle-button,
+button {
+  min-height: 34px;
+  border-color: var(--border);
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 800;
+  padding: 8px 12px;
+}
+
+.saas-nav a.active,
+.saas-nav a:hover,
+.subtle-button:hover,
+button:hover,
+button:focus-visible {
+  border-color: var(--border);
+  background: var(--nav-hover-bg);
+  color: var(--text-primary);
+}
+
+.auth-view,
+.app-view {
+  width: min(1180px, calc(100% - 40px));
+  margin: 0 auto;
+}
+
+.auth-view {
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 420px);
+  gap: 34px;
+  align-items: center;
+  padding: 42px 0 56px;
+}
+
+.auth-copy {
+  padding-top: 0;
+}
+
+.auth-copy h1 {
+  max-width: 680px;
+  color: var(--text-primary);
+  font-size: clamp(34px, 4vw, 46px);
+  font-weight: 850;
+  line-height: 1.05;
+}
+
+.auth-copy > p {
+  max-width: 620px;
+  margin-top: 16px;
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1.58;
+}
+
+.auth-proof {
+  margin-top: 18px;
+}
+
+.auth-proof-row,
+.auth-panel,
+.scan-panel,
+.result-panel,
+.account-strip,
+.plan-card,
+.history-card,
+.access-card,
+.auth-product-shot {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  box-shadow: none;
+}
+
+.auth-proof-row {
+  min-height: 38px;
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+}
+
+.auth-panel {
+  padding: 22px;
+}
+
+.auth-panel-heading {
+  margin-bottom: 18px;
+}
+
+.auth-panel-heading h2 {
+  font-size: 24px;
+  line-height: 1.18;
+}
+
+.auth-panel-heading p,
+.section-heading p,
+.feature-card p,
+.history-card p,
+.plan-card p {
+  color: var(--text-muted);
+}
+
+.auth-form {
+  gap: 12px;
+}
+
+label {
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+input[type="email"],
+input[type="password"],
+input[type="text"],
+input[type="file"] {
+  min-height: 42px;
+  border-color: var(--border);
+  border-radius: 6px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+}
+
+.auth-form button[type="submit"],
+.scan-form button[type="submit"],
+.plan-card button:not([disabled]),
+.upgrade-button {
+  min-height: 42px;
+  border-color: var(--accent);
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+}
+
+.auth-form button[type="submit"]:hover,
+.scan-form button[type="submit"]:hover,
+.plan-card button:not([disabled]):hover,
+.upgrade-button:hover,
+.upgrade-button:focus-visible {
+  border-color: var(--accent-hover);
+  background: var(--accent-hover);
+  color: #fff;
+}
+
+.app-view {
+  padding-top: 36px;
+}
+
+.app-header {
+  margin: 0 0 22px;
+}
+
+.app-header h1 {
+  max-width: 760px;
+  color: var(--text-primary);
+  font-size: clamp(30px, 3.6vw, 42px);
+  font-weight: 850;
+  line-height: 1.08;
+}
+
+.app-header p {
+  max-width: 680px;
+  color: var(--text-muted);
+  font-size: 16px;
+}
+
+#logoutButton {
+  min-width: 88px;
+  background: var(--bg-tertiary);
+}
+
+.eyebrow,
+.label {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.account-strip {
+  grid-template-columns: minmax(150px, 0.7fr) minmax(220px, 1fr) minmax(220px, 1fr) auto;
+  gap: 18px;
+  margin-bottom: 18px;
+  padding: 18px;
+}
+
+.account-strip strong {
+  color: var(--text-primary);
+  font-size: 17px;
+}
+
+.account-note {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.meter {
+  height: 8px;
+  border-color: var(--border);
+  background: var(--bg-primary);
+}
+
+.pricing-section {
+  margin: 18px 0 28px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  padding: 20px;
+}
+
+.section-heading {
+  gap: 18px;
+  margin-bottom: 16px;
+}
+
+.section-heading h2 {
+  color: var(--text-primary);
+  font-size: 24px;
+  font-weight: 850;
+}
+
+.section-heading p {
+  max-width: 650px;
+  font-size: 14px;
+}
+
+.billing-cycle,
+.currency-pill {
+  min-height: 34px;
+  border-color: var(--border);
+  background: var(--bg-tertiary);
+}
+
+.billing-cycle button {
+  min-height: 0;
+  color: var(--text-secondary);
+  padding: 5px 10px;
+}
+
+.billing-cycle button.active {
+  background: var(--nav-hover-bg);
+  color: var(--text-primary);
+}
+
+.plan-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.plan-card {
+  min-height: 0;
+  border-radius: 8px;
+  padding: 18px;
+}
+
+.plan-card.current {
+  border-color: var(--accent-border);
+  box-shadow: inset 0 0 0 1px rgba(167, 139, 250, 0.22);
+}
+
+.plan-card h3 {
+  color: var(--text-primary);
+  font-size: 20px;
+}
+
+.plan-audience,
+.plan-summary,
+.plan-card p,
+.plan-feature-list strong,
+.plan-feature-list li {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.plan-price span {
+  color: var(--text-primary);
+  font-size: 30px;
+}
+
+.plan-price small,
+.plan-billing-note {
+  color: var(--text-muted);
+}
+
+.plan-card button {
+  min-height: 40px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.plan-divider {
+  background: var(--border);
+}
+
+.work-grid {
+  grid-template-columns: minmax(320px, 0.72fr) minmax(0, 1fr);
+  gap: 18px;
+  margin-top: 28px;
+}
+
+.scan-panel,
+.result-panel,
+.history-card,
+.access-card {
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.scan-panel h2,
+.result-panel h2 {
+  color: var(--text-primary);
+  font-size: 24px;
+  line-height: 1.18;
+}
+
+.scan-panel p,
+.panel-note {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.scan-drop-zone {
+  min-height: 220px;
+  border-color: var(--border);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  padding: 32px 28px;
+}
+
+[data-theme="light"] .scan-drop-zone {
+  background: var(--bg-secondary);
+}
+
+.scan-drop-zone:hover,
+.scan-drop-zone:focus-visible,
+.scan-drop-zone.drag-over,
+.scan-drop-zone.has-file {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+}
+
+[data-theme="light"] .scan-drop-zone:hover,
+[data-theme="light"] .scan-drop-zone:focus-visible,
+[data-theme="light"] .scan-drop-zone.drag-over,
+[data-theme="light"] .scan-drop-zone.has-file {
+  background: var(--accent-bg);
+}
+
+.scan-drop-zone svg {
+  width: 44px;
+  height: 44px;
+  margin-bottom: 18px;
+  color: var(--text-muted);
+}
+
+.scan-drop-zone h3 {
+  max-width: 420px;
+  color: var(--text-secondary);
+  font-size: 19px;
+}
+
+.scan-drop-zone.has-file h3,
+.scan-drop-zone.has-file svg {
+  color: var(--accent-light);
+}
+
+.scan-actions {
+  gap: 10px;
+}
+
+.scan-actions .subtle-button {
+  max-width: 104px;
+}
+
+.result-verdict,
+.result-score-card,
+.result-summary-grid article,
+.result-locks,
+.locked-check-card,
+.result-row {
+  border-radius: 8px;
+  background: var(--bg-tertiary);
+}
+
+.result-verdict {
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 0.34fr);
+  gap: 16px;
+  padding: 18px;
+}
+
+.result-verdict strong {
+  color: var(--text-primary);
+  font-size: clamp(28px, 3.6vw, 38px);
+}
+
+.result-verdict p {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.result-score-card {
+  min-height: 120px;
+  padding: 16px;
+}
+
+.result-summary-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.result-summary-grid strong {
+  color: var(--text-primary);
+  font-size: 18px;
+}
+
+.locked-check-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.access-card h3,
+.history-card h3 {
+  color: var(--text-primary);
+  font-size: 20px;
+}
+
+.access-card li {
+  color: var(--text-primary);
+}
+
+.access-card small {
+  color: var(--text-muted);
+}
+
+.badge {
+  border-color: var(--border);
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+
+@media (max-width: 960px) {
+  .auth-view,
+  .account-strip,
+  .work-grid,
+  .section-heading,
+  .result-verdict,
+  .result-summary-grid,
+  .locked-check-list {
+    grid-template-columns: 1fr;
+  }
+
+  .pricing-actions,
+  .account-action {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .plan-grid,
+  .feature-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .saas-topbar {
+    height: auto;
+    min-height: 0;
+    padding: 14px 20px;
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .saas-nav {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .auth-view,
+  .app-view {
+    width: min(100% - 28px, 1180px);
+  }
+
+  .auth-copy h1,
+  .app-header h1 {
+    font-size: 32px;
+  }
+
+  .plan-grid,
+  .feature-grid,
+  .history-card {
+    grid-template-columns: 1fr;
+  }
+}

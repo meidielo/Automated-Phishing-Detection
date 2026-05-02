@@ -58,6 +58,9 @@ Safety boundary: the public demo uses committed samples only. It does not
 connect visitor mailboxes, call paid APIs, release payments, expose full email
 bodies, or write feedback labels.
 
+The public product page, account app, and analyst console share the same
+PhishAnalyze visual shell so demos no longer feel like separate prototypes.
+
 ## Project Arc
 
 This started as a working phishing detection pipeline with a foundation problem: an external audit identified 21 findings including 7 P0 security and correctness issues. The codebase was ambitious but the perimeter was unauthenticated, the SSRF surface was a textbook Capital-One-class primitive, the LinkedIn FP that survived four prior fix attempts was rooted in a missing architectural primitive (cross-analyzer context sharing), and the BEC detection claim was load-bearing on real samples accidentally containing URLs.

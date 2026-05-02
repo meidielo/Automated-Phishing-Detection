@@ -330,3 +330,232 @@
       width: 100%;
     }
   }
+
+  /* Product-aligned analyst shell. Shared.css is injected after page CSS, so
+     these rules keep /analyze, /dashboard, /monitor, and /status visually
+     consistent with the public product page. */
+  body > nav {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    height: 56px !important;
+    min-height: 56px !important;
+    padding: 0 32px !important;
+    border-bottom: 1px solid var(--nav-border) !important;
+    background: var(--nav-bg) !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 10px !important;
+  }
+
+  body > nav .logo {
+    margin-right: auto !important;
+    color: var(--accent-light) !important;
+    font-size: 17px !important;
+    font-weight: 800 !important;
+    letter-spacing: 0 !important;
+    text-decoration: none !important;
+  }
+
+  body > nav .logo svg {
+    width: 18px !important;
+    height: 18px !important;
+  }
+
+  body > nav a:not(.logo) {
+    min-height: 34px !important;
+    border: 1px solid transparent !important;
+    border-radius: 6px !important;
+    background: transparent !important;
+    color: var(--text-secondary) !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 8px 12px !important;
+    font-size: 14px !important;
+    font-weight: 800 !important;
+    line-height: 1 !important;
+    text-decoration: none !important;
+  }
+
+  body > nav a:not(.logo):hover,
+  body > nav a:not(.logo).active {
+    border-color: var(--border) !important;
+    background: var(--bg-tertiary) !important;
+    color: var(--text-primary) !important;
+  }
+
+  body > nav .feedback-button,
+  body > nav .logout-button,
+  body > nav .theme-toggle {
+    min-height: 34px !important;
+    margin: 0 !important;
+    border-radius: 6px !important;
+    background: var(--bg-tertiary) !important;
+    color: var(--text-secondary) !important;
+  }
+
+  body > nav .feedback-button,
+  body > nav .logout-button {
+    border: 1px solid var(--border) !important;
+    padding: 0 11px !important;
+    font-size: 14px !important;
+    font-weight: 800 !important;
+  }
+
+  body > nav .feedback-button:hover,
+  body > nav .logout-button:hover,
+  body > nav .theme-toggle:hover {
+    background: var(--nav-hover-bg) !important;
+    color: var(--text-primary) !important;
+  }
+
+  body > .page {
+    width: min(1180px, calc(100% - 40px)) !important;
+    max-width: none !important;
+    margin: 0 auto !important;
+    padding: 36px 0 56px !important;
+  }
+
+  .page-header,
+  .hero {
+    margin-bottom: 28px !important;
+  }
+
+  .page-header h1,
+  .hero h1 {
+    color: var(--text-primary) !important;
+    font-size: 26px !important;
+    font-weight: 800 !important;
+    line-height: 1.18 !important;
+    letter-spacing: 0 !important;
+  }
+
+  .page-header p,
+  .hero p {
+    color: var(--text-muted) !important;
+    font-size: 14px !important;
+    line-height: 1.5 !important;
+  }
+
+  .card,
+  .stat-card,
+  .status-item,
+  .key-item,
+  .acct-panel,
+  .modal,
+  #drop-zone {
+    border: 1px solid var(--border) !important;
+    border-radius: 8px !important;
+    background: var(--bg-secondary) !important;
+    box-shadow: none !important;
+  }
+
+  .card,
+  .acct-panel {
+    padding: 20px !important;
+  }
+
+  .stat-card {
+    padding: 18px !important;
+    border-top-width: 3px !important;
+  }
+
+  .card-title {
+    color: var(--text-secondary) !important;
+    font-size: 13px !important;
+    font-weight: 900 !important;
+    letter-spacing: 0 !important;
+  }
+
+  .btn,
+  .btn-sm,
+  .acct-toggle,
+  .acct-connect-btn,
+  .btn-detonate {
+    min-height: 34px !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 6px !important;
+    background: var(--bg-tertiary) !important;
+    color: var(--text-secondary) !important;
+    font-size: 13px !important;
+    font-weight: 800 !important;
+    padding: 8px 12px !important;
+  }
+
+  .btn:hover,
+  .btn-sm:hover,
+  .acct-toggle:hover,
+  .acct-connect-btn:hover,
+  .btn-detonate:hover {
+    border-color: var(--accent-border) !important;
+    background: var(--nav-hover-bg) !important;
+    color: var(--text-primary) !important;
+  }
+
+  .btn-primary,
+  .acct-connect-btn,
+  .btn-detonate,
+  .btn-fb.submit {
+    border-color: var(--accent) !important;
+    background: var(--accent) !important;
+    color: #fff !important;
+  }
+
+  .btn-primary:hover,
+  .acct-connect-btn:hover,
+  .btn-detonate:hover,
+  .btn-fb.submit:hover {
+    border-color: var(--accent-hover) !important;
+    background: var(--accent-hover) !important;
+    color: #fff !important;
+  }
+
+  #drop-zone {
+    min-height: 220px !important;
+    padding: 32px 28px !important;
+    border-style: dashed !important;
+    border-width: 2px !important;
+  }
+
+  #drop-zone:hover,
+  #drop-zone.drag-over,
+  #drop-zone.has-file {
+    border-color: var(--accent) !important;
+    background: var(--accent-bg) !important;
+  }
+
+  table {
+    border-color: var(--border) !important;
+  }
+
+  th {
+    color: var(--text-muted) !important;
+    font-size: 11px !important;
+    font-weight: 900 !important;
+    letter-spacing: 0 !important;
+  }
+
+  td {
+    border-bottom-color: var(--border) !important;
+    color: var(--text-primary);
+  }
+
+  @media (max-width: 760px) {
+    body > nav {
+      height: auto !important;
+      min-height: 0 !important;
+      flex-wrap: wrap !important;
+      padding: 12px 20px !important;
+    }
+
+    body > nav .logo {
+      flex: 1 0 100% !important;
+      margin-right: 0 !important;
+    }
+
+    body > .page {
+      width: min(100% - 28px, 1180px) !important;
+      padding-top: 28px !important;
+    }
+  }

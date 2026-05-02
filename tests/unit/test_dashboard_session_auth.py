@@ -79,6 +79,8 @@ def test_saas_app_login_shell_uses_link_based_auth_navigation():
 
     assert response.status_code == 200
     assert 'id="authTitle"' in response.text
+    assert 'href="/app" class="active" aria-current="page">User app</a>' in response.text
+    assert 'href="/demo">Demo</a>' not in response.text
     assert "Don't have an account yet?" in response.text
     assert ">Create account</button>" in response.text
     assert "Forgot password?" in response.text
@@ -95,6 +97,7 @@ def test_saas_app_upgrade_options_are_hidden_until_requested():
     )
 
     response = client.get("/app")
+    css = Path("static/saas.css").read_text(encoding="utf-8")
     js = Path("static/saas.js").read_text(encoding="utf-8")
 
     assert response.status_code == 200
@@ -110,6 +113,9 @@ def test_saas_app_upgrade_options_are_hidden_until_requested():
     assert "selectedBillingInterval" in js
     assert "billing_interval: selectedBillingInterval" in js
     assert 'plan-icon' not in js
+    assert "Product style alignment" in css
+    assert "--saas-bg: var(--bg-primary);" in css
+    assert ".saas-topbar" in css
 
 
 def test_saas_app_manual_upload_uses_drop_zone():
@@ -376,11 +382,15 @@ def test_product_shell_links_demo_pages_only_when_demo_is_enabled():
 
 
 def test_shared_controls_use_icon_theme_and_page_scoped_logout():
+    css = Path("static/shared.css").read_text(encoding="utf-8")
     script = Path("static/shared.js").read_text(encoding="utf-8")
 
     assert "function themeIcon(nextTheme)" in script
     assert "aria-label', label" in script
     assert "if (isAnalystPage()) installAnalystLogout(nav);" in script
+    assert "Product-aligned analyst shell" in css
+    assert "body > nav" in css
+    assert "body > .page" in css
 
 
 def test_public_demo_status_declares_locked_capabilities():
