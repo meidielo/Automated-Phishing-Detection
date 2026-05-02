@@ -11,6 +11,12 @@
   const featureGrid = document.getElementById("featureGrid");
   const historyList = document.getElementById("historyList");
   const decisionStack = document.getElementById("decisionStack");
+  const emailFileInput = document.getElementById("emailFile");
+  const scanDropZone = document.getElementById("scanDropZone");
+  const scanDropTitle = document.getElementById("scanDropTitle");
+  const scanDropHint = document.getElementById("scanDropHint");
+  const scanSubmitButton = document.getElementById("scanSubmitButton");
+  const scanClearButton = document.getElementById("scanClearButton");
   const authForms = {
     login: document.getElementById("loginForm"),
     signup: document.getElementById("signupForm"),
@@ -21,6 +27,9 @@
   let csrfCookieName = "phishdetect_user_csrf";
   let featureCatalog = new Map();
   let publicSignupEnabled = true;
+  let selectedScanFile = null;
+  const defaultScanDropTitle = "Drop your .eml file here, or click to browse";
+  const defaultScanDropHint = "Payment-risk scans use .eml files";
 
   function cookieValue(name) {
     const parts = document.cookie.split(";").map((item) => item.trim());
@@ -296,6 +305,45 @@
     const plural = label === "mailbox" ? "mailboxes" : `${label}s`;
     const suffix = count === 1 ? label : plural;
     return `${count.toLocaleString()} ${suffix}`;
+  }
+
+  function formatBytes(bytes) {
+    const size = Number(bytes || 0);
+    if (size < 1024) {
+      return `${size} B`;
+    }
+    if (size < 1024 * 1024) {
+      return `${(size / 1024).toFixed(1)} KB`;
+    }
+    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  function setScanFile(file) {
+    if (!file) {
+      return;
+    }
+    if (!/\.eml$/i.test(file.name || "")) {
+      clearScanFile();
+      showNotice(scanNotice, "Use an .eml file for this workspace scan.");
+      return;
+    }
+    selectedScanFile = file;
+    scanDropTitle.textContent = file.name;
+    scanDropHint.textContent = `${formatBytes(file.size)} selected`;
+    scanDropZone.classList.add("has-file");
+    scanSubmitButton.disabled = false;
+    scanClearButton.hidden = false;
+    hideNotice(scanNotice);
+  }
+
+  function clearScanFile() {
+    selectedScanFile = null;
+    emailFileInput.value = "";
+    scanDropTitle.textContent = defaultScanDropTitle;
+    scanDropHint.textContent = defaultScanDropHint;
+    scanDropZone.classList.remove("has-file", "drag-over");
+    scanSubmitButton.disabled = true;
+    scanClearButton.hidden = true;
   }
 
   async function loadHistory() {
@@ -662,10 +710,49 @@
     }
   });
 
+  scanDropZone.addEventListener("click", () => {
+    emailFileInput.click();
+  });
+
+  scanDropZone.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+    event.preventDefault();
+    emailFileInput.click();
+  });
+
+  emailFileInput.addEventListener("change", (event) => {
+    setScanFile(event.currentTarget.files[0]);
+  });
+
+  scanClearButton.addEventListener("click", () => {
+    clearScanFile();
+    hideNotice(scanNotice);
+  });
+
+  ["dragenter", "dragover"].forEach((eventName) => {
+    scanDropZone.addEventListener(eventName, (event) => {
+      event.preventDefault();
+      scanDropZone.classList.add("drag-over");
+    });
+  });
+
+  ["dragleave", "drop"].forEach((eventName) => {
+    scanDropZone.addEventListener(eventName, () => {
+      scanDropZone.classList.remove("drag-over");
+    });
+  });
+
+  scanDropZone.addEventListener("drop", (event) => {
+    event.preventDefault();
+    setScanFile(event.dataTransfer.files[0]);
+  });
+
   document.getElementById("scanForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     hideNotice(scanNotice);
-    const file = document.getElementById("emailFile").files[0];
+    const file = selectedScanFile || emailFileInput.files[0];
     if (!file) {
       showNotice(scanNotice, "Choose an .eml file first.");
       return;

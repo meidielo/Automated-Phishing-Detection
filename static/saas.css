@@ -1065,6 +1065,108 @@ button:disabled {
   line-height: 1.5;
 }
 
+.scan-form {
+  gap: 16px;
+}
+
+.scan-drop-zone {
+  position: relative;
+  display: flex;
+  min-height: 238px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--saas-border);
+  border-radius: 16px;
+  background: #10110f;
+  color: var(--saas-muted);
+  cursor: pointer;
+  padding: 30px 22px;
+  text-align: center;
+  transition: background 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
+}
+
+[data-theme="light"] .scan-drop-zone {
+  background: var(--saas-surface-strong);
+}
+
+.scan-drop-zone:hover,
+.scan-drop-zone:focus-visible,
+.scan-drop-zone.drag-over {
+  border-color: var(--accent-light);
+  background: color-mix(in srgb, var(--accent-light) 12%, #10110f);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+[data-theme="light"] .scan-drop-zone:hover,
+[data-theme="light"] .scan-drop-zone:focus-visible,
+[data-theme="light"] .scan-drop-zone.drag-over {
+  background: color-mix(in srgb, var(--accent-light) 10%, var(--saas-surface-strong));
+}
+
+.scan-drop-zone.has-file {
+  border-color: var(--accent-light);
+  background: color-mix(in srgb, var(--accent-light) 14%, #10110f);
+}
+
+[data-theme="light"] .scan-drop-zone.has-file {
+  background: color-mix(in srgb, var(--accent-light) 12%, var(--saas-surface-strong));
+}
+
+.scan-drop-zone svg {
+  width: 58px;
+  height: 58px;
+  margin-bottom: 22px;
+  color: var(--saas-dim);
+}
+
+.scan-drop-zone.has-file svg {
+  color: var(--accent-light);
+}
+
+.scan-drop-zone h3 {
+  max-width: 360px;
+  margin: 0;
+  color: var(--saas-muted);
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.scan-drop-zone.has-file h3 {
+  color: var(--saas-text);
+}
+
+.scan-drop-zone p {
+  margin: 8px 0 0;
+  color: var(--saas-dim);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.scan-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.scan-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.scan-actions button {
+  flex: 1 1 0;
+}
+
+.scan-actions .subtle-button {
+  max-width: 110px;
+  margin-top: 0;
+}
+
 input[type="email"],
 input[type="password"],
 input[type="text"],
@@ -1662,8 +1764,33 @@ input[type="file"] {
     flex-direction: column;
   }
 
+  .scan-actions {
+    flex-direction: column;
+  }
+
+  .scan-actions .subtle-button {
+    max-width: none;
+  }
+
   .account-strip,
   .plan-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .scan-drop-zone {
+    min-height: 206px;
+    padding: 26px 18px;
+  }
+
+  .scan-drop-zone svg {
+    width: 50px;
+    height: 50px;
+    margin-bottom: 18px;
+  }
+
+  .scan-drop-zone h3 {
+    font-size: 18px;
   }
 }

@@ -137,8 +137,18 @@
           <h2>Upload a suspicious .eml</h2>
           <p>Start with one payment email. The result stays in this workspace history.</p>
           <form id="scanForm" class="scan-form">
-            <input id="emailFile" name="file" type="file" accept=".eml,message/rfc822" required>
-            <button type="submit">Analyze email</button>
+            <div class="scan-drop-zone" id="scanDropZone" role="button" tabindex="0" aria-labelledby="scanDropTitle" aria-describedby="scanDropHint">
+              <input id="emailFile" class="scan-file-input" name="file" type="file" accept=".eml,message/rfc822">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <path d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5"/>
+              </svg>
+              <h3 id="scanDropTitle">Drop your .eml file here, or click to browse</h3>
+              <p id="scanDropHint">Payment-risk scans use .eml files</p>
+            </div>
+            <div class="scan-actions">
+              <button id="scanSubmitButton" type="submit" disabled>Analyze email</button>
+              <button id="scanClearButton" class="subtle-button" type="button" hidden>Clear</button>
+            </div>
           </form>
           <div class="notice" id="scanNotice" hidden></div>
         </article>

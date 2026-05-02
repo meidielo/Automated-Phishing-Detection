@@ -106,6 +106,28 @@ def test_saas_app_upgrade_options_are_hidden_until_requested():
     assert 'plan-icon' not in js
 
 
+def test_saas_app_manual_upload_uses_drop_zone():
+    client = TestClient(
+        _build_app_with_token(),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    response = client.get("/app")
+    css = Path("static/saas.css").read_text(encoding="utf-8")
+    js = Path("static/saas.js").read_text(encoding="utf-8")
+
+    assert response.status_code == 200
+    assert 'id="scanDropZone"' in response.text
+    assert 'class="scan-file-input"' in response.text
+    assert 'id="emailFile" class="scan-file-input" name="file" type="file" accept=".eml,message/rfc822">' in response.text
+    assert "Drop your .eml file here, or click to browse" in response.text
+    assert 'id="scanSubmitButton" type="submit" disabled' in response.text
+    assert ".scan-drop-zone" in css
+    assert "function setScanFile" in js
+    assert "drag-over" in js
+
+
 def test_analyze_page_redirects_to_login_without_session():
     client = TestClient(
         _build_app_with_token(),
