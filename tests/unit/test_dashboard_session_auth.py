@@ -54,6 +54,33 @@ def test_dashboard_redirects_to_login_without_session():
     assert response.headers["location"].startswith("/login?next=")
 
 
+def test_public_root_redirects_to_product_not_admin_login():
+    client = TestClient(
+        _build_app_with_token(),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    response = client.get("/")
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/product"
+
+
+def test_analyze_page_redirects_to_login_without_session():
+    client = TestClient(
+        _build_app_with_token(),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    response = client.get("/analyze")
+
+    assert response.status_code == 303
+    assert response.headers["location"].startswith("/login?next=")
+    assert response.headers["location"].endswith("next=/analyze")
+
+
 def test_dashboard_uses_self_hosted_chart_asset_after_login():
     client = TestClient(
         _build_app_with_token(),
@@ -322,6 +349,7 @@ def test_login_page_links_public_demo_only_when_enabled():
     plain = plain_client.get("/login")
     demo = demo_client.get("/login")
 
+    assert 'href="/app"' in plain.text
     assert 'href="/demo"' not in plain.text
     assert 'href="/demo"' in demo.text
     assert "paid API checks" in demo.text
@@ -333,9 +361,9 @@ def test_analyze_page_uses_global_feedback_control_not_inline_panel():
         base_url="https://testserver",
         follow_redirects=False,
     )
-    client.post("/login", data={"token": "secret", "next": "/"})
+    client.post("/login", data={"token": "secret", "next": "/analyze"})
 
-    response = client.get("/")
+    response = client.get("/analyze")
 
     assert response.status_code == 200
     assert '/static/shared.css' in response.text
@@ -439,6 +467,35 @@ def test_login_sets_secure_session_and_csrf_cookies():
     assert "Secure" in set_cookie
     assert "HttpOnly" in set_cookie
     assert "SameSite=strict" in set_cookie
+
+
+def test_login_trims_copied_token_whitespace():
+    client = TestClient(
+        _build_app_with_token(),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    response = client.post(
+        "/login",
+        data={"token": "  secret\r\n", "next": "/dashboard"},
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/dashboard"
+
+
+def test_api_login_trims_copied_token_whitespace():
+    client = TestClient(
+        _build_app_with_token(),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    response = client.post("/api/auth/login", json={"token": "\nsecret  "})
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
 
 
 def test_login_uses_non_secure_cookies_on_local_http():

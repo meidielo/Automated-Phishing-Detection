@@ -83,8 +83,8 @@
 </head>
 <body>
   <main class="login-panel">
-    <h1>PhishDetect</h1>
-    <p>Enter the analyst token to open the dashboard on this browser.</p>
+    <h1>PhishDetect admin</h1>
+    <p>Enter the owner analyst token to open internal monitoring and analysis tools.</p>
     <form method="post" action="/login">
       <input type="hidden" name="next" value="{{NEXT_PATH}}">
       <label for="token">Analyst token</label>
@@ -92,6 +92,10 @@
       <div class="error">{{ERROR_MESSAGE}}</div>
       <button type="submit">Login</button>
     </form>
+    <div class="demo-entry">
+      <a href="/app">Open the user app</a>
+      <span>Use email/password login for the customer-facing payment scam firewall.</span>
+    </div>
     {{DEMO_LINK}}
   </main>
 </body>

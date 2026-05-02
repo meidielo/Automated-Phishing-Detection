@@ -438,7 +438,7 @@ class PhishingDetectionApp:
             async def dispatch(self, request, call_next):
                 path = request.url.path
                 html_path = (
-                    path in {"/", "/status", "/monitor", "/accounts"}
+                    path in {"/analyze", "/status", "/monitor", "/accounts"}
                     or path == "/dashboard"
                     or path.startswith("/dashboard/")
                 )
@@ -739,7 +739,7 @@ class PhishingDetectionApp:
         async def login_submit(request: Request):
             """Accept the analyst token and set browser session cookies."""
             form = await request.form()
-            token = str(form.get("token", ""))
+            token = str(form.get("token", "")).strip()
             next_path = str(form.get("next", "/dashboard"))
             if not self.token_verifier.enabled or token != self.token_verifier.expected_token:
                 return _render_login(next_path, "Invalid analyst token")
@@ -750,7 +750,7 @@ class PhishingDetectionApp:
         @app.post("/api/auth/login")
         async def api_login(request: Request):
             payload = await request.json()
-            token = str(payload.get("token", ""))
+            token = str(payload.get("token", "")).strip()
             if not self.token_verifier.enabled or token != self.token_verifier.expected_token:
                 raise HTTPException(status_code=401, detail="Invalid analyst token")
             response = JSONResponse({"status": "ok"})
@@ -1166,6 +1166,11 @@ class PhishingDetectionApp:
             return plan_payload(current_plan="free")
 
         @app.get("/", response_class=HTMLResponse)
+        async def public_home():
+            """Send visitors to the public product page, not the analyst console."""
+            return RedirectResponse(url="/product", status_code=303)
+
+        @app.get("/analyze", response_class=HTMLResponse)
         async def index():
             """Serve the main upload/analyze page."""
             index_path = Path("./templates/index.html")

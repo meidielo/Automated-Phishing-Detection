@@ -75,7 +75,7 @@ Status is one of:
 | **Plan-aware feature locks** - public demo shows Free/Starter/Pro/Business analyzer locks, and `/api/demo/plans` exposes reusable plan metadata for future Stripe Billing and DB-backed quota gates. | `src/billing/plans.py`, `templates/demo.html`, `docs/saas-architecture.md` |
 | **SaaS account and quota foundation** - `/app` adds normal user login, signed user sessions with CSRF, SQLite `users`/`organizations`/`subscriptions`/`scan_results`/`usage_events`, tenant-scoped user scan history, free-tier scan quota, and analyzer feature gates that return locked tier metadata before paid clients load. Public signup stays disabled by default. | `src/saas/`, `src/billing/entitlements.py`, `main.py`, `templates/saas_app.html`, `static/saas.*` |
 | **Stripe Billing subscription flow** - `/api/saas/billing/checkout` creates hosted subscription Checkout Sessions, `/api/saas/billing/portal` opens Customer Portal, and `/api/stripe/webhook` verifies signatures before mirroring Stripe subscription status into the SaaS DB. | `src/billing/stripe_client.py`, `main.py`, `src/saas/database.py`, `static/saas.js` |
-| 1130 tests (57 test modules) | unit + integration |
+| 1134 tests (57 test modules) | unit + integration |
 
 ---
 
