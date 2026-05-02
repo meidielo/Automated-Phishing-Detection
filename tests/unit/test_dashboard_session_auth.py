@@ -280,7 +280,7 @@ def test_user_app_shell_opens_without_analyst_session():
     assert response.status_code == 200
     assert "/static/saas.css" in response.text
     assert "/static/saas.js" in response.text
-    assert "PhishDetect account" in response.text
+    assert "PhishAnalyze workspace" in response.text
 
 
 def test_html_static_asset_urls_are_versioned(monkeypatch):
@@ -314,7 +314,7 @@ def test_product_shell_opens_without_analyst_session():
     response = client.get("/product")
 
     assert response.status_code == 200
-    assert "Agent-ready payment scam firewall" in response.text
+    assert "PhishAnalyze payment-risk firewall" in response.text
     assert 'href="/agent-demo"' not in response.text
     assert 'href="/demo"' not in response.text
     assert 'href="/app">Open user app</a>' in response.text
@@ -447,8 +447,8 @@ def test_analyze_page_uses_global_feedback_control_not_inline_panel():
     response = client.get("/analyze")
 
     assert response.status_code == 200
-    assert "<title>Analyze - PhishDetect</title>" in response.text
-    assert "Email Phishing Detector" in response.text
+    assert "<title>Analyze - PhishAnalyze</title>" in response.text
+    assert "Email Risk Analyzer" in response.text
     assert 'id="drop-zone"' in response.text
     assert "Drop your .eml file here, or click to browse" in response.text
     assert '/static/shared.css' in response.text

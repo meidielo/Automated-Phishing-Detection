@@ -54,7 +54,7 @@ class SMTPConfig:
     username: str = ""
     password: str = ""
     from_email: str = ""
-    from_name: str = "PhishDetect"
+    from_name: str = "PhishAnalyze"
     use_ssl: bool = False
     starttls: bool = True
 
@@ -153,7 +153,7 @@ class PipelineConfig:
             username=os.getenv("SMTP_USERNAME", ""),
             password=os.getenv("SMTP_PASSWORD", ""),
             from_email=os.getenv("SMTP_FROM_EMAIL", ""),
-            from_name=os.getenv("SMTP_FROM_NAME", "PhishDetect"),
+            from_name=os.getenv("SMTP_FROM_NAME", "PhishAnalyze"),
             use_ssl=_coerce_bool(os.getenv("SMTP_USE_SSL"), False),
             starttls=_coerce_bool(os.getenv("SMTP_STARTTLS"), True),
         )
@@ -245,7 +245,7 @@ class PipelineConfig:
             username=_get(smtp_data, "username", "SMTP_USERNAME", ""),
             password=_get(smtp_data, "password", "SMTP_PASSWORD", ""),
             from_email=_get(smtp_data, "from_email", "SMTP_FROM_EMAIL", ""),
-            from_name=_get(smtp_data, "from_name", "SMTP_FROM_NAME", "PhishDetect"),
+            from_name=_get(smtp_data, "from_name", "SMTP_FROM_NAME", "PhishAnalyze"),
             use_ssl=_coerce_bool(_get(smtp_data, "use_ssl", "SMTP_USE_SSL", False)),
             starttls=_coerce_bool(_get(smtp_data, "starttls", "SMTP_STARTTLS", True)),
         )

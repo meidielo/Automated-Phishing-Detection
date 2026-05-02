@@ -42,7 +42,7 @@ smtp:
   username: ""                # env: SMTP_USERNAME
   password: ""                # env: SMTP_PASSWORD
   from_email: ""              # env: SMTP_FROM_EMAIL
-  from_name: "PhishDetect"    # env: SMTP_FROM_NAME
+  from_name: "PhishAnalyze"    # env: SMTP_FROM_NAME
   use_ssl: false              # env: SMTP_USE_SSL
   starttls: true              # env: SMTP_STARTTLS
 

@@ -38,7 +38,7 @@ def test_smtp_password_reset_config_reads_env(monkeypatch):
     monkeypatch.setenv("SMTP_USERNAME", "alerts@example.com")
     monkeypatch.setenv("SMTP_PASSWORD", "app-password")
     monkeypatch.setenv("SMTP_FROM_EMAIL", "alerts@example.com")
-    monkeypatch.setenv("SMTP_FROM_NAME", "PhishDetect Alerts")
+    monkeypatch.setenv("SMTP_FROM_NAME", "PhishAnalyze Alerts")
     monkeypatch.setenv("SMTP_USE_SSL", "true")
     monkeypatch.setenv("SMTP_STARTTLS", "false")
     monkeypatch.setenv("PASSWORD_RESET_TOKEN_TTL_MINUTES", "45")
@@ -50,7 +50,7 @@ def test_smtp_password_reset_config_reads_env(monkeypatch):
     assert config.smtp.username == "alerts@example.com"
     assert config.smtp.password == "app-password"
     assert config.smtp.from_email == "alerts@example.com"
-    assert config.smtp.from_name == "PhishDetect Alerts"
+    assert config.smtp.from_name == "PhishAnalyze Alerts"
     assert config.smtp.use_ssl is True
     assert config.smtp.starttls is False
     assert config.password_reset_token_ttl_minutes == 45

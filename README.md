@@ -292,7 +292,7 @@ SMTP_PORT=587
 SMTP_USERNAME=alerts@example.com
 SMTP_PASSWORD=zoho-app-specific-password
 SMTP_FROM_EMAIL=alerts@example.com
-SMTP_FROM_NAME=PhishDetect
+SMTP_FROM_NAME=PhishAnalyze
 SMTP_USE_SSL=false
 SMTP_STARTTLS=true
 ```

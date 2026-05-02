@@ -168,7 +168,7 @@ def fetch_phishing_urls(max_urls: int = 10) -> list[dict]:
     for feed_url in FEED_URLS:
         try:
             print(f"  Fetching: {feed_url[:80]}...")
-            req = urllib.request.Request(feed_url, headers={"User-Agent": "PhishDetect-Test/1.0"})
+            req = urllib.request.Request(feed_url, headers={"User-Agent": "PhishAnalyze-Test/1.0"})
             with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
                 text = resp.read().decode("utf-8", errors="ignore")
                 urls = [line.strip() for line in text.splitlines() if line.strip() and line.startswith("http")]
@@ -339,7 +339,7 @@ def generate_report(results: list, output_dir: Path):
     md = f"""# Live Phishing Feed Test Report
 
 **Date:** {now}
-**Pipeline:** PhishDetect v1.0
+**Pipeline:** PhishAnalyze v1.0
 **Feed Sources:** OpenPhish, Phishing.Database, abuse.ch URLhaus (community-verified active phishing URLs)
 **Test Type:** Real phishing URLs wrapped in realistic .eml email envelopes
 
@@ -347,7 +347,7 @@ def generate_report(results: list, output_dir: Path):
 
 ## Executive Summary
 
-Tested the PhishDetect pipeline against **{tested} real, active phishing URLs** sourced from public threat intelligence feeds. These are URLs that were verified as active phishing sites at the time of testing.
+Tested the PhishAnalyze pipeline against **{tested} real, active phishing URLs** sourced from public threat intelligence feeds. These are URLs that were verified as active phishing sites at the time of testing.
 
 | Metric | Value |
 |--------|-------|

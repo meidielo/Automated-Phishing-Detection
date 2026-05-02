@@ -1,10 +1,10 @@
-# PhishDetect Analysis Reports
+# PhishAnalyze Analysis Reports
 
-This directory contains test results and analysis from running the PhishDetect pipeline against synthetic phishing campaign patterns and legitimate brand emails.
+This directory contains test results and analysis from running the PhishAnalyze pipeline against synthetic phishing campaign patterns and legitimate brand emails.
 
 ## Results Summary
 
-**Pipeline:** PhishDetect v1.0 (temperature=0, all bugs fixed)
+**Pipeline:** PhishAnalyze v1.0 (temperature=0, all bugs fixed)
 **Test Set:** 22 samples (10 phishing, 12 legitimate)
 **Environment:** Windows 11, all API keys active (VirusTotal, URLScan, AbuseIPDB, Anthropic)
 **Stable Recall:** 90% (9/10 phishing reliably detected) | **Precision:** 91% (1 false positive) | **F1:** 0.90

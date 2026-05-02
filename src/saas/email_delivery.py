@@ -42,13 +42,13 @@ class SMTPPasswordResetMailer:
             raise EmailDeliveryError("SMTP password reset delivery is not configured")
 
         message = EmailMessage()
-        message["Subject"] = "Reset your PhishDetect password"
+        message["Subject"] = "Reset your PhishAnalyze password"
         message["From"] = formataddr((self.config.from_name, self.config.from_email))
         message["To"] = email.to_email
         message.set_content(
             "\n".join(
                 [
-                    "A password reset was requested for your PhishDetect account.",
+                    "A password reset was requested for your PhishAnalyze account.",
                     "",
                     f"Reset your password here: {email.reset_url}",
                     "",

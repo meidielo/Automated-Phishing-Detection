@@ -1,7 +1,7 @@
 # Live Phishing Feed Test Report
 
 **Date:** 2026-04-02 21:27:52
-**Pipeline:** PhishDetect v1.0
+**Pipeline:** PhishAnalyze v1.0
 **Feed Sources:** OpenPhish, Phishing.Database, abuse.ch URLhaus (community-verified active phishing URLs)
 **Test Type:** Real phishing URLs wrapped in realistic .eml email envelopes
 
@@ -9,7 +9,7 @@
 
 ## Executive Summary
 
-Tested the PhishDetect pipeline against **10 real, active phishing URLs** sourced from public threat intelligence feeds. These are URLs that were verified as active phishing sites at the time of testing.
+Tested the PhishAnalyze pipeline against **10 real, active phishing URLs** sourced from public threat intelligence feeds. These are URLs that were verified as active phishing sites at the time of testing.
 
 | Metric | Value |
 |--------|-------|
