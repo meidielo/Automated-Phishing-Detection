@@ -102,7 +102,13 @@ def test_saas_app_upgrade_options_are_hidden_until_requested():
     assert 'id="pricingSection"' in response.text
     assert 'class="pricing-section hidden"' in response.text
     assert 'id="closePricingButton"' in response.text
+    assert 'id="billingCycle"' in response.text
+    assert 'data-billing-interval="monthly"' in response.text
+    assert 'data-billing-interval="yearly"' in response.text
+    assert "Save 20%" in response.text
     assert 'data-upgrade-trigger' in js
+    assert "selectedBillingInterval" in js
+    assert "billing_interval: selectedBillingInterval" in js
     assert 'plan-icon' not in js
 
 

@@ -14,10 +14,12 @@ from dataclasses import asdict, dataclass
 class Plan:
     slug: str
     name: str
-    monthly_price_aud: int
+    monthly_price_aud: float
+    yearly_monthly_price_aud: float
     scan_quota: int
     mailbox_quota: int
     stripe_price_env: str
+    stripe_yearly_price_env: str
     summary: str
     best_for: str
 
@@ -39,39 +41,47 @@ PLAN_CATALOG: tuple[Plan, ...] = (
         slug="free",
         name="Free",
         monthly_price_aud=0,
+        yearly_monthly_price_aud=0,
         scan_quota=5,
         mailbox_quota=0,
         stripe_price_env="",
+        stripe_yearly_price_env="",
         summary="Try payment-scam checks without connecting a mailbox or using paid APIs.",
         best_for="Demo visitors and tiny manual checks",
     ),
     Plan(
         slug="starter",
         name="Starter",
-        monthly_price_aud=19,
+        monthly_price_aud=9.99,
+        yearly_monthly_price_aud=7.99,
         scan_quota=100,
         mailbox_quota=1,
         stripe_price_env="STRIPE_PRICE_STARTER",
+        stripe_yearly_price_env="STRIPE_PRICE_STARTER_YEARLY",
         summary="Manual scans with reputation checks and stored history.",
         best_for="Freelancers and very small teams",
     ),
     Plan(
         slug="pro",
         name="Pro",
-        monthly_price_aud=49,
+        monthly_price_aud=29.99,
+        yearly_monthly_price_aud=23.99,
         scan_quota=1000,
         mailbox_quota=3,
         stripe_price_env="STRIPE_PRICE_PRO",
+        stripe_yearly_price_env="STRIPE_PRICE_PRO_YEARLY",
         summary="Mailbox monitoring plus LLM and browser-backed analysis.",
         best_for="SMEs that receive invoices by email",
     ),
     Plan(
         slug="business",
         name="Business",
-        monthly_price_aud=149,
+        monthly_price_aud=79.99,
+        yearly_monthly_price_aud=63.99,
         scan_quota=5000,
         mailbox_quota=10,
         stripe_price_env="STRIPE_PRICE_BUSINESS",
+        stripe_yearly_price_env="STRIPE_PRICE_BUSINESS_YEARLY",
         summary="Team controls, audit logs, and higher mailbox/API budgets.",
         best_for="Finance teams and agencies",
     ),
@@ -239,9 +249,22 @@ def plan_payload(current_plan: str = "free") -> dict:
             }
         )
 
+    plans = []
+    for plan in PLAN_CATALOG:
+        plan_data = asdict(plan)
+        plan_data["yearly_price_aud"] = round(plan.yearly_monthly_price_aud * 12, 2)
+        plan_data["yearly_savings_percent"] = (
+            0
+            if plan.monthly_price_aud <= 0
+            else round(
+                (1 - (plan.yearly_monthly_price_aud / plan.monthly_price_aud)) * 100
+            )
+        )
+        plans.append(plan_data)
+
     return {
         "current_plan": current_plan,
-        "plans": [asdict(plan) for plan in PLAN_CATALOG],
+        "plans": plans,
         "features": features,
         "billing_recommendation": "Stripe Billing + Checkout Sessions + Customer Portal",
     }

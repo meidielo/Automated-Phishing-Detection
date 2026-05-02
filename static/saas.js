@@ -7,6 +7,7 @@
   const scanNotice = document.getElementById("scanNotice");
   const billingNotice = document.getElementById("billingNotice");
   const pricingSection = document.getElementById("pricingSection");
+  const billingCycle = document.getElementById("billingCycle");
   const planGrid = document.getElementById("planGrid");
   const featureGrid = document.getElementById("featureGrid");
   const historyList = document.getElementById("historyList");
@@ -27,6 +28,8 @@
   let csrfCookieName = "phishdetect_user_csrf";
   let featureCatalog = new Map();
   let publicSignupEnabled = true;
+  let selectedBillingInterval = "monthly";
+  let lastPlansPayload = null;
   let selectedScanFile = null;
   const defaultScanDropTitle = "Drop your .eml file here, or click to browse";
   const defaultScanDropHint = "Payment-risk scans use .eml files";
@@ -203,13 +206,27 @@
 
   function renderPricing(payload) {
     const currentPlan = payload.current_plan || "free";
+    lastPlansPayload = payload;
     planGrid.innerHTML = "";
     payload.plans.forEach((plan, index) => {
       const isCurrent = plan.slug === currentPlan;
       const isFree = plan.slug === "free";
       const card = document.createElement("article");
       card.className = `plan-card ${isCurrent ? "current" : ""}`;
-      const price = plan.monthly_price_aud > 0 ? `A$${plan.monthly_price_aud}` : "A$0";
+      const priceValue = selectedBillingInterval === "yearly"
+        ? Number(plan.yearly_monthly_price_aud || plan.monthly_price_aud || 0)
+        : Number(plan.monthly_price_aud || 0);
+      const price = priceValue > 0 ? `A$${formatMoney(priceValue)}` : "A$0";
+      const yearlyTotal = Number(plan.yearly_price_aud || (priceValue * 12));
+      const billingNote = isFree
+        ? "No card needed"
+        : selectedBillingInterval === "yearly"
+          ? `Billed A$${formatMoney(yearlyTotal)} yearly`
+          : "Billed monthly";
+      const savings = Number(plan.yearly_savings_percent || 0);
+      const savingsBadge = selectedBillingInterval === "yearly" && savings > 0
+        ? `<span class="plan-badge save">Save ${escapeHtml(String(savings))}%</span>`
+        : "";
       const buttonText = isCurrent ? "Current plan" : (isFree ? "Included" : `Upgrade to ${plan.name}`);
       const previousPlan = payload.plans[index - 1];
       const directFeatures = payload.features.filter((feature) => feature.minimum_plan === plan.slug);
@@ -226,9 +243,13 @@
             <h3>${escapeHtml(plan.name)}</h3>
             <p class="plan-audience">${escapeHtml(plan.best_for)}</p>
           </div>
-          ${isCurrent ? '<span class="plan-badge">Current</span>' : ""}
+          <div class="plan-card-badges">
+            ${savingsBadge}
+            ${isCurrent ? '<span class="plan-badge">Current</span>' : ""}
+          </div>
         </div>
         <div class="plan-price"><span>${escapeHtml(price)}</span><small>AUD / month</small></div>
+        <div class="plan-billing-note">${escapeHtml(billingNote)}</div>
         <p class="plan-summary">${escapeHtml(plan.summary)}</p>
         <div class="plan-limits">
           <span>${escapeHtml(formatCount(plan.scan_quota, "scan"))} / month</span>
@@ -305,6 +326,19 @@
     const plural = label === "mailbox" ? "mailboxes" : `${label}s`;
     const suffix = count === 1 ? label : plural;
     return `${count.toLocaleString()} ${suffix}`;
+  }
+
+  function formatMoney(value) {
+    const amount = Number(value || 0);
+    if (!Number.isFinite(amount)) {
+      return "0";
+    }
+    return amount % 1 === 0
+      ? amount.toLocaleString("en-AU", { maximumFractionDigits: 0 })
+      : amount.toLocaleString("en-AU", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        });
   }
 
   function formatBytes(bytes) {
@@ -665,6 +699,22 @@
     openUpgradePanel();
   });
 
+  billingCycle.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-billing-interval]");
+    if (!button) {
+      return;
+    }
+    selectedBillingInterval = button.getAttribute("data-billing-interval") || "monthly";
+    billingCycle.querySelectorAll("button[data-billing-interval]").forEach((item) => {
+      const active = item === button;
+      item.classList.toggle("active", active);
+      item.setAttribute("aria-pressed", active ? "true" : "false");
+    });
+    if (lastPlansPayload) {
+      renderPricing(lastPlansPayload);
+    }
+  });
+
   planGrid.addEventListener("click", async (event) => {
     const button = event.target.closest("button[data-plan]");
     if (!button || button.disabled) {
@@ -677,7 +727,10 @@
     try {
       const payload = await apiJson("/api/saas/billing/checkout", {
         method: "POST",
-        body: JSON.stringify({ plan: button.getAttribute("data-plan") }),
+        body: JSON.stringify({
+          plan: button.getAttribute("data-plan"),
+          billing_interval: selectedBillingInterval,
+        }),
       });
       if (!payload.checkout_url) {
         throw new Error("Stripe did not return a Checkout URL.");

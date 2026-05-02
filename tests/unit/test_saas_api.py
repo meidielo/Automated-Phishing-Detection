@@ -359,6 +359,7 @@ def test_saas_password_reset_delivery_failure_returns_503(tmp_path, monkeypatch)
 def test_saas_checkout_reports_missing_stripe_config(tmp_path, monkeypatch):
     monkeypatch.delenv("STRIPE_SECRET_KEY", raising=False)
     monkeypatch.delenv("STRIPE_PRICE_STARTER", raising=False)
+    monkeypatch.delenv("STRIPE_PRICE_STARTER_YEARLY", raising=False)
     client = TestClient(
         _build_saas_app(tmp_path, signup_enabled=True),
         base_url="https://testserver",
@@ -370,6 +371,27 @@ def test_saas_checkout_reports_missing_stripe_config(tmp_path, monkeypatch):
 
     assert response.status_code == 503
     assert response.json()["missing_env"] == ["STRIPE_SECRET_KEY", "STRIPE_PRICE_STARTER"]
+
+
+def test_saas_yearly_checkout_reports_missing_yearly_price(tmp_path, monkeypatch):
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "stripe_secret_for_tests")
+    monkeypatch.setenv("STRIPE_PRICE_STARTER", "price_starter")
+    monkeypatch.delenv("STRIPE_PRICE_STARTER_YEARLY", raising=False)
+    client = TestClient(
+        _build_saas_app(tmp_path, signup_enabled=True),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    assert _signup(client).status_code == 200
+    response = _post_json_with_csrf(
+        client,
+        "/api/saas/billing/checkout",
+        {"plan": "starter", "billing_interval": "yearly"},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["missing_env"] == ["STRIPE_PRICE_STARTER_YEARLY"]
 
 
 def test_saas_checkout_invalid_stripe_key_returns_safe_billing_error(tmp_path, monkeypatch):
@@ -396,6 +418,7 @@ def test_saas_checkout_invalid_stripe_key_returns_safe_billing_error(tmp_path, m
 def test_saas_checkout_and_portal_create_stripe_sessions(tmp_path, monkeypatch):
     monkeypatch.setenv("STRIPE_SECRET_KEY", "stripe_secret_for_tests")
     monkeypatch.setenv("STRIPE_PRICE_STARTER", "price_starter")
+    monkeypatch.setenv("STRIPE_PRICE_STARTER_YEARLY", "price_starter_yearly")
     monkeypatch.setenv("PUBLIC_BASE_URL", "https://detect.example.test")
     monkeypatch.setattr(app_main, "StripeBillingClient", FakeStripeBillingClient)
     FakeStripeBillingClient.created_customers = []
@@ -416,12 +439,39 @@ def test_saas_checkout_and_portal_create_stripe_sessions(tmp_path, monkeypatch):
     assert checkout.json()["checkout_url"] == "https://checkout.stripe.com/c/cs_test"
     assert FakeStripeBillingClient.created_customers[0]["metadata"]["org_id"].startswith("org_")
     assert FakeStripeBillingClient.checkout_sessions[0]["price_id"] == "price_starter"
+    assert FakeStripeBillingClient.checkout_sessions[0]["billing_interval"] == "monthly"
     assert FakeStripeBillingClient.checkout_sessions[0]["success_url"].startswith(
         "https://detect.example.test/app?billing=success"
     )
     assert portal.status_code == 200
     assert portal.json()["portal_url"] == "https://billing.stripe.com/p/session/test"
     assert session.json()["account"]["stripe_customer_id"] == "cus_test"
+
+
+def test_saas_yearly_checkout_uses_yearly_price(tmp_path, monkeypatch):
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "stripe_secret_for_tests")
+    monkeypatch.setenv("STRIPE_PRICE_STARTER", "price_starter")
+    monkeypatch.setenv("STRIPE_PRICE_STARTER_YEARLY", "price_starter_yearly")
+    monkeypatch.setattr(app_main, "StripeBillingClient", FakeStripeBillingClient)
+    FakeStripeBillingClient.created_customers = []
+    FakeStripeBillingClient.checkout_sessions = []
+    client = TestClient(
+        _build_saas_app(tmp_path, signup_enabled=True),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    assert _signup(client).status_code == 200
+    checkout = _post_json_with_csrf(
+        client,
+        "/api/saas/billing/checkout",
+        {"plan": "starter", "billing_interval": "yearly"},
+    )
+
+    assert checkout.status_code == 200
+    assert checkout.json()["billing_interval"] == "yearly"
+    assert FakeStripeBillingClient.checkout_sessions[0]["price_id"] == "price_starter_yearly"
+    assert FakeStripeBillingClient.checkout_sessions[0]["billing_interval"] == "yearly"
 
 
 def test_stripe_webhook_updates_subscription_plan(tmp_path, monkeypatch):

@@ -1091,6 +1091,11 @@ class PhishingDetectionApp:
             context = _current_user_context(request, require_csrf=True)
             payload = await _json_object_body(request)
             target_plan = str(payload.get("plan", "")).strip().lower()
+            billing_interval = str(payload.get("billing_interval", "monthly")).strip().lower()
+            if billing_interval == "annual":
+                billing_interval = "yearly"
+            if billing_interval not in {"monthly", "yearly"}:
+                raise HTTPException(status_code=400, detail="Unknown billing interval")
             try:
                 from src.billing.plans import get_plan
                 plan = get_plan(target_plan)
@@ -1099,7 +1104,11 @@ class PhishingDetectionApp:
             if plan.slug == "free":
                 raise HTTPException(status_code=400, detail="Free does not need checkout")
 
-            missing = missing_checkout_env(plan, os.environ)
+            missing = missing_checkout_env(
+                plan,
+                os.environ,
+                billing_interval=billing_interval,
+            )
             if missing:
                 return JSONResponse(
                     status_code=503,
@@ -1117,7 +1126,11 @@ class PhishingDetectionApp:
 
             store = _get_saas_store()
             try:
-                price_id = price_id_for_plan(plan, os.environ)
+                price_id = price_id_for_plan(
+                    plan,
+                    os.environ,
+                    billing_interval=billing_interval,
+                )
                 stripe_config = stripe_config_from_env(os.environ)
                 stripe_client = StripeBillingClient(stripe_config.secret_key)
                 customer_id = context.stripe_customer_id
@@ -1141,6 +1154,7 @@ class PhishingDetectionApp:
                     org_id=context.org_id,
                     user_id=context.user_id,
                     plan_slug=plan.slug,
+                    billing_interval=billing_interval,
                     success_url=_external_url(
                         request,
                         "/app?billing=success&session_id={CHECKOUT_SESSION_ID}",
@@ -1180,6 +1194,7 @@ class PhishingDetectionApp:
                 "checkout_url": session.get("url"),
                 "session_id": session.get("id"),
                 "plan": plan.slug,
+                "billing_interval": billing_interval,
                 "account": updated_context.to_dict(),
             }
 

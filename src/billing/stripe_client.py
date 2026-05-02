@@ -79,6 +79,7 @@ class StripeBillingClient:
         plan_slug: str,
         success_url: str,
         cancel_url: str,
+        billing_interval: str = "monthly",
     ) -> dict:
         return self._post(
             "/v1/checkout/sessions",
@@ -94,9 +95,11 @@ class StripeBillingClient:
                 ("metadata[org_id]", org_id),
                 ("metadata[user_id]", user_id),
                 ("metadata[plan_slug]", plan_slug),
+                ("metadata[billing_interval]", billing_interval),
                 ("subscription_data[metadata][org_id]", org_id),
                 ("subscription_data[metadata][user_id]", user_id),
                 ("subscription_data[metadata][plan_slug]", plan_slug),
+                ("subscription_data[metadata][billing_interval]", billing_interval),
             ],
         )
 
@@ -141,23 +144,44 @@ def stripe_config_from_env(env: Mapping[str, str] | None = None) -> StripeBillin
     )
 
 
-def missing_checkout_env(plan: Plan, env: Mapping[str, str] | None = None) -> list[str]:
+def _price_env_for_interval(plan: Plan, billing_interval: str = "monthly") -> str:
+    interval = billing_interval.strip().lower()
+    if interval in {"yearly", "annual"}:
+        return plan.stripe_yearly_price_env
+    if interval == "monthly":
+        return plan.stripe_price_env
+    raise StripeConfigError(f"Unsupported billing interval: {billing_interval}")
+
+
+def missing_checkout_env(
+    plan: Plan,
+    env: Mapping[str, str] | None = None,
+    *,
+    billing_interval: str = "monthly",
+) -> list[str]:
     source = env if env is not None else os.environ
     missing = []
     if not source.get("STRIPE_SECRET_KEY", "").strip():
         missing.append("STRIPE_SECRET_KEY")
-    if plan.stripe_price_env and not source.get(plan.stripe_price_env, "").strip():
-        missing.append(plan.stripe_price_env)
+    price_env = _price_env_for_interval(plan, billing_interval)
+    if price_env and not source.get(price_env, "").strip():
+        missing.append(price_env)
     return missing
 
 
-def price_id_for_plan(plan: Plan, env: Mapping[str, str] | None = None) -> str:
+def price_id_for_plan(
+    plan: Plan,
+    env: Mapping[str, str] | None = None,
+    *,
+    billing_interval: str = "monthly",
+) -> str:
     source = env if env is not None else os.environ
-    if not plan.stripe_price_env:
+    price_env = _price_env_for_interval(plan, billing_interval)
+    if not price_env:
         raise StripeConfigError(f"{plan.name} does not use Stripe Checkout")
-    price_id = source.get(plan.stripe_price_env, "").strip()
+    price_id = source.get(price_env, "").strip()
     if not price_id:
-        raise StripeConfigError(f"{plan.stripe_price_env} is not configured")
+        raise StripeConfigError(f"{price_env} is not configured")
     return price_id
 
 
@@ -165,6 +189,11 @@ def plan_slug_for_price_id(price_id: str, env: Mapping[str, str] | None = None) 
     source = env if env is not None else os.environ
     for plan in PLAN_CATALOG:
         if plan.stripe_price_env and source.get(plan.stripe_price_env, "").strip() == price_id:
+            return plan.slug
+        if (
+            plan.stripe_yearly_price_env
+            and source.get(plan.stripe_yearly_price_env, "").strip() == price_id
+        ):
             return plan.slug
     return None
 

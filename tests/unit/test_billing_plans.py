@@ -18,6 +18,23 @@ def test_plan_catalog_has_monotonic_quotas():
     assert PLAN_CATALOG[-1].slug == "business"
 
 
+def test_plan_catalog_has_monthly_and_yearly_pricing():
+    starter = next(plan for plan in PLAN_CATALOG if plan.slug == "starter")
+    pro = next(plan for plan in PLAN_CATALOG if plan.slug == "pro")
+    business = next(plan for plan in PLAN_CATALOG if plan.slug == "business")
+    payload = plan_payload(current_plan="free")
+    starter_payload = next(plan for plan in payload["plans"] if plan["slug"] == "starter")
+
+    assert starter.monthly_price_aud == 9.99
+    assert starter.yearly_monthly_price_aud == 7.99
+    assert pro.monthly_price_aud == 29.99
+    assert pro.yearly_monthly_price_aud == 23.99
+    assert business.monthly_price_aud == 79.99
+    assert business.yearly_monthly_price_aud == 63.99
+    assert starter_payload["yearly_price_aud"] == 95.88
+    assert starter_payload["yearly_savings_percent"] == 20
+
+
 def test_expensive_features_are_not_free():
     expensive = [feature for feature in FEATURE_CATALOG if feature.expensive]
 

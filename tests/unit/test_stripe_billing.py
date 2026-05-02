@@ -28,12 +28,20 @@ def test_price_env_helpers_map_plans_to_price_ids():
     env = {
         "STRIPE_SECRET_KEY": "stripe_secret_for_tests",
         "STRIPE_PRICE_STARTER": "price_starter",
+        "STRIPE_PRICE_STARTER_YEARLY": "price_starter_yearly",
         "STRIPE_PRICE_PRO": "price_pro",
+        "STRIPE_PRICE_PRO_YEARLY": "price_pro_yearly",
     }
 
     assert missing_checkout_env(get_plan("starter"), env) == []
     assert price_id_for_plan(get_plan("starter"), env) == "price_starter"
+    assert missing_checkout_env(get_plan("starter"), env, billing_interval="yearly") == []
+    assert (
+        price_id_for_plan(get_plan("starter"), env, billing_interval="yearly")
+        == "price_starter_yearly"
+    )
     assert plan_slug_for_price_id("price_pro", env) == "pro"
+    assert plan_slug_for_price_id("price_pro_yearly", env) == "pro"
     assert plan_slug_for_price_id("price_unknown", env) is None
 
 
@@ -43,6 +51,14 @@ def test_missing_checkout_env_lists_secret_and_plan_price():
     assert missing_checkout_env(get_plan("business"), env) == [
         "STRIPE_SECRET_KEY",
         "STRIPE_PRICE_BUSINESS",
+    ]
+
+
+def test_missing_checkout_env_lists_yearly_plan_price():
+    env = {"STRIPE_SECRET_KEY": "stripe_secret_for_tests"}
+
+    assert missing_checkout_env(get_plan("business"), env, billing_interval="yearly") == [
+        "STRIPE_PRICE_BUSINESS_YEARLY",
     ]
 
 
@@ -106,6 +122,8 @@ def test_stripe_client_sends_checkout_session_request(monkeypatch):
     assert captured["url"].endswith("/v1/checkout/sessions")
     assert captured["data"]["mode"] == "subscription"
     assert captured["data"]["line_items[0][price]"] == "price_123"
+    assert captured["data"]["metadata[billing_interval]"] == "monthly"
+    assert captured["data"]["subscription_data[metadata][billing_interval]"] == "monthly"
     assert captured["headers"]["Stripe-Version"] == "2026-02-25.clover"
 
 
