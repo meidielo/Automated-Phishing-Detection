@@ -8,14 +8,46 @@
 </head>
 <body>
   <main class="saas-shell">
+    <header class="saas-topbar">
+      <a class="saas-brand" href="/product">PhishDetect</a>
+      <nav class="saas-nav" aria-label="App navigation">
+        <a href="/product">Product</a>
+        <a href="/demo">Demo</a>
+        <a href="/login">Analyst</a>
+      </nav>
+    </header>
+
     <section class="auth-view" id="authView">
       <div class="auth-copy">
-        <span class="eyebrow">PhishDetect account</span>
-        <h1>Scan payment emails with account-scoped history and plan limits.</h1>
-        <p>Free accounts run core payment checks. Paid API-backed analyzers stay locked until the organization has the right plan.</p>
+        <h1>Check payment emails before money leaves the business.</h1>
+        <p>PhishDetect gives every invoice, supplier update, and bank-detail change a clear SAFE, VERIFY, or DO_NOT_PAY decision with evidence your team can act on.</p>
+
+        <div class="auth-proof" aria-label="Decision preview">
+          <div class="auth-proof-row safe">
+            <span>SAFE</span>
+            <strong>Known sender, clean auth, no payment change</strong>
+          </div>
+          <div class="auth-proof-row verify">
+            <span>VERIFY</span>
+            <strong>Payment detail change needs second-channel approval</strong>
+          </div>
+          <div class="auth-proof-row block">
+            <span>DO_NOT_PAY</span>
+            <strong>Impersonation or redirection signals block release</strong>
+          </div>
+        </div>
+
+        <figure class="auth-product-shot">
+          <img src="/static/product-dashboard.png" alt="PhishDetect dashboard preview">
+        </figure>
       </div>
 
       <div class="auth-panel">
+        <div class="auth-panel-heading">
+          <h2>Sign in to your workspace</h2>
+          <p id="authSubtext">Use your PhishDetect account to scan emails and review private history.</p>
+        </div>
+
         <div class="tabs" role="tablist">
           <button class="tab active" type="button" data-auth-tab="login">Login</button>
           <button class="tab" type="button" data-auth-tab="signup">Create account</button>

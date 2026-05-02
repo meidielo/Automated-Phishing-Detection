@@ -2,6 +2,7 @@
   const authView = document.getElementById("authView");
   const appView = document.getElementById("appView");
   const authNotice = document.getElementById("authNotice");
+  const authSubtext = document.getElementById("authSubtext");
   const scanNotice = document.getElementById("scanNotice");
   const billingNotice = document.getElementById("billingNotice");
   const planGrid = document.getElementById("planGrid");
@@ -73,11 +74,21 @@
     authView.classList.remove("hidden");
     appView.classList.add("hidden");
     csrfCookieName = session.csrf_cookie || csrfCookieName;
+    const signupTab = document.querySelector('[data-auth-tab="signup"]');
     if (!session.public_signup_enabled) {
-      showNotice(
-        authNotice,
-        "Account creation is closed on this deployment. Existing accounts can still log in."
-      );
+      if (signupTab) {
+        signupTab.hidden = true;
+      }
+      authForms.signup.classList.add("hidden");
+      authSubtext.textContent = "New workspaces are invite-only on this deployment. Existing users can sign in or reset their password.";
+      if (signupTab && signupTab.classList.contains("active")) {
+        selectAuthTab("login");
+      }
+    } else {
+      if (signupTab) {
+        signupTab.hidden = false;
+      }
+      authSubtext.textContent = "Use your PhishDetect account to scan emails and review private history.";
     }
   }
 
