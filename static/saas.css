@@ -181,19 +181,19 @@ button:focus-visible {
 }
 
 .auth-panel {
-  padding: 24px;
+  padding: 28px;
   box-shadow: 0 22px 52px rgba(0, 0, 0, 0.2);
 }
 
 .auth-panel-heading {
-  margin-bottom: 18px;
+  margin-bottom: 24px;
 }
 
 .auth-panel-heading h2 {
   margin: 0;
   color: var(--text-primary);
-  font-size: 24px;
-  line-height: 1.18;
+  font-size: 30px;
+  line-height: 1.12;
 }
 
 .auth-panel-heading p,
@@ -236,6 +236,46 @@ button:focus-visible {
 .scan-form {
   display: grid;
   gap: 14px;
+}
+
+.auth-links,
+.auth-switch {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.auth-links {
+  display: grid;
+  gap: 8px;
+  padding-top: 2px;
+  text-align: center;
+}
+
+.auth-switch {
+  display: block;
+}
+
+button.link-button {
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--accent-light);
+  padding: 0;
+  font-size: inherit;
+  font-weight: 800;
+  line-height: inherit;
+}
+
+button.link-button:hover,
+button.link-button:focus-visible {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 label {

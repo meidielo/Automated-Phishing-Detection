@@ -68,6 +68,25 @@ def test_public_root_redirects_to_product_not_admin_login():
     assert response.headers["location"] == "/product"
 
 
+def test_saas_app_login_shell_uses_link_based_auth_navigation():
+    client = TestClient(
+        _build_app_with_token(),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    response = client.get("/app")
+
+    assert response.status_code == 200
+    assert 'id="authTitle"' in response.text
+    assert "Don't have an account yet?" in response.text
+    assert ">Create account</button>" in response.text
+    assert "Forgot password?" in response.text
+    assert 'data-auth-mode="signup"' in response.text
+    assert 'data-auth-mode="reset"' in response.text
+    assert "data-auth-tab" not in response.text
+
+
 def test_analyze_page_redirects_to_login_without_session():
     client = TestClient(
         _build_app_with_token(),

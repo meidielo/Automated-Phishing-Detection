@@ -2,7 +2,9 @@
   const authView = document.getElementById("authView");
   const appView = document.getElementById("appView");
   const authNotice = document.getElementById("authNotice");
+  const authTitle = document.getElementById("authTitle");
   const authSubtext = document.getElementById("authSubtext");
+  const signupPrompt = document.getElementById("signupPrompt");
   const scanNotice = document.getElementById("scanNotice");
   const billingNotice = document.getElementById("billingNotice");
   const planGrid = document.getElementById("planGrid");
@@ -18,6 +20,7 @@
 
   let csrfCookieName = "phishdetect_user_csrf";
   let featureCatalog = new Map();
+  let publicSignupEnabled = true;
 
   function cookieValue(name) {
     const parts = document.cookie.split(";").map((item) => item.trim());
@@ -83,22 +86,11 @@
     authView.classList.remove("hidden");
     appView.classList.add("hidden");
     csrfCookieName = session.csrf_cookie || csrfCookieName;
-    const signupTab = document.querySelector('[data-auth-tab="signup"]');
-    if (!session.public_signup_enabled) {
-      if (signupTab) {
-        signupTab.hidden = true;
-      }
-      authForms.signup.classList.add("hidden");
-      authSubtext.textContent = "New workspaces are invite-only on this deployment. Existing users can sign in or reset their password.";
-      if (signupTab && signupTab.classList.contains("active")) {
-        selectAuthTab("login");
-      }
-    } else {
-      if (signupTab) {
-        signupTab.hidden = false;
-      }
-      authSubtext.textContent = "Use your PhishDetect account to scan emails and review private history.";
+    publicSignupEnabled = Boolean(session.public_signup_enabled);
+    if (signupPrompt) {
+      signupPrompt.hidden = !publicSignupEnabled;
     }
+    selectAuthMode("login");
   }
 
   async function renderApp(session) {
@@ -456,20 +448,54 @@
       .replace(/'/g, "&#039;");
   }
 
-  function selectAuthTab(mode) {
-    document.querySelectorAll("[data-auth-tab]").forEach((tab) => {
-      tab.classList.toggle("active", tab.getAttribute("data-auth-tab") === mode);
-    });
+  function authModeCopy(mode) {
+    const inviteOnlyLogin =
+      "Enter your email and password. New workspaces are invite-only on this deployment.";
+    const copy = {
+      login: {
+        title: "Sign in to your workspace",
+        subtext: publicSignupEnabled
+          ? "Enter your email and password to continue."
+          : inviteOnlyLogin,
+      },
+      signup: {
+        title: "Create your workspace",
+        subtext: "Start a free workspace for manual payment-email scans.",
+      },
+      reset: {
+        title: "Reset your password",
+        subtext: "Enter your email and we will send a reset link if the account exists.",
+      },
+      resetConfirm: {
+        title: "Choose a new password",
+        subtext: "Set a new password to return to your workspace.",
+      },
+    };
+    return copy[mode] || copy.login;
+  }
+
+  function selectAuthMode(mode) {
+    const requestedMode = mode;
+    if (mode === "signup" && !publicSignupEnabled) {
+      mode = "login";
+      showNotice(authNotice, "New workspaces are invite-only on this deployment.");
+    }
+    const copy = authModeCopy(mode);
+    authTitle.textContent = copy.title;
+    authSubtext.textContent = copy.subtext;
     authForms.login.classList.toggle("hidden", mode !== "login");
     authForms.signup.classList.toggle("hidden", mode !== "signup");
     authForms.reset.classList.toggle("hidden", mode !== "reset");
-    authForms.resetConfirm.classList.add("hidden");
+    authForms.resetConfirm.classList.toggle("hidden", mode !== "resetConfirm");
+    if (requestedMode !== "signup" && authNotice.textContent === "New workspaces are invite-only on this deployment.") {
+      hideNotice(authNotice);
+    }
   }
 
-  document.querySelectorAll("[data-auth-tab]").forEach((button) => {
+  document.querySelectorAll("[data-auth-mode]").forEach((button) => {
     button.addEventListener("click", () => {
       hideNotice(authNotice);
-      selectAuthTab(button.getAttribute("data-auth-tab"));
+      selectAuthMode(button.getAttribute("data-auth-mode"));
     });
   });
 
@@ -610,9 +636,7 @@
       return false;
     }
     document.getElementById("resetToken").value = token;
-    selectAuthTab("reset");
-    authForms.reset.classList.add("hidden");
-    authForms.resetConfirm.classList.remove("hidden");
+    selectAuthMode("resetConfirm");
     return true;
   }
 
