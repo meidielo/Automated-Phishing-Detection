@@ -87,32 +87,50 @@
         <div>
           <span class="eyebrow" id="orgLabel">Workspace</span>
           <h1>Payment Scam Firewall</h1>
+          <p>Scan invoices, supplier updates, and bank-detail changes with account-scoped history and plan-aware checks.</p>
         </div>
         <button type="button" id="logoutButton">Logout</button>
       </header>
 
-      <section class="account-strip">
-        <div>
-          <span class="label">Plan</span>
+      <section class="account-strip" aria-label="Account summary">
+        <div class="account-plan">
+          <span class="label">Current plan</span>
           <strong id="planName">Free</strong>
-          <button class="subtle-button" type="button" id="portalButton">Manage billing</button>
+          <span class="account-note" id="billingHelp">Billing portal appears after first checkout.</span>
         </div>
-        <div>
+        <div class="account-usage">
           <span class="label">Monthly scans</span>
           <strong id="usageText">0 / 5</strong>
           <div class="meter" aria-hidden="true"><span id="usageBar"></span></div>
         </div>
-        <div>
-          <span class="label">Email</span>
+        <div class="account-email">
+          <span class="label">Signed in as</span>
           <strong id="userEmail">-</strong>
+        </div>
+        <div class="account-action">
+          <button class="subtle-button" type="button" id="portalButton">Manage billing</button>
         </div>
       </section>
       <div class="notice" id="billingNotice" hidden></div>
 
-      <section class="work-grid">
+      <section class="pricing-section" aria-label="Subscription plans">
+        <div class="section-heading pricing-heading">
+          <div>
+            <h2>Choose your payment-risk coverage</h2>
+            <p>Free covers manual checks. Paid tiers unlock reputation, sandbox, mailbox, and AI-backed analysis only when the account has the right plan.</p>
+          </div>
+          <div class="billing-cycle" aria-label="Billing cadence">
+            <span>Monthly</span>
+            <strong>AUD pricing</strong>
+          </div>
+        </div>
+        <div class="plan-grid" id="planGrid"></div>
+      </section>
+
+      <section class="work-grid" aria-label="Manual scan and latest result">
         <article class="scan-panel">
-          <span class="eyebrow">Manual scan</span>
           <h2>Upload a suspicious .eml</h2>
+          <p>Start with one payment email. The result stays in this workspace history.</p>
           <form id="scanForm" class="scan-form">
             <input id="emailFile" name="file" type="file" accept=".eml,message/rfc822" required>
             <button type="submit">Analyze email</button>
@@ -121,8 +139,8 @@
         </article>
 
         <article class="result-panel" id="resultPanel">
-          <span class="eyebrow">Latest result</span>
           <h2 id="resultTitle">No scan yet</h2>
+          <p class="panel-note">SAFE, VERIFY, and DO_NOT_PAY decisions appear here after analysis.</p>
           <div class="decision-stack" id="decisionStack"></div>
         </article>
       </section>
@@ -130,12 +148,10 @@
       <section class="feature-section">
         <div class="section-heading">
           <div>
-            <span class="eyebrow">Plan gates</span>
-            <h2>Locked checks are explicit before any paid API runs</h2>
+            <h2>Analyzer access</h2>
+            <p>The product never silently runs paid checks. It shows what is included now and what unlocks with a higher plan.</p>
           </div>
-          <p>Each analyzer uses the same feature slugs as billing, quotas, and the public demo.</p>
         </div>
-        <div class="plan-grid" id="planGrid"></div>
         <div class="feature-grid" id="featureGrid"></div>
       </section>
 

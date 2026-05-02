@@ -106,6 +106,14 @@
     document.getElementById("userEmail").textContent = account.email;
     document.getElementById("usageText").textContent =
       `${account.monthly_scan_used} / ${account.monthly_scan_quota}`;
+    const portalButton = document.getElementById("portalButton");
+    const billingHelp = document.getElementById("billingHelp");
+    const hasStripeCustomer = Boolean(account.stripe_customer_id);
+    portalButton.disabled = !hasStripeCustomer;
+    portalButton.textContent = hasStripeCustomer ? "Manage billing" : "Billing portal locked";
+    billingHelp.textContent = hasStripeCustomer
+      ? "Manage invoices, cards, and subscription changes in Stripe."
+      : "Choose a paid plan below to create billing access.";
     const pct = account.monthly_scan_quota > 0
       ? Math.min((account.monthly_scan_used / account.monthly_scan_quota) * 100, 100)
       : 0;
@@ -124,19 +132,8 @@
   async function loadPlans() {
     const payload = await apiJson("/api/saas/plans");
     updateAccount(payload.account);
-    renderPlans(payload);
-    featureGrid.innerHTML = "";
-    payload.features.forEach((feature) => {
-      const card = document.createElement("article");
-      card.className = `feature-card ${feature.available ? "available" : "locked"}`;
-      const status = feature.available ? "Included" : `Locked: ${feature.required_plan_name}`;
-      card.innerHTML = `
-        <span class="feature-status">${status}</span>
-        <h3>${escapeHtml(feature.name)}</h3>
-        <p>${escapeHtml(feature.description)}</p>
-      `;
-      featureGrid.appendChild(card);
-    });
+    renderPricing(payload);
+    renderFeatureAccess(payload);
   }
 
   function renderPlans(payload) {
@@ -161,6 +158,108 @@
       `;
       planGrid.appendChild(card);
     });
+  }
+
+  function renderPricing(payload) {
+    const currentPlan = payload.current_plan || "free";
+    planGrid.innerHTML = "";
+    payload.plans.forEach((plan, index) => {
+      const isCurrent = plan.slug === currentPlan;
+      const isFree = plan.slug === "free";
+      const card = document.createElement("article");
+      card.className = `plan-card ${isCurrent ? "current" : ""}`;
+      const price = plan.monthly_price_aud > 0 ? `A$${plan.monthly_price_aud}` : "A$0";
+      const buttonText = isCurrent ? "Current plan" : (isFree ? "Included" : `Upgrade to ${plan.name}`);
+      const previousPlan = payload.plans[index - 1];
+      const directFeatures = payload.features.filter((feature) => feature.minimum_plan === plan.slug);
+      const featureIntro = isFree
+        ? "Included in Free:"
+        : `Everything in ${previousPlan ? previousPlan.name : "the previous plan"}, plus:`;
+      const featureItems = directFeatures
+        .slice(0, 5)
+        .map((feature) => `<li>${escapeHtml(feature.name)}</li>`)
+        .join("");
+      card.innerHTML = `
+        <div class="plan-icon" aria-hidden="true">${planIcon(index)}</div>
+        <h3>${escapeHtml(plan.name)}</h3>
+        <p class="plan-audience">${escapeHtml(plan.best_for)}</p>
+        <div class="plan-price"><span>${escapeHtml(price)}</span><small>AUD / month</small></div>
+        <p class="plan-summary">${escapeHtml(plan.summary)}</p>
+        <div class="plan-limits">
+          <span>${escapeHtml(formatCount(plan.scan_quota, "scan"))} / month</span>
+          <span>${escapeHtml(formatCount(plan.mailbox_quota, "mailbox"))}</span>
+        </div>
+        <button type="button" data-plan="${escapeHtml(plan.slug)}" ${isCurrent || isFree ? "disabled" : ""}>
+          ${escapeHtml(buttonText)}
+        </button>
+        <div class="plan-divider"></div>
+        <div class="plan-feature-list">
+          <strong>${escapeHtml(featureIntro)}</strong>
+          <ul>${featureItems}</ul>
+        </div>
+      `;
+      planGrid.appendChild(card);
+    });
+  }
+
+  function renderFeatureAccess(payload) {
+    const currentName = payload.account ? payload.account.plan_name : "current plan";
+    const included = payload.features.filter((feature) => feature.available);
+    const locked = payload.features.filter((feature) => !feature.available);
+    featureGrid.innerHTML = `
+      <article class="access-card">
+        <h3>Included in ${escapeHtml(currentName)}</h3>
+        <ul>${featureRows(included, "included")}</ul>
+      </article>
+      <article class="access-card locked">
+        <h3>Locked until upgrade</h3>
+        <ul>${featureRows(locked, "locked")}</ul>
+      </article>
+    `;
+  }
+
+  function featureRows(features, mode) {
+    if (!features.length) {
+      return "<li><span>All available</span><small>No locked checks on this plan.</small></li>";
+    }
+    return features.map((feature) => {
+      const meta = mode === "locked"
+        ? `${feature.category} - ${feature.required_plan_name}`
+        : feature.category;
+      return `
+        <li>
+          <span>${escapeHtml(feature.name)}</span>
+          <small>${escapeHtml(meta)}</small>
+        </li>
+      `;
+    }).join("");
+  }
+
+  function planIcon(index) {
+    const branch = index >= 2
+      ? '<path d="M20 41L32 34L44 41" /><circle cx="44" cy="41" r="4" />'
+      : '<path d="M32 34L44 41" /><circle cx="44" cy="41" r="4" />';
+    const extraBranch = index >= 3
+      ? '<path d="M20 41L12 47M44 41L52 47" /><circle cx="12" cy="47" r="3" /><circle cx="52" cy="47" r="3" />'
+      : "";
+    return `
+      <svg viewBox="0 0 64 64" focusable="false" aria-hidden="true">
+        <circle cx="32" cy="14" r="10" />
+        <circle cx="32" cy="14" r="4" />
+        <path d="M32 24V50" />
+        <path d="M32 34L20 41" />
+        <circle cx="20" cy="41" r="4" />
+        ${branch}
+        ${extraBranch}
+      </svg>
+    `;
+  }
+
+  function formatCount(value, label) {
+    const count = Number(value || 0);
+    const plural = label === "mailbox" ? "mailboxes" : `${label}s`;
+    const suffix = count === 1 ? label : plural;
+    return `${count.toLocaleString()} ${suffix}`;
   }
 
   async function loadHistory() {
@@ -337,6 +436,10 @@
   });
 
   document.getElementById("portalButton").addEventListener("click", async () => {
+    const portalButton = document.getElementById("portalButton");
+    if (portalButton.disabled) {
+      return;
+    }
     hideNotice(billingNotice);
     try {
       const payload = await apiJson("/api/saas/billing/portal", {
