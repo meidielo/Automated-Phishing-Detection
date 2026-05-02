@@ -218,6 +218,29 @@ def test_saas_password_reset_disabled_smtp_returns_generic_ok(tmp_path):
     assert response.json()["email_delivery_configured"] is False
 
 
+def test_saas_password_reset_rejects_invalid_json(tmp_path):
+    client = TestClient(
+        _build_saas_app(tmp_path, signup_enabled=True),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    malformed = client.post(
+        "/api/saas/auth/password-reset/request",
+        content="{bad json",
+        headers={"content-type": "application/json"},
+    )
+    wrong_shape = client.post(
+        "/api/saas/auth/password-reset/request",
+        json=["not", "an", "object"],
+    )
+
+    assert malformed.status_code == 400
+    assert malformed.json()["detail"] == "Invalid JSON body"
+    assert wrong_shape.status_code == 400
+    assert wrong_shape.json()["detail"] == "JSON object body required"
+
+
 def test_saas_password_reset_request_is_rate_limited(tmp_path):
     client = TestClient(
         _build_saas_app(tmp_path, signup_enabled=True),

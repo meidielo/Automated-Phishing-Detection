@@ -681,6 +681,15 @@ class PhishingDetectionApp:
             )
             return f"{scheme}://{host}{path}"
 
+        async def _json_object_body(request: Request) -> dict:
+            try:
+                payload = await request.json()
+            except json.JSONDecodeError as exc:
+                raise HTTPException(status_code=400, detail="Invalid JSON body") from exc
+            if not isinstance(payload, dict):
+                raise HTTPException(status_code=400, detail="JSON object body required")
+            return payload
+
         def _stripe_subscription_price_id(subscription: dict) -> str | None:
             items = subscription.get("items") or {}
             data = items.get("data") if isinstance(items, dict) else []
@@ -801,7 +810,7 @@ class PhishingDetectionApp:
 
         @app.post("/api/auth/login")
         async def api_login(request: Request):
-            payload = await request.json()
+            payload = await _json_object_body(request)
             token = _normalize_analyst_token(payload.get("token", ""))
             if not self.token_verifier.enabled or token != self.token_verifier.expected_token:
                 raise HTTPException(status_code=401, detail="Invalid analyst token")
@@ -877,7 +886,7 @@ class PhishingDetectionApp:
                     status_code=503,
                     detail="User sessions are not configured on this server",
                 )
-            payload = await request.json()
+            payload = await _json_object_body(request)
             email = str(payload.get("email", ""))
             password = str(payload.get("password", ""))
             org_name = str(payload.get("org_name", "") or "")
@@ -905,7 +914,7 @@ class PhishingDetectionApp:
                     status_code=503,
                     detail="User sessions are not configured on this server",
                 )
-            payload = await request.json()
+            payload = await _json_object_body(request)
             try:
                 context = _get_saas_store().authenticate(
                     str(payload.get("email", "")),
@@ -925,7 +934,7 @@ class PhishingDetectionApp:
                     status_code=503,
                     detail="User sessions are not configured on this server",
                 )
-            payload = await request.json()
+            payload = await _json_object_body(request)
             email = str(payload.get("email", "")).strip()
             if not email:
                 raise HTTPException(status_code=400, detail="Email is required")
@@ -974,7 +983,7 @@ class PhishingDetectionApp:
                     status_code=503,
                     detail="User sessions are not configured on this server",
                 )
-            payload = await request.json()
+            payload = await _json_object_body(request)
             token = str(payload.get("token", "")).strip()
             new_password = str(payload.get("password", ""))
             if not token:
@@ -1026,7 +1035,7 @@ class PhishingDetectionApp:
         async def api_saas_billing_checkout(request: Request):
             """Create a Stripe Checkout Session for a subscription upgrade."""
             context = _current_user_context(request, require_csrf=True)
-            payload = await request.json()
+            payload = await _json_object_body(request)
             target_plan = str(payload.get("plan", "")).strip().lower()
             try:
                 from src.billing.plans import get_plan
@@ -1625,7 +1634,7 @@ class PhishingDetectionApp:
             at any private/loopback/link-local/CGNAT/cloud-metadata range.
             See src/security/web_security.py::SSRFGuard for the deny list.
             """
-            payload = await request.json()
+            payload = await _json_object_body(request)
             url = payload.get("url", "").strip()
             if not url:
                 raise HTTPException(status_code=400, detail="url is required")
@@ -1706,7 +1715,7 @@ class PhishingDetectionApp:
             import json as _json
             from src.automation.multi_account_monitor import add_account_to_file
 
-            payload = await request.json()
+            payload = await _json_object_body(request)
             acct_type = payload.get("type", "").lower()
 
             if acct_type == "gmail":
@@ -1782,7 +1791,7 @@ class PhishingDetectionApp:
         async def api_remove_account(request: Request):
             """Remove an account by email or type."""
             from src.automation.multi_account_monitor import remove_account_from_file
-            payload = await request.json()
+            payload = await _json_object_body(request)
             email_or_type = payload.get("email") or payload.get("identifier", "")
             if not email_or_type:
                 raise HTTPException(status_code=400, detail="email or identifier required")
@@ -1801,7 +1810,7 @@ class PhishingDetectionApp:
             import imaplib, ssl, email as email_mod
             from email.utils import parsedate_to_datetime
 
-            payload = await request.json()
+            payload = await _json_object_body(request)
             host = payload.get("host", "").strip()
             user = payload.get("user", "").strip()
             password = payload.get("password", "")
@@ -1927,7 +1936,7 @@ class PhishingDetectionApp:
             """
             import imaplib, ssl
 
-            payload = await request.json()
+            payload = await _json_object_body(request)
             host = payload.get("host", "").strip()
             user = payload.get("user", "").strip()
             password = payload.get("password", "")
@@ -2095,7 +2104,7 @@ class PhishingDetectionApp:
             """
             import traceback as _tb
             try:
-                payload = await request.json()
+                payload = await _json_object_body(request)
                 email_id = payload.get("email_id", "").strip()
                 original_verdict = payload.get("original_verdict", "").strip()
                 correct_label = payload.get("correct_label", "").strip()
