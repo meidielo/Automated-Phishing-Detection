@@ -109,20 +109,24 @@
           <strong id="userEmail">-</strong>
         </div>
         <div class="account-action">
+          <button class="upgrade-button" type="button" id="upgradeButton">Upgrade</button>
           <button class="subtle-button" type="button" id="portalButton">Manage billing</button>
         </div>
       </section>
       <div class="notice" id="billingNotice" hidden></div>
 
-      <section class="pricing-section" aria-label="Subscription plans">
+      <section class="pricing-section hidden" id="pricingSection" aria-label="Upgrade options">
         <div class="section-heading pricing-heading">
           <div>
-            <h2>Choose your payment-risk coverage</h2>
-            <p>Free covers manual checks. Paid tiers unlock reputation, sandbox, mailbox, and AI-backed analysis only when the account has the right plan.</p>
+            <h2>Upgrade options</h2>
+            <p>Open this only when you need more scans, mailbox monitoring, or paid API-backed checks.</p>
           </div>
-          <div class="billing-cycle" aria-label="Billing cadence">
-            <span>Monthly</span>
-            <strong>AUD pricing</strong>
+          <div class="pricing-actions">
+            <div class="billing-cycle" aria-label="Billing cadence">
+              <span>Monthly</span>
+              <strong>AUD</strong>
+            </div>
+            <button class="subtle-button" type="button" id="closePricingButton">Close</button>
           </div>
         </div>
         <div class="plan-grid" id="planGrid"></div>

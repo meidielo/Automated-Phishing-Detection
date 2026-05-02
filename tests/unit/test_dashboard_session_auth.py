@@ -87,6 +87,25 @@ def test_saas_app_login_shell_uses_link_based_auth_navigation():
     assert "data-auth-tab" not in response.text
 
 
+def test_saas_app_upgrade_options_are_hidden_until_requested():
+    client = TestClient(
+        _build_app_with_token(),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    response = client.get("/app")
+    js = Path("static/saas.js").read_text(encoding="utf-8")
+
+    assert response.status_code == 200
+    assert 'id="upgradeButton"' in response.text
+    assert 'id="pricingSection"' in response.text
+    assert 'class="pricing-section hidden"' in response.text
+    assert 'id="closePricingButton"' in response.text
+    assert 'data-upgrade-trigger' in js
+    assert 'plan-icon' not in js
+
+
 def test_analyze_page_redirects_to_login_without_session():
     client = TestClient(
         _build_app_with_token(),

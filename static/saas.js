@@ -6,6 +6,7 @@
   const authSubtext = document.getElementById("authSubtext");
   const scanNotice = document.getElementById("scanNotice");
   const billingNotice = document.getElementById("billingNotice");
+  const pricingSection = document.getElementById("pricingSection");
   const planGrid = document.getElementById("planGrid");
   const featureGrid = document.getElementById("featureGrid");
   const historyList = document.getElementById("historyList");
@@ -30,6 +31,35 @@
   function showNotice(element, message) {
     element.textContent = message;
     element.hidden = false;
+  }
+
+  function showUpgradeNotice(element, message) {
+    element.innerHTML = `
+      <span>${escapeHtml(message)}</span>
+      <button class="notice-action" type="button" data-upgrade-trigger>View upgrade options</button>
+    `;
+    element.hidden = false;
+  }
+
+  function openUpgradePanel(message) {
+    if (!pricingSection) {
+      return;
+    }
+    pricingSection.classList.remove("hidden");
+    if (message) {
+      showUpgradeNotice(billingNotice, message);
+    }
+    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    pricingSection.scrollIntoView({
+      behavior: prefersReducedMotion ? "auto" : "smooth",
+      block: "start",
+    });
+  }
+
+  function closeUpgradePanel() {
+    if (pricingSection) {
+      pricingSection.classList.add("hidden");
+    }
   }
 
   function hideNotice(element) {
@@ -73,10 +103,14 @@
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
+      const message = payload.detail || payload.reason || `Request failed with ${response.status}`;
+      const error = new Error(response.status === 402 && payload.locked ? payload.locked.reason : message);
+      error.status = response.status;
+      error.payload = payload;
       if (response.status === 402 && payload.locked) {
-        throw new Error(payload.locked.reason);
+        error.locked = payload.locked;
       }
-      throw new Error(payload.detail || payload.reason || `Request failed with ${response.status}`);
+      throw error;
     }
     return payload;
   }
@@ -110,7 +144,7 @@
     portalButton.textContent = hasStripeCustomer ? "Manage billing" : "Billing portal locked";
     billingHelp.textContent = hasStripeCustomer
       ? "Manage invoices, cards, and subscription changes in Stripe."
-      : "Choose a paid plan below to create billing access.";
+      : "Use Upgrade when you need more scans or paid checks.";
     const pct = account.monthly_scan_quota > 0
       ? Math.min((account.monthly_scan_used / account.monthly_scan_quota) * 100, 100)
       : 0;
@@ -174,13 +208,17 @@
         ? "Included in Free:"
         : `Everything in ${previousPlan ? previousPlan.name : "the previous plan"}, plus:`;
       const featureItems = directFeatures
-        .slice(0, 5)
+        .slice(0, 3)
         .map((feature) => `<li>${escapeHtml(feature.name)}</li>`)
         .join("");
       card.innerHTML = `
-        <div class="plan-icon" aria-hidden="true">${planIcon(index)}</div>
-        <h3>${escapeHtml(plan.name)}</h3>
-        <p class="plan-audience">${escapeHtml(plan.best_for)}</p>
+        <div class="plan-card-head">
+          <div>
+            <h3>${escapeHtml(plan.name)}</h3>
+            <p class="plan-audience">${escapeHtml(plan.best_for)}</p>
+          </div>
+          ${isCurrent ? '<span class="plan-badge">Current</span>' : ""}
+        </div>
         <div class="plan-price"><span>${escapeHtml(price)}</span><small>AUD / month</small></div>
         <p class="plan-summary">${escapeHtml(plan.summary)}</p>
         <div class="plan-limits">
@@ -364,8 +402,11 @@
     return `
       <section class="result-locks">
         <div class="result-locks-heading">
-          <h3>Skipped until upgrade</h3>
-          <p>These paid checks were not run on the current plan.</p>
+          <div>
+            <h3>Skipped until upgrade</h3>
+            <p>These paid checks were not run on the current plan.</p>
+          </div>
+          <button class="subtle-button" type="button" data-upgrade-trigger>Upgrade</button>
         </div>
         <div class="locked-check-list">${rows}</div>
       </section>
@@ -557,6 +598,25 @@
     window.location.reload();
   });
 
+  document.getElementById("upgradeButton").addEventListener("click", () => {
+    hideNotice(billingNotice);
+    openUpgradePanel();
+  });
+
+  document.getElementById("closePricingButton").addEventListener("click", () => {
+    closeUpgradePanel();
+    hideNotice(billingNotice);
+  });
+
+  document.addEventListener("click", (event) => {
+    const trigger = event.target.closest("[data-upgrade-trigger]");
+    if (!trigger) {
+      return;
+    }
+    event.preventDefault();
+    openUpgradePanel();
+  });
+
   planGrid.addEventListener("click", async (event) => {
     const button = event.target.closest("button[data-plan]");
     if (!button || button.disabled) {
@@ -617,7 +677,11 @@
       renderResult(payload);
       await Promise.all([loadPlans(), loadHistory()]);
     } catch (error) {
-      showNotice(scanNotice, error.message);
+      if (error.status === 402) {
+        showUpgradeNotice(scanNotice, `${error.message} Upgrade to keep scanning.`);
+      } else {
+        showNotice(scanNotice, error.message);
+      }
     }
   });
 
