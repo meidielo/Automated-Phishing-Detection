@@ -86,6 +86,8 @@ def test_saas_app_login_shell_uses_link_based_auth_navigation():
     assert "Forgot password?" in response.text
     assert 'data-auth-mode="signup"' in response.text
     assert 'data-auth-mode="reset"' in response.text
+    assert "Analyze payment-risk emails before money leaves the business" not in response.text
+    assert "auth-product-shot" not in response.text
     assert "data-auth-tab" not in response.text
 
 
@@ -116,6 +118,8 @@ def test_saas_app_upgrade_options_are_hidden_until_requested():
     assert "Product style alignment" in css
     assert "--saas-bg: var(--bg-primary);" in css
     assert ".saas-topbar" in css
+    assert "grid-template-columns: minmax(0, 420px);" in css
+    assert ".auth-copy {\n  display: none;\n}" in css
 
 
 def test_saas_app_manual_upload_uses_drop_zone():
@@ -388,6 +392,9 @@ def test_shared_controls_use_icon_theme_and_page_scoped_logout():
     assert "function themeIcon(nextTheme)" in script
     assert "aria-label', label" in script
     assert "if (isAnalystPage()) installAnalystLogout(nav);" in script
+    assert "var isSaasApi = path.startsWith('/api/saas/');" in script
+    assert "!isSaasApi && method !== 'GET'" in script
+    assert "response.status === 401 && isApi && !isSaasApi" in script
     assert "Product-aligned analyst shell" in css
     assert "body > nav" in css
     assert "body > .page" in css

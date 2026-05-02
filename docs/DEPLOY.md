@@ -61,7 +61,10 @@ Optional public preview:
 
 Stripe subscription setup:
 - Set `PUBLIC_BASE_URL` to the public HTTPS origin, for example `https://phishanalyze.mdpstudio.com.au`.
-- Set `STRIPE_SECRET_KEY` and `STRIPE_PRICE_STARTER` / `STRIPE_PRICE_PRO` / `STRIPE_PRICE_BUSINESS`.
+- Set `STRIPE_SECRET_KEY` and all monthly/yearly Price IDs:
+  `STRIPE_PRICE_STARTER`, `STRIPE_PRICE_STARTER_YEARLY`,
+  `STRIPE_PRICE_PRO`, `STRIPE_PRICE_PRO_YEARLY`,
+  `STRIPE_PRICE_BUSINESS`, and `STRIPE_PRICE_BUSINESS_YEARLY`.
 - Register `https://your-domain/api/stripe/webhook` in Stripe for `checkout.session.completed` and `customer.subscription.*`, then set `STRIPE_WEBHOOK_SECRET`.
 - Checkout and Customer Portal stay unavailable if required Stripe env vars are missing or Stripe rejects the runtime secret key.
 

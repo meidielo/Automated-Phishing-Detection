@@ -1939,14 +1939,15 @@ button:focus-visible {
 }
 
 .auth-view {
-  grid-template-columns: minmax(0, 1fr) minmax(340px, 420px);
-  gap: 34px;
-  align-items: center;
-  padding: 42px 0 56px;
+  grid-template-columns: minmax(0, 420px);
+  justify-content: center;
+  align-items: start;
+  gap: 0;
+  padding: 48px 0 56px;
 }
 
 .auth-copy {
-  padding-top: 0;
+  display: none;
 }
 
 .auth-copy h1 {
@@ -1991,6 +1992,7 @@ button:focus-visible {
 }
 
 .auth-panel {
+  width: 100%;
   padding: 22px;
 }
 

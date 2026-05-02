@@ -11,14 +11,34 @@
       return '';
     }
 
+    function hasHeader(headers, name) {
+      var target = name.toLowerCase();
+      if (!headers) return false;
+      if (headers instanceof Headers) return headers.has(name);
+      return Object.keys(headers).some(function(key) { return key.toLowerCase() === target; });
+    }
+
+    function requestPath(url) {
+      if (typeof url === 'string') {
+        try { return new URL(url, window.location.origin).pathname; } catch(e) { return url; }
+      }
+      if (url && url.url) {
+        try { return new URL(url.url, window.location.origin).pathname; } catch(e) { return url.url; }
+      }
+      return '';
+    }
+
     var _origFetch = window.fetch;
     window.fetch = function(url, opts) {
       opts = opts || {};
-      if (typeof url === 'string' && url.startsWith('/api/')) {
+      var path = requestPath(url);
+      var isApi = path.startsWith('/api/');
+      var isSaasApi = path.startsWith('/api/saas/');
+      if (isApi) {
         opts.credentials = opts.credentials || 'same-origin';
         opts.headers = opts.headers || {};
         var method = (opts.method || 'GET').toUpperCase();
-        if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+        if (!isSaasApi && method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS' && !hasHeader(opts.headers, 'x-csrf-token')) {
           var csrf = readCookie('phishdetect_csrf');
           if (csrf) {
             if (opts.headers instanceof Headers) {
@@ -30,7 +50,7 @@
         }
       }
       return _origFetch.call(window, url, opts).then(function(response) {
-        if (response.status === 401 && typeof url === 'string' && url.startsWith('/api/')) {
+        if (response.status === 401 && isApi && !isSaasApi) {
           window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname);
         }
         return response;
