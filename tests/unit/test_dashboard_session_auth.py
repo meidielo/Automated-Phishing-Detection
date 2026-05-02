@@ -447,6 +447,10 @@ def test_analyze_page_uses_global_feedback_control_not_inline_panel():
     response = client.get("/analyze")
 
     assert response.status_code == 200
+    assert "<title>Analyze - PhishDetect</title>" in response.text
+    assert "Email Phishing Detector" in response.text
+    assert 'id="drop-zone"' in response.text
+    assert "Drop your .eml file here, or click to browse" in response.text
     assert '/static/shared.css' in response.text
     assert '/static/shared.js' in response.text
     assert 'class="project-feedback"' not in response.text
