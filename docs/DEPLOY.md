@@ -121,7 +121,9 @@ bash scripts/docker_deploy.sh
 
 The deploy script fast-forwards git, rebuilds the app image with the new code,
 pulls the browser/tunnel images when possible, removes orphaned old containers,
-and waits for the orchestrator container to become healthy.
+requires `CLOUDFLARE_TUNNEL_TOKEN` for the production tunnel, and waits for
+the orchestrator container to become healthy plus `cloudflared-tunnel` to stay
+running.
 
 ## Operations
 
@@ -134,7 +136,9 @@ retention, log rotation, uptime checks, alerting, and load/error probes.
 ```bash
 docker logs cloudflared-tunnel
 ```
-Usually a bad token. Regenerate in the Cloudflare dashboard.
+Usually a missing or bad `CLOUDFLARE_TUNNEL_TOKEN`. The deploy script now
+fails before recreating containers if the token is missing from `.env` and
+prints recent tunnel logs if the tunnel keeps restarting.
 
 **App unhealthy:**
 ```bash

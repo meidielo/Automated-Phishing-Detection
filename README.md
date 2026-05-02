@@ -396,7 +396,7 @@ The image:
 - Uses `urllib.request`-based healthchecks (no `curl` package), waits for the browser sandbox to be healthy before starting the app, and gives the app a longer startup window before judging it unhealthy.
 - Runs `docker-entrypoint.sh` as root briefly to chown the `/app/data` and `/app/logs` bind mounts to UID 1000, then `gosu`s to the non-root `phishing` user before exec'ing the pipeline. This closes the bind-mount UID-mismatch issue that previously broke `results.jsonl` writes on Linux hosts where the host bind-mount source is root-owned.
 - Production compose binds `127.0.0.1:8000:8000` for host-local health probes while keeping the service off public and Tailscale interfaces. Cloudflare Tunnel still reaches `http://orchestrator:8000` on the Docker network.
-- `scripts/docker_deploy.sh` pulls, rebuilds, and waits for a healthy orchestrator. `scripts/docker_self_heal.sh` is intended for host cron/systemd to restart containers that Docker marks `unhealthy` but does not restart automatically.
+- `scripts/docker_deploy.sh` pulls, rebuilds, requires `CLOUDFLARE_TUNNEL_TOKEN` for production tunnel deploys, and waits for a healthy orchestrator plus a running `cloudflared-tunnel`. `scripts/docker_self_heal.sh` is intended for host cron/systemd to restart containers that Docker marks `unhealthy` but does not restart automatically.
 
 ## DNS Automation
 
