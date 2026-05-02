@@ -112,6 +112,20 @@ def test_dashboard_uses_self_hosted_chart_asset_after_login():
     assert "'unsafe-inline'" not in csp
 
 
+def test_dashboard_without_trailing_slash_serves_after_login():
+    client = TestClient(
+        _build_app_with_token(),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+    client.post("/login", data={"token": "secret", "next": "/dashboard"})
+
+    response = client.get("/dashboard")
+
+    assert response.status_code == 200
+    assert "Email Analysis Dashboard" in response.text
+
+
 def test_dashboard_serves_self_hosted_chart_asset_without_session():
     client = TestClient(
         _build_app_with_token(),
@@ -514,6 +528,22 @@ def test_login_trims_copied_token_whitespace():
     assert response.headers["location"] == "/dashboard"
 
 
+def test_login_accepts_copied_env_line_token():
+    client = TestClient(
+        _build_app_with_token(),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    response = client.post(
+        "/login",
+        data={"token": "ANALYST_API_TOKEN=secret", "next": "/dashboard"},
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/dashboard"
+
+
 def test_api_login_trims_copied_token_whitespace():
     client = TestClient(
         _build_app_with_token(),
@@ -522,6 +552,19 @@ def test_api_login_trims_copied_token_whitespace():
     )
 
     response = client.post("/api/auth/login", json={"token": "\nsecret  "})
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+
+
+def test_api_login_accepts_quoted_token_value():
+    client = TestClient(
+        _build_app_with_token(),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    response = client.post("/api/auth/login", json={"token": '"secret"'})
 
     assert response.status_code == 200
     assert response.json()["status"] == "ok"

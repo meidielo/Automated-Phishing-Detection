@@ -55,6 +55,7 @@ class PhishingDashboard:
 
     def _register_routes(self):
         """Register all dashboard routes."""
+        self.router.get("")(self.get_dashboard)
         self.router.get("/")(self.get_dashboard)
         self.router.get("/stats")(self.get_stats)
         self.router.get("/email/{email_id}")(self.get_email_detail)

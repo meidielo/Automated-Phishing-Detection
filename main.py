@@ -484,6 +484,14 @@ class PhishingDetectionApp:
                 next_path = "/dashboard"
             return RedirectResponse(url=next_path, status_code=303)
 
+        def _normalize_analyst_token(raw_token: object) -> str:
+            token = str(raw_token or "").strip()
+            if token.startswith("ANALYST_API_TOKEN="):
+                token = token.split("=", 1)[1].strip()
+            if len(token) >= 2 and token[0] == token[-1] and token[0] in {"'", '"'}:
+                token = token[1:-1].strip()
+            return token
+
         def _demo_login_link() -> str:
             if not _demo_enabled():
                 return ""
@@ -755,7 +763,7 @@ class PhishingDetectionApp:
         async def login_submit(request: Request):
             """Accept the analyst token and set browser session cookies."""
             form = await request.form()
-            token = str(form.get("token", "")).strip()
+            token = _normalize_analyst_token(form.get("token", ""))
             next_path = str(form.get("next", "/dashboard"))
             if not self.token_verifier.enabled or token != self.token_verifier.expected_token:
                 return _render_login(next_path, "Invalid analyst token")
@@ -766,7 +774,7 @@ class PhishingDetectionApp:
         @app.post("/api/auth/login")
         async def api_login(request: Request):
             payload = await request.json()
-            token = str(payload.get("token", "")).strip()
+            token = _normalize_analyst_token(payload.get("token", ""))
             if not self.token_verifier.enabled or token != self.token_verifier.expected_token:
                 raise HTTPException(status_code=401, detail="Invalid analyst token")
             response = JSONResponse({"status": "ok"})
