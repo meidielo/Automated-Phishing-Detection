@@ -17,6 +17,7 @@
   };
 
   let csrfCookieName = "phishdetect_user_csrf";
+  let featureCatalog = new Map();
 
   function cookieValue(name) {
     const parts = document.cookie.split(";").map((item) => item.trim());
@@ -32,6 +33,14 @@
   function hideNotice(element) {
     element.textContent = "";
     element.hidden = true;
+  }
+
+  function billingErrorMessage(error) {
+    const message = String(error && error.message ? error.message : error || "");
+    if (/stripe|billing|checkout|portal|502|503/i.test(message)) {
+      return "Billing is not available right now. The server needs a valid Stripe secret key before checkout can start.";
+    }
+    return message || "Billing is not available right now.";
   }
 
   async function apiJson(path, options) {
@@ -132,6 +141,7 @@
   async function loadPlans() {
     const payload = await apiJson("/api/saas/plans");
     updateAccount(payload.account);
+    featureCatalog = new Map(payload.features.map((feature) => [feature.slug, feature]));
     renderPricing(payload);
     renderFeatureAccess(payload);
   }
@@ -290,35 +300,151 @@
   }
 
   function renderResult(payload) {
-    document.getElementById("resultTitle").textContent = payload.verdict;
+    document.getElementById("resultTitle").textContent = "Latest analysis";
+    const panelNote = document.querySelector("#resultPanel .panel-note");
+    if (panelNote) {
+      panelNote.textContent = "Review the decision, risk score, and any paid checks skipped by the current plan.";
+    }
     decisionStack.innerHTML = "";
     const payment = payload.payment_protection || {};
-    const rows = [
-      ["Payment decision", payment.decision || "Not payment-specific"],
-      ["Score", String(payload.overall_score)],
-      ["Locked checks", String((payload.feature_locks || []).length)],
-    ];
-    rows.forEach(([label, value]) => {
-      const row = document.createElement("div");
-      row.className = "result-row";
-      row.innerHTML = `<span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong>`;
-      decisionStack.appendChild(row);
-    });
-    if (payload.feature_locks && payload.feature_locks.length) {
-      payload.feature_locks.forEach((lock) => {
-        const details = lock.details || {};
-        const row = document.createElement("div");
-        row.className = "result-row";
-        row.innerHTML = `
-          <span>${escapeHtml(details.feature_slug || "feature")}</span>
-          <strong>${escapeHtml(details.required_plan_name || "Upgrade")}</strong>
-        `;
-        decisionStack.appendChild(row);
-      });
+    const decision = payment.decision || "Not payment-specific";
+    const lockedChecks = payload.feature_locks || [];
+    const score = normalizedScore(payload.overall_score);
+    const decisionClass = decisionStyle(decision);
+    decisionStack.innerHTML = `
+      <section class="result-verdict ${decisionClass}" aria-label="Payment decision">
+        <div>
+          <span class="result-kicker">Payment decision</span>
+          <strong>${escapeHtml(formatDecision(decision))}</strong>
+          <p>${escapeHtml(decisionGuidance(decision, payload.verdict))}</p>
+        </div>
+        <div class="result-score-card">
+          <span>Risk score</span>
+          <strong>${escapeHtml(formatPercent(score))}</strong>
+          <div class="result-score-meter" aria-hidden="true"><span></span></div>
+        </div>
+      </section>
+      <section class="result-summary-grid" aria-label="Analysis summary">
+        <article>
+          <span>Pipeline verdict</span>
+          <strong>${escapeHtml(formatLabel(payload.verdict || "Unknown"))}</strong>
+        </article>
+        <article>
+          <span>Checks available now</span>
+          <strong>${escapeHtml(String(Math.max(Object.keys(payload.analyzer_results || {}).length - lockedChecks.length, 0)))}</strong>
+        </article>
+        <article>
+          <span>Plan-gated checks</span>
+          <strong>${escapeHtml(String(lockedChecks.length))}</strong>
+        </article>
+      </section>
+      ${renderLockedChecks(lockedChecks)}
+    `;
+    const scoreFill = decisionStack.querySelector(".result-score-meter span");
+    if (scoreFill) {
+      scoreFill.style.width = `${Math.round(score * 100)}%`;
     }
     if (payload.account) {
       updateAccount(payload.account);
     }
+  }
+
+  function renderLockedChecks(locks) {
+    if (!locks.length) {
+      return `
+        <section class="result-locks clear">
+          <h3>All checks on your plan completed</h3>
+          <p>No paid API-backed analyzer was skipped for this scan.</p>
+        </section>
+      `;
+    }
+    const rows = locks.map((lock) => {
+      const details = lock.details || {};
+      const slug = details.feature_slug || "";
+      const feature = featureCatalog.get(slug) || {};
+      const requiredPlan = details.required_plan_name || feature.required_plan_name || "Upgrade";
+      return `
+        <article class="locked-check-card">
+          <div>
+            <strong>${escapeHtml(feature.name || formatLabel(slug || "Locked check"))}</strong>
+            <p>${escapeHtml(feature.description || "This analyzer is available on a higher plan.")}</p>
+          </div>
+          <span>${escapeHtml(requiredPlan)}</span>
+        </article>
+      `;
+    }).join("");
+    return `
+      <section class="result-locks">
+        <div class="result-locks-heading">
+          <h3>Skipped until upgrade</h3>
+          <p>These paid checks were not run on the current plan.</p>
+        </div>
+        <div class="locked-check-list">${rows}</div>
+      </section>
+    `;
+  }
+
+  function normalizedScore(value) {
+    const score = Number(value || 0);
+    if (!Number.isFinite(score)) {
+      return 0;
+    }
+    return Math.max(0, Math.min(score, 1));
+  }
+
+  function formatPercent(score) {
+    return `${(score * 100).toFixed(score >= 0.1 ? 1 : 2)}%`;
+  }
+
+  function formatLabel(value) {
+    return String(value || "")
+      .replace(/[_-]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase()
+      .replace(/\b\w/g, (char) => char.toUpperCase());
+  }
+
+  function formatDecision(value) {
+    const decision = String(value || "").toUpperCase();
+    if (decision === "DO_NOT_PAY") {
+      return "Do not pay";
+    }
+    if (decision === "VERIFY") {
+      return "Verify before payment";
+    }
+    if (decision === "SAFE") {
+      return "Safe to continue";
+    }
+    return formatLabel(value || "Not payment-specific");
+  }
+
+  function decisionStyle(value) {
+    const decision = String(value || "").toUpperCase();
+    if (decision === "DO_NOT_PAY") {
+      return "block";
+    }
+    if (decision === "VERIFY") {
+      return "verify";
+    }
+    if (decision === "SAFE") {
+      return "safe";
+    }
+    return "neutral";
+  }
+
+  function decisionGuidance(decision, verdict) {
+    const normalized = String(decision || "").toUpperCase();
+    if (normalized === "DO_NOT_PAY") {
+      return "Block payment release and confirm the request through a trusted channel.";
+    }
+    if (normalized === "VERIFY") {
+      return "Hold payment and verify the supplier or bank-detail change outside email.";
+    }
+    if (normalized === "SAFE") {
+      return "Continue normal approval, while keeping the scan result in the workspace history.";
+    }
+    return `Pipeline verdict: ${formatLabel(verdict || "Unknown")}. Review the evidence before acting.`;
   }
 
   function escapeHtml(value) {
@@ -420,6 +546,8 @@
     }
     hideNotice(billingNotice);
     button.disabled = true;
+    const originalText = button.textContent;
+    button.textContent = "Opening Checkout";
     try {
       const payload = await apiJson("/api/saas/billing/checkout", {
         method: "POST",
@@ -430,8 +558,9 @@
       }
       window.location.href = payload.checkout_url;
     } catch (error) {
-      showNotice(billingNotice, error.message);
+      showNotice(billingNotice, billingErrorMessage(error));
       button.disabled = false;
+      button.textContent = originalText;
     }
   });
 
@@ -451,7 +580,7 @@
       }
       window.location.href = payload.portal_url;
     } catch (error) {
-      showNotice(billingNotice, error.message);
+      showNotice(billingNotice, billingErrorMessage(error));
     }
   });
 

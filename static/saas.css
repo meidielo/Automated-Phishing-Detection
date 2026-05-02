@@ -1204,3 +1204,203 @@ input[type="file"] {
     gap: 5px;
   }
 }
+
+.result-panel {
+  overflow: hidden;
+}
+
+.result-panel h2 {
+  margin-bottom: 18px;
+}
+
+.decision-stack {
+  gap: 16px;
+}
+
+.result-verdict {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 0.34fr);
+  gap: 20px;
+  align-items: stretch;
+  border: 1px solid var(--saas-border);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--saas-surface-strong) 76%, transparent);
+  padding: 22px;
+}
+
+.result-verdict.verify {
+  border-color: color-mix(in srgb, var(--saas-warning) 64%, var(--saas-border));
+}
+
+.result-verdict.safe {
+  border-color: color-mix(in srgb, var(--saas-success) 64%, var(--saas-border));
+}
+
+.result-verdict.block {
+  border-color: color-mix(in srgb, #ff7a7a 68%, var(--saas-border));
+}
+
+.result-kicker,
+.result-score-card span,
+.result-summary-grid span {
+  display: block;
+  color: var(--saas-dim);
+  font-size: 12px;
+  font-weight: 820;
+  line-height: 1.25;
+}
+
+.result-verdict strong {
+  display: block;
+  margin-top: 8px;
+  color: var(--saas-text);
+  font-size: clamp(30px, 4vw, 44px);
+  font-weight: 830;
+  line-height: 1.02;
+}
+
+.result-verdict p {
+  max-width: 620px;
+  margin: 12px 0 0;
+  color: var(--saas-muted);
+  font-size: 16px;
+  line-height: 1.45;
+}
+
+.result-score-card {
+  display: grid;
+  align-content: space-between;
+  min-height: 144px;
+  border: 1px solid var(--saas-border-soft);
+  border-radius: 16px;
+  background: #10110f;
+  padding: 18px;
+}
+
+[data-theme="light"] .result-score-card {
+  background: var(--saas-surface);
+}
+
+.result-score-card strong {
+  font-size: 34px;
+}
+
+.result-score-meter {
+  height: 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--saas-border) 68%, #000);
+}
+
+.result-score-meter span {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--saas-warning);
+}
+
+.result-verdict.safe .result-score-meter span {
+  background: var(--saas-success);
+}
+
+.result-verdict.block .result-score-meter span {
+  background: #ff7a7a;
+}
+
+.result-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.result-summary-grid article {
+  min-width: 0;
+  border: 1px solid var(--saas-border-soft);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--saas-surface-strong) 62%, transparent);
+  padding: 16px;
+}
+
+.result-summary-grid strong {
+  display: block;
+  margin-top: 8px;
+  color: var(--saas-text);
+  font-size: 21px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.result-locks {
+  border: 1px solid color-mix(in srgb, var(--saas-warning) 48%, var(--saas-border));
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--saas-warning) 8%, transparent);
+  padding: 20px;
+}
+
+.result-locks.clear {
+  border-color: color-mix(in srgb, var(--saas-success) 48%, var(--saas-border));
+  background: color-mix(in srgb, var(--saas-success) 8%, transparent);
+}
+
+.result-locks h3 {
+  margin: 0;
+  color: var(--saas-text);
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.result-locks p {
+  margin: 7px 0 0;
+  color: var(--saas-muted);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.locked-check-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.locked-check-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: start;
+  border: 1px solid color-mix(in srgb, var(--saas-warning) 34%, var(--saas-border));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--saas-surface) 86%, transparent);
+  padding: 14px;
+}
+
+.locked-check-card strong {
+  display: block;
+  color: var(--saas-text);
+  font-size: 15px;
+  line-height: 1.25;
+}
+
+.locked-check-card p {
+  margin-top: 6px;
+  font-size: 13px;
+}
+
+.locked-check-card span {
+  border: 1px solid color-mix(in srgb, var(--saas-warning) 56%, var(--saas-border));
+  border-radius: 999px;
+  color: var(--saas-warning);
+  padding: 5px 9px;
+  font-size: 12px;
+  font-weight: 840;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .result-verdict,
+  .result-summary-grid,
+  .locked-check-list {
+    grid-template-columns: 1fr;
+  }
+}

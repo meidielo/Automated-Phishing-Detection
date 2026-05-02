@@ -1098,10 +1098,27 @@ class PhishingDetectionApp:
             except StripeConfigError as exc:
                 raise HTTPException(status_code=503, detail=str(exc)) from exc
             except StripeAPIError as exc:
-                raise HTTPException(
-                    status_code=502,
-                    detail=f"Stripe Billing request failed: {exc}",
-                ) from exc
+                logger.warning(
+                    "Stripe Checkout request failed: status=%s message=%s",
+                    exc.status_code,
+                    exc,
+                )
+                status_code = 503 if exc.status_code in {401, 403} else 502
+                reason = (
+                    "Stripe Billing is not available on this deployment. "
+                    "The server needs a valid Stripe secret key before checkout can start."
+                    if status_code == 503
+                    else "Stripe Billing request failed. Try again shortly."
+                )
+                return JSONResponse(
+                    status_code=status_code,
+                    content={
+                        "billing_available": False,
+                        "reason": reason,
+                        "stripe_status_code": exc.status_code,
+                        "account": context.to_dict(),
+                    },
+                )
 
             updated_context = store.get_account_context(context.user_id) or context
             return {
@@ -1133,10 +1150,27 @@ class PhishingDetectionApp:
             except StripeConfigError as exc:
                 raise HTTPException(status_code=503, detail=str(exc)) from exc
             except StripeAPIError as exc:
-                raise HTTPException(
-                    status_code=502,
-                    detail=f"Stripe Customer Portal request failed: {exc}",
-                ) from exc
+                logger.warning(
+                    "Stripe Customer Portal request failed: status=%s message=%s",
+                    exc.status_code,
+                    exc,
+                )
+                status_code = 503 if exc.status_code in {401, 403} else 502
+                reason = (
+                    "Stripe Billing is not available on this deployment. "
+                    "The server needs a valid Stripe secret key before the portal can open."
+                    if status_code == 503
+                    else "Stripe Customer Portal request failed. Try again shortly."
+                )
+                return JSONResponse(
+                    status_code=status_code,
+                    content={
+                        "billing_available": False,
+                        "reason": reason,
+                        "stripe_status_code": exc.status_code,
+                        "account": context.to_dict(),
+                    },
+                )
 
             return {
                 "billing_available": True,

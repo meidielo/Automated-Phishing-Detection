@@ -139,6 +139,14 @@ class FakeStripeBillingClient:
         return {"id": "bps_test", "url": "https://billing.stripe.com/p/session/test"}
 
 
+class InvalidStripeBillingClient(FakeStripeBillingClient):
+    def create_customer(self, **kwargs):
+        raise app_main.StripeAPIError(
+            "Invalid API Key provided: sk_live_redacted",
+            status_code=401,
+        )
+
+
 class FakePasswordResetMailer:
     enabled = True
     fail = False
@@ -362,6 +370,27 @@ def test_saas_checkout_reports_missing_stripe_config(tmp_path, monkeypatch):
 
     assert response.status_code == 503
     assert response.json()["missing_env"] == ["STRIPE_SECRET_KEY", "STRIPE_PRICE_STARTER"]
+
+
+def test_saas_checkout_invalid_stripe_key_returns_safe_billing_error(tmp_path, monkeypatch):
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "stripe_secret_for_tests")
+    monkeypatch.setenv("STRIPE_PRICE_STARTER", "price_starter")
+    monkeypatch.setattr(app_main, "StripeBillingClient", InvalidStripeBillingClient)
+    client = TestClient(
+        _build_saas_app(tmp_path, signup_enabled=True),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    assert _signup(client).status_code == 200
+    response = _post_json_with_csrf(client, "/api/saas/billing/checkout", {"plan": "starter"})
+
+    assert response.status_code == 503
+    payload = response.json()
+    assert payload["billing_available"] is False
+    assert payload["stripe_status_code"] == 401
+    assert "valid Stripe secret key" in payload["reason"]
+    assert "sk_live" not in json.dumps(payload)
 
 
 def test_saas_checkout_and_portal_create_stripe_sessions(tmp_path, monkeypatch):

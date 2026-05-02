@@ -53,7 +53,8 @@ Implemented foundation:
   artifacts.
 - `/api/saas/billing/checkout` creates hosted Stripe Checkout Sessions in
   subscription mode when `STRIPE_SECRET_KEY` and the target plan price ID are
-  configured.
+  configured and accepted by Stripe. Missing config or rejected runtime keys
+  return a safe billing-unavailable response.
 - `/api/saas/billing/portal` creates Stripe Customer Portal Sessions for
   organizations that already have a Stripe customer.
 - `/api/stripe/webhook` verifies Stripe signatures and mirrors
