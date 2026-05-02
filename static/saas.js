@@ -4,7 +4,6 @@
   const authNotice = document.getElementById("authNotice");
   const authTitle = document.getElementById("authTitle");
   const authSubtext = document.getElementById("authSubtext");
-  const signupPrompt = document.getElementById("signupPrompt");
   const scanNotice = document.getElementById("scanNotice");
   const billingNotice = document.getElementById("billingNotice");
   const planGrid = document.getElementById("planGrid");
@@ -87,9 +86,6 @@
     appView.classList.add("hidden");
     csrfCookieName = session.csrf_cookie || csrfCookieName;
     publicSignupEnabled = Boolean(session.public_signup_enabled);
-    if (signupPrompt) {
-      signupPrompt.hidden = !publicSignupEnabled;
-    }
     selectAuthMode("login");
   }
 
@@ -449,14 +445,10 @@
   }
 
   function authModeCopy(mode) {
-    const inviteOnlyLogin =
-      "Enter your email and password. New workspaces are invite-only on this deployment.";
     const copy = {
       login: {
         title: "Sign in to your workspace",
-        subtext: publicSignupEnabled
-          ? "Enter your email and password to continue."
-          : inviteOnlyLogin,
+        subtext: "Enter your email and password to continue.",
       },
       signup: {
         title: "Create your workspace",
@@ -478,7 +470,7 @@
     const requestedMode = mode;
     if (mode === "signup" && !publicSignupEnabled) {
       mode = "login";
-      showNotice(authNotice, "New workspaces are invite-only on this deployment.");
+      showNotice(authNotice, "Account creation is invite-only on this deployment.");
     }
     const copy = authModeCopy(mode);
     authTitle.textContent = copy.title;
@@ -487,7 +479,7 @@
     authForms.signup.classList.toggle("hidden", mode !== "signup");
     authForms.reset.classList.toggle("hidden", mode !== "reset");
     authForms.resetConfirm.classList.toggle("hidden", mode !== "resetConfirm");
-    if (requestedMode !== "signup" && authNotice.textContent === "New workspaces are invite-only on this deployment.") {
+    if (requestedMode !== "signup" && authNotice.textContent === "Account creation is invite-only on this deployment.") {
       hideNotice(authNotice);
     }
   }
