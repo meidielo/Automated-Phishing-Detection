@@ -784,24 +784,45 @@ def recommend_tiers(
     *,
     min_accuracy: float = 0.90,
     quality_delta: float = 0.02,
+    preferred_provider: str = "deepseek",
 ) -> dict[str, str]:
-    """Pick cost-aware models for starter/pro/business tiers."""
+    """Pick cost-aware models for product tiers.
+
+    Starter, Pro, and Business should stay on the cheapest usable default
+    provider. A higher-cost model is only surfaced as an enterprise review
+    candidate when it beats that default by a real margin.
+    """
     usable = [summary for summary in summaries if summary.errors == 0 and summary.rows > 0]
     if not usable:
         return {
             "starter": "rules-only",
             "pro": "rules-only",
             "business": "rules-only",
+            "enterprise": "benchmark-required",
             "note": "No live model completed every sample.",
         }
 
+    preferred = [
+        summary for summary in usable
+        if summary.provider == preferred_provider
+    ]
+    fallback_default = max(
+        preferred or usable,
+        key=lambda item: (item.accuracy, -item.total_cost_usd),
+    )
     eligible = [summary for summary in usable if summary.accuracy >= min_accuracy]
     if not eligible:
         best = max(usable, key=lambda item: (item.accuracy, -item.total_cost_usd))
+        enterprise = (
+            best.key
+            if best.accuracy - fallback_default.accuracy > quality_delta
+            else fallback_default.key
+        )
         return {
             "starter": "rules-only",
-            "pro": best.key,
-            "business": best.key,
+            "pro": fallback_default.key,
+            "business": fallback_default.key,
+            "enterprise": enterprise,
             "note": f"No model met {min_accuracy:.0%}; keep LLM behind paid or review mode.",
         }
 
@@ -813,18 +834,29 @@ def recommend_tiers(
     cheapest_near_best = min(near_best, key=lambda item: item.total_cost_usd)
     cheapest_eligible = min(eligible, key=lambda item: item.total_cost_usd)
     best_model = max(eligible, key=lambda item: (item.accuracy, -item.total_cost_usd))
-    business = (
-        best_model
-        if best_model.accuracy - cheapest_near_best.accuracy > quality_delta
+    preferred_eligible = [
+        summary for summary in eligible
+        if summary.provider == preferred_provider
+    ]
+    default_model = (
+        min(preferred_eligible, key=lambda item: item.total_cost_usd)
+        if preferred_eligible
         else cheapest_near_best
     )
+    enterprise = (
+        best_model
+        if best_model.accuracy - default_model.accuracy > quality_delta
+        else default_model
+    )
     return {
-        "starter": cheapest_eligible.key,
-        "pro": cheapest_near_best.key,
-        "business": business.key,
+        "starter": default_model.key if preferred_eligible else cheapest_eligible.key,
+        "pro": default_model.key,
+        "business": default_model.key,
+        "enterprise": enterprise.key,
         "note": (
-            "Use the cheapest model within the quality band; reserve expensive "
-            "models only when they beat cheaper models by a real margin."
+            f"Use {preferred_provider} for Starter/Pro/Business when it meets "
+            "the accuracy floor; reserve expensive overrides for enterprise "
+            "evals with a real quality or scale margin."
         ),
     }
 
@@ -915,6 +947,7 @@ def render_markdown(
             f"- Starter: `{recommendations['starter']}`",
             f"- Pro: `{recommendations['pro']}`",
             f"- Business: `{recommendations['business']}`",
+            f"- Enterprise review: `{recommendations['enterprise']}`",
             f"- Note: {recommendations['note']}",
             "",
             "## Pricing Notes",
@@ -951,6 +984,7 @@ def print_summary(summaries: list[ModelSummary], recommendations: dict[str, str]
     print(f"  Starter:  {recommendations['starter']}")
     print(f"  Pro:      {recommendations['pro']}")
     print(f"  Business: {recommendations['business']}")
+    print(f"  Enterprise review: {recommendations['enterprise']}")
     print(f"  Note:     {recommendations['note']}")
 
 

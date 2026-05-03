@@ -299,9 +299,10 @@ def test_recommend_tiers_prefers_cheapest_model_inside_quality_band():
     assert recommendations["starter"] == "deepseek:deepseek-v4-flash"
     assert recommendations["pro"] == "deepseek:deepseek-v4-flash"
     assert recommendations["business"] == "deepseek:deepseek-v4-flash"
+    assert recommendations["enterprise"] == "deepseek:deepseek-v4-flash"
 
 
-def test_recommend_tiers_uses_best_model_when_margin_is_real():
+def test_recommend_tiers_keeps_paid_tiers_on_deepseek_when_margin_is_real():
     recommendations = eval_script.recommend_tiers(
         [
             _summary("deepseek:deepseek-v4-flash", 0.94, 0.001),
@@ -312,5 +313,22 @@ def test_recommend_tiers_uses_best_model_when_margin_is_real():
     )
 
     assert recommendations["starter"] == "deepseek:deepseek-v4-flash"
-    assert recommendations["pro"] == "deepseek:deepseek-v4-pro"
-    assert recommendations["business"] == "deepseek:deepseek-v4-pro"
+    assert recommendations["pro"] == "deepseek:deepseek-v4-flash"
+    assert recommendations["business"] == "deepseek:deepseek-v4-flash"
+    assert recommendations["enterprise"] == "deepseek:deepseek-v4-pro"
+
+
+def test_recommend_tiers_reserves_non_deepseek_gain_for_enterprise_review():
+    recommendations = eval_script.recommend_tiers(
+        [
+            _summary("deepseek:deepseek-v4-flash", 0.93, 0.001),
+            _summary("openai:gpt-5.5", 0.99, 0.070),
+        ],
+        min_accuracy=0.90,
+        quality_delta=0.02,
+    )
+
+    assert recommendations["starter"] == "deepseek:deepseek-v4-flash"
+    assert recommendations["pro"] == "deepseek:deepseek-v4-flash"
+    assert recommendations["business"] == "deepseek:deepseek-v4-flash"
+    assert recommendations["enterprise"] == "openai:gpt-5.5"
