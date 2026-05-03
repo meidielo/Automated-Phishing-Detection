@@ -51,14 +51,7 @@ class OpenAICompatibleLLMClient:
 
     async def analyze(self, prompt: str) -> LLMResponse:
         """Send prompt to an OpenAI-compatible API and return text + model."""
-        body: dict[str, Any] = {
-            "model": self.model,
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 512,
-            "temperature": 0,
-        }
-        if self.json_response:
-            body["response_format"] = {"type": "json_object"}
+        body = self._request_body(prompt)
 
         session = await self._get_session()
         async with session.post(
@@ -73,14 +66,37 @@ class OpenAICompatibleLLMClient:
             payload = await self._read_payload(response)
             if response.status >= 400:
                 message = (
-                    self._error_message(payload)
-                    or f"HTTP {response.status}"
+                    self._error_message(payload) or
+                    f"HTTP {response.status}"
                 )
                 raise RuntimeError(f"LLM API request failed: {message}")
 
         text = self._extract_text(payload)
         model_id = str(payload.get("model") or self.model)
         return LLMResponse(text=text, model_id=model_id)
+
+    def _request_body(self, prompt: str) -> dict[str, Any]:
+        body: dict[str, Any] = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 512,
+        }
+        if self.json_response:
+            body["response_format"] = {"type": "json_object"}
+
+        # DeepSeek V4 and Kimi K2.6 default to thinking mode. Disabling it keeps
+        # classification calls short and reduces JSON formatting failures.
+        if self.base_url.lower().startswith("https://api.deepseek.com"):
+            body["thinking"] = {"type": "disabled"}
+            body["temperature"] = 0
+        elif (
+            self.base_url.lower().startswith("https://api.moonshot.ai") and
+            self.model.startswith(("kimi-k2.6", "kimi-k2.5"))
+        ):
+            body["thinking"] = {"type": "disabled"}
+        else:
+            body["temperature"] = 0
+        return body
 
     async def _read_payload(
         self,

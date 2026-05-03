@@ -130,7 +130,7 @@ The generated corpus is intentionally not committed. Raw external corpora are la
 ### 3.2 What to fix the seed on
 
 - API client randomness (jitter on retries) — disable during eval
-- LLM intent classifier — pin model version + temperature 0
+- LLM intent classifier — pin model version, disable thinking mode for JSON classification where the provider supports it, and use temperature 0 when the model accepts that parameter. Claude Opus 4.7 rejects `temperature`, so log that exception explicitly instead of treating it as a deterministic setting.
 - Sandbox VM selection — prefer same provider for reproducibility
 
 Without seed control, eval runs aren't comparable across days.

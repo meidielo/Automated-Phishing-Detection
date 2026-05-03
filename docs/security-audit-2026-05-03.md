@@ -37,7 +37,7 @@ current test/browser/dependency gates.
 
 ## Audit Evidence
 
-- Full unit/integration suite: `1187 passed`.
+- Full unit/integration suite: `1198 passed`.
 - Focused security regression suite: `181 passed`.
 - Dashboard browser smoke check: charts loaded, strict dashboard CSP observed,
   no console/page errors.

@@ -48,6 +48,21 @@ class TestDeterminismContract:
         assert kwargs["temperature"] == 0
 
     @pytest.mark.asyncio
+    async def test_opus_47_omits_deprecated_temperature_parameter(self):
+        client = AnthropicLLMClient(api_key="test-key", model="claude-opus-4-7")
+        client._client = MagicMock()
+        client._client.messages = MagicMock()
+        client._client.messages.create = AsyncMock(
+            return_value=_build_mock_message(model="claude-opus-4-7")
+        )
+
+        await client.analyze("hello")
+
+        kwargs = client._client.messages.create.call_args.kwargs
+        assert kwargs["model"] == "claude-opus-4-7"
+        assert "temperature" not in kwargs
+
+    @pytest.mark.asyncio
     async def test_top_p_not_set(self, client_with_mocked_api):
         """top_p must NOT be passed: the Anthropic API rejects requests
         that set both temperature and top_p. temperature=0 alone is

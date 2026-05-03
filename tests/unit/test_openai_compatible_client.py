@@ -66,7 +66,33 @@ async def test_openai_compatible_client_sends_deterministic_json_request():
     assert url == "https://api.deepseek.com/chat/completions"
     assert kwargs["headers"]["Authorization"] == "Bearer test-key"
     assert kwargs["json"]["temperature"] == 0
+    assert kwargs["json"]["thinking"] == {"type": "disabled"}
     assert kwargs["json"]["max_tokens"] == 512
+    assert kwargs["json"]["response_format"] == {"type": "json_object"}
+
+
+@pytest.mark.asyncio
+async def test_openai_compatible_client_uses_kimi_supported_parameters():
+    session = _FakeSession(
+        _FakeResponse(
+            payload={
+                "model": "kimi-k2.6",
+                "choices": [{"message": {"content": '{"intent":"legitimate"}'}}],
+            }
+        )
+    )
+    client = OpenAICompatibleLLMClient(
+        "test-key",
+        base_url="https://api.moonshot.ai/v1",
+        model="kimi-k2.6",
+    )
+    client._session = session
+
+    await client.analyze("classify this")
+
+    _, kwargs = session.calls[0]
+    assert "temperature" not in kwargs["json"]
+    assert kwargs["json"]["thinking"] == {"type": "disabled"}
     assert kwargs["json"]["response_format"] == {"type": "json_object"}
 
 

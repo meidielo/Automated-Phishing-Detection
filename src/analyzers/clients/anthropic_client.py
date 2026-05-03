@@ -5,7 +5,8 @@ Determinism contract:
 - temperature=0 — same input produces same output for a given model.
   (top_p removed: the Anthropic API rejects requests that set both
   temperature and top_p. temperature=0 alone is sufficient for greedy
-  decoding on Claude models.)
+  decoding on Claude models that accept temperature. Opus 4.7 rejects the
+  temperature parameter, so that model uses the provider default.)
 - The model ID the API actually used is captured per-call so that any
   divergence from the configured model (Anthropic ships periodic point
   releases) is visible in PipelineResult and can be detected after the
@@ -57,13 +58,16 @@ class AnthropicLLMClient:
             the API used. Callers that need backward-compatible unpacking
             should treat the result as a 2-tuple `(text, model_id)`.
         """
-        message = await self._client.messages.create(
-            model=self.model,
-            max_tokens=512,
-            temperature=0,  # deterministic: same input -> same output
-                            # (top_p removed: API rejects both together)
-            messages=[{"role": "user", "content": prompt}],
-        )
+        body = {
+            "model": self.model,
+            "max_tokens": 512,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        if not self.model.startswith("claude-opus-4-7"):
+            # Deterministic for models that accept it. top_p is omitted
+            # because Anthropic rejects top_p and temperature together.
+            body["temperature"] = 0
+        message = await self._client.messages.create(**body)
         text = message.content[0].text
         # `message.model` is the actual model the API used; falls back to
         # the requested model if the SDK ever omits the field.
