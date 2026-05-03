@@ -357,3 +357,13 @@ class TestURLExtractor:
 
         # Should detect URL (though having credentials in URLs is suspicious)
         assert len(urls) >= 1 or "phishing.com" in text
+
+    @pytest.mark.asyncio
+    async def test_resolve_url_blocks_private_network_targets(self):
+        """Redirect resolution must not fetch loopback or metadata URLs."""
+        extractor = URLExtractor()
+
+        final_url, redirects = await extractor.resolve_url("http://127.0.0.1/admin")
+
+        assert final_url == "http://127.0.0.1/admin"
+        assert redirects == []

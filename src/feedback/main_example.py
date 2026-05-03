@@ -211,7 +211,7 @@ if __name__ == "__main__":
 
     # Get port from config or use default
     port = int(os.getenv("DASHBOARD_PORT", "8000"))
-    host = os.getenv("FEEDBACK_API_HOST", "0.0.0.0")
+    host = os.getenv("FEEDBACK_API_HOST", "127.0.0.1")
 
     logger.info(f"Starting server on {host}:{port}")
 

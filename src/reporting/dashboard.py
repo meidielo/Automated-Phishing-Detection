@@ -9,7 +9,7 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import HTMLResponse
-from jinja2 import Environment, FileSystemLoader, TemplateNotFound
+from jinja2 import Environment, FileSystemLoader, TemplateNotFound, select_autoescape
 
 from src.models import PipelineResult, Verdict
 
@@ -44,7 +44,14 @@ class PhishingDashboard:
             template_dir = "./templates"
 
         try:
-            self.env = Environment(loader=FileSystemLoader(template_dir))
+            self.env = Environment(
+                loader=FileSystemLoader(template_dir),
+                autoescape=select_autoescape(
+                    enabled_extensions=("html", "xml"),
+                    default_for_string=True,
+                    default=True,
+                ),
+            )
         except Exception as e:
             logger.warning(f"Could not load templates from {template_dir}: {e}")
             self.env = None

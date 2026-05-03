@@ -10,15 +10,24 @@ import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
+from urllib.parse import urlparse
+
+
+def _require_http_url(url: str) -> str:
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError(f"Only http(s) URLs are supported: {url}")
+    return url
 
 
 def _request_json(url: str, *, token: str = "", timeout: float = 5.0) -> tuple[int, dict]:
+    url = _require_http_url(url)
     headers = {"Accept": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
     request = urllib.request.Request(url, headers=headers)
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with urllib.request.urlopen(request, timeout=timeout) as response:  # nosec B310
             raw = response.read().decode("utf-8")
             return response.status, json.loads(raw) if raw else {}
     except urllib.error.HTTPError as exc:
@@ -31,6 +40,7 @@ def _request_json(url: str, *, token: str = "", timeout: float = 5.0) -> tuple[i
 
 
 def _post_webhook(url: str, payload: dict, timeout: float = 5.0) -> None:
+    url = _require_http_url(url)
     data = json.dumps(payload, sort_keys=True).encode("utf-8")
     request = urllib.request.Request(
         url,
@@ -38,7 +48,7 @@ def _post_webhook(url: str, payload: dict, timeout: float = 5.0) -> None:
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=timeout) as response:
+    with urllib.request.urlopen(request, timeout=timeout) as response:  # nosec B310
         response.read()
 
 

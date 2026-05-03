@@ -684,6 +684,22 @@ def test_api_login_accepts_quoted_token_value():
     assert response.json()["status"] == "ok"
 
 
+def test_api_login_rate_limits_failed_analyst_tokens():
+    client = TestClient(
+        _build_app_with_token(),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    statuses = [
+        client.post("/api/auth/login", json={"token": "wrong"}).status_code
+        for _ in range(11)
+    ]
+
+    assert statuses[:10] == [401] * 10
+    assert statuses[10] == 429
+
+
 def test_login_uses_non_secure_cookies_on_local_http():
     client = TestClient(
         _build_app_with_token(),

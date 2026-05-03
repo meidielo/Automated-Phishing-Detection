@@ -457,5 +457,5 @@ class SigmaExporter:
     @staticmethod
     def _stable_uuid(seed: str) -> str:
         """Deterministic UUIDv5 so re-running emits the same rule id."""
-        digest = hashlib.sha1(seed.encode("utf-8")).hexdigest()
+        digest = hashlib.sha1(seed.encode("utf-8"), usedforsecurity=False).hexdigest()
         return f"{digest[0:8]}-{digest[8:12]}-{digest[12:16]}-{digest[16:20]}-{digest[20:32]}"

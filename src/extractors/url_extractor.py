@@ -14,6 +14,7 @@ from typing import Optional
 from urllib.parse import urlparse
 
 from src.models import ExtractedURL, URLSource
+from src.security.web_security import SSRFBlockedError, default_ssrf_guard
 
 logger = logging.getLogger(__name__)
 
@@ -279,6 +280,11 @@ class URLExtractor:
             async with aiohttp.ClientSession() as session:
                 for attempt in range(self.config.max_redirects):
                     try:
+                        current_url = default_ssrf_guard.assert_safe(current_url)
+                    except SSRFBlockedError as exc:
+                        self.logger.warning("Blocked unsafe URL during redirect resolution: %s", exc)
+                        break
+                    try:
                         async with session.head(
                             current_url,
                             timeout=aiohttp.ClientTimeout(total=self.config.timeout_seconds),
@@ -291,7 +297,15 @@ class URLExtractor:
                             if resp.status in (301, 302, 303, 307, 308):
                                 location = resp.headers.get("Location")
                                 if location:
-                                    current_url = location
+                                    next_url = urllib.parse.urljoin(current_url, location)
+                                    try:
+                                        current_url = default_ssrf_guard.assert_safe(next_url)
+                                    except SSRFBlockedError as exc:
+                                        self.logger.warning(
+                                            "Blocked unsafe redirect target during URL resolution: %s",
+                                            exc,
+                                        )
+                                        break
                                     continue
                             break
                     except Exception as e:

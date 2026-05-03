@@ -622,7 +622,12 @@ class PhishingDetectionApp:
                 '<a class="secondary-action" href="/login">Analyst login</a>'
             )
 
-        def _render_login(next_path: str, error_message: str = "") -> HTMLResponse:
+        def _render_login(
+            next_path: str,
+            error_message: str = "",
+            *,
+            status_code: int | None = None,
+        ) -> HTMLResponse:
             login_path = Path("./templates/login.html")
             html_content = (
                 login_path.read_text(encoding="utf-8")
@@ -630,8 +635,8 @@ class PhishingDetectionApp:
                 .replace("{{ERROR_MESSAGE}}", html.escape(error_message, quote=True))
                 .replace("{{DEMO_LINK}}", _demo_login_link())
             )
-            status_code = 401 if error_message else 200
-            return HTMLResponse(content=_inject_shared(html_content), status_code=status_code)
+            response_status = status_code if status_code is not None else (401 if error_message else 200)
+            return HTMLResponse(content=_inject_shared(html_content), status_code=response_status)
 
         def _is_secure_request(request: Request) -> bool:
             forwarded_proto = request.headers.get("x-forwarded-proto", "")
@@ -699,6 +704,50 @@ class PhishingDetectionApp:
             return SMTPPasswordResetMailer(getattr(self.config, "smtp", None))
 
         password_reset_attempts: dict[str, deque[float]] = {}
+        auth_failure_attempts: dict[str, deque[float]] = {}
+
+        def _auth_failure_key(request: Request, namespace: str, subject: str) -> str:
+            client_host = request.client.host if request.client else "unknown"
+            normalized_subject = (subject or "unknown").strip().lower()[:128]
+            return f"{namespace}:{client_host}:{normalized_subject}"
+
+        def _prune_attempts(attempts: deque[float], *, now: float, window_seconds: int) -> None:
+            while attempts and now - attempts[0] > window_seconds:
+                attempts.popleft()
+
+        def _check_auth_failure_budget(
+            request: Request,
+            *,
+            namespace: str,
+            subject: str,
+            max_attempts: int = 10,
+            window_seconds: int = 15 * 60,
+        ) -> None:
+            key = _auth_failure_key(request, namespace, subject)
+            now = monotonic()
+            attempts = auth_failure_attempts.setdefault(key, deque())
+            _prune_attempts(attempts, now=now, window_seconds=window_seconds)
+            if len(attempts) >= max_attempts:
+                raise HTTPException(
+                    status_code=429,
+                    detail="Too many login attempts. Try again later.",
+                )
+
+        def _record_auth_failure(
+            request: Request,
+            *,
+            namespace: str,
+            subject: str,
+            window_seconds: int = 15 * 60,
+        ) -> None:
+            key = _auth_failure_key(request, namespace, subject)
+            now = monotonic()
+            attempts = auth_failure_attempts.setdefault(key, deque())
+            _prune_attempts(attempts, now=now, window_seconds=window_seconds)
+            attempts.append(now)
+
+        def _clear_auth_failures(request: Request, *, namespace: str, subject: str) -> None:
+            auth_failure_attempts.pop(_auth_failure_key(request, namespace, subject), None)
 
         def _check_password_reset_rate_limit(request: Request, email: str) -> None:
             window_seconds = 3600
@@ -929,11 +978,29 @@ class PhishingDetectionApp:
             token = _normalize_analyst_token(form.get("token", ""))
             next_path = str(form.get("next", "/dashboard"))
             expected_token = self.token_verifier.expected_token or ""
+            try:
+                _check_auth_failure_budget(
+                    request,
+                    namespace="analyst",
+                    subject="browser-token",
+                )
+            except HTTPException as exc:
+                return _render_login(next_path, str(exc.detail), status_code=exc.status_code)
             if (
                 not self.token_verifier.enabled
                 or not hmac.compare_digest(token, expected_token)
             ):
+                _record_auth_failure(
+                    request,
+                    namespace="analyst",
+                    subject="browser-token",
+                )
                 return _render_login(next_path, "Invalid analyst token")
+            _clear_auth_failures(
+                request,
+                namespace="analyst",
+                subject="browser-token",
+            )
             response = _login_success_redirect(next_path)
             _set_auth_cookies(response, request)
             return response
@@ -943,11 +1010,26 @@ class PhishingDetectionApp:
             payload = await _json_object_body(request)
             token = _normalize_analyst_token(payload.get("token", ""))
             expected_token = self.token_verifier.expected_token or ""
+            _check_auth_failure_budget(
+                request,
+                namespace="analyst",
+                subject="api-token",
+            )
             if (
                 not self.token_verifier.enabled
                 or not hmac.compare_digest(token, expected_token)
             ):
+                _record_auth_failure(
+                    request,
+                    namespace="analyst",
+                    subject="api-token",
+                )
                 raise HTTPException(status_code=401, detail="Invalid analyst token")
+            _clear_auth_failures(
+                request,
+                namespace="analyst",
+                subject="api-token",
+            )
             response = JSONResponse({"status": "ok"})
             _set_auth_cookies(response, request)
             return response
@@ -1053,13 +1135,29 @@ class PhishingDetectionApp:
                     detail="User sessions are not configured on this server",
                 )
             payload = await _json_object_body(request)
+            email = str(payload.get("email", ""))
+            _check_auth_failure_budget(
+                request,
+                namespace="saas-user",
+                subject=email,
+            )
             try:
                 context = _get_saas_store().authenticate(
-                    str(payload.get("email", "")),
+                    email,
                     str(payload.get("password", "")),
                 )
             except InvalidCredentialsError:
+                _record_auth_failure(
+                    request,
+                    namespace="saas-user",
+                    subject=email,
+                )
                 raise HTTPException(status_code=401, detail="Invalid email or password")
+            _clear_auth_failures(
+                request,
+                namespace="saas-user",
+                subject=email,
+            )
             response = JSONResponse({"status": "ok", "account": context.to_dict()})
             _set_user_auth_cookies(response, request, context)
             return response

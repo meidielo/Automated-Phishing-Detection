@@ -73,7 +73,7 @@ class ScreenshotCapture:
         timestamp = datetime.now(timezone.utc)
 
         if not filename:
-            url_hash = hashlib.md5(url.encode()).hexdigest()[:12]
+            url_hash = hashlib.sha256(url.encode()).hexdigest()[:12]
             ts_str = timestamp.strftime("%Y%m%d_%H%M%S")
             filename = f"capture_{ts_str}_{url_hash}.{self.config.format}"
 

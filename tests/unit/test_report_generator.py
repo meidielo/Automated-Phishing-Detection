@@ -264,6 +264,63 @@ class TestGenerateHtmlReport:
         with pytest.raises(ValueError):
             generator.generate_human_readable(result)
 
+    def test_generate_html_autoescapes_email_controlled_fields(self):
+        """Rendered Jinja reports must not execute attacker-controlled email content."""
+        result = PipelineResult(
+            email_id='msg"><img src=x onerror=alert(1)>',
+            verdict=Verdict.SUSPICIOUS,
+            overall_score=0.4,
+            overall_confidence=0.8,
+            analyzer_results={},
+            extracted_urls=[],
+            iocs={"headers": {}, "raw_headers": "<script>alert(1)</script>"},
+            reasoning="<script>alert(2)</script>",
+            timestamp=datetime.now(timezone.utc),
+        )
+
+        generator = ReportGenerator(template_dir="./templates")
+        html = generator.generate_human_readable(result)
+
+        assert "<script>alert(1)</script>" not in html
+        assert "<script>alert(2)</script>" not in html
+        assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
+        assert "&lt;script&gt;alert(2)&lt;/script&gt;" in html
+
+    def test_fallback_html_report_escapes_email_controlled_fields(self):
+        """Fallback report HTML should be escaped too, not only Jinja templates."""
+        result = PipelineResult(
+            email_id='msg"><img src=x onerror=alert(1)>',
+            verdict=Verdict.SUSPICIOUS,
+            overall_score=0.4,
+            overall_confidence=0.8,
+            analyzer_results={
+                "<img src=x onerror=alert(3)>": AnalyzerResult(
+                    analyzer_name="x",
+                    risk_score=0.5,
+                    confidence=0.7,
+                    details={},
+                )
+            },
+            extracted_urls=[
+                ExtractedURL(
+                    url="https://evil.example/<script>",
+                    source=URLSource.BODY_HTML,
+                    source_detail="test",
+                )
+            ],
+            iocs={"headers": {}},
+            reasoning="<script>alert(2)</script>",
+            timestamp=datetime.now(timezone.utc),
+        )
+
+        generator = ReportGenerator(template_dir="./templates")
+        html = generator._generate_fallback_report(result)
+
+        assert "<script>alert(2)</script>" not in html
+        assert '<img src=x onerror=alert(3)>' not in html
+        assert "&lt;script&gt;alert(2)&lt;/script&gt;" in html
+        assert "&lt;img src=x onerror=alert(3)&gt;" in html
+
 
 class TestUrlDefanging:
     """Test URL defanging functionality."""

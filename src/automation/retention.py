@@ -613,6 +613,7 @@ def purge_saas_db(
         ("feature_locks", "created_at"),
         ("audit_logs", "created_at"),
     ]
+    # SQL identifiers below come only from this static allowlist; values remain parameterized.
     total = dropped = 0
     with sqlite3.connect(target) as conn:
         conn.execute("PRAGMA foreign_keys = ON")
@@ -620,15 +621,15 @@ def purge_saas_db(
         for table, column in specs:
             if not _sqlite_table_exists(cursor, table):
                 continue
-            count = cursor.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            count = cursor.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]  # nosec B608
             drop_count = cursor.execute(
-                f"SELECT COUNT(*) FROM {table} WHERE {column} < ?",
+                f"SELECT COUNT(*) FROM {table} WHERE {column} < ?",  # nosec B608
                 (cutoff_text,),
             ).fetchone()[0]
             total += count
             dropped += drop_count
             if drop_count and not dry_run:
-                cursor.execute(f"DELETE FROM {table} WHERE {column} < ?", (cutoff_text,))
+                cursor.execute(f"DELETE FROM {table} WHERE {column} < ?", (cutoff_text,))  # nosec B608
         if not dry_run:
             conn.commit()
 
@@ -666,6 +667,7 @@ def erase_subject_from_saas_db(
         ("scan_results", "lower(email_id) LIKE ? ESCAPE '\\' OR lower(result_json) LIKE ? ESCAPE '\\'"),
         ("audit_logs", "lower(metadata_json) LIKE ? ESCAPE '\\'"),
     ]
+    # SQL identifiers and predicates below come only from this static allowlist.
     total = dropped = 0
     with sqlite3.connect(target) as conn:
         conn.execute("PRAGMA foreign_keys = ON")
@@ -673,16 +675,16 @@ def erase_subject_from_saas_db(
         for table, predicate in specs:
             if not _sqlite_table_exists(cursor, table):
                 continue
-            count = cursor.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            count = cursor.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]  # nosec B608
             params = (needle, needle) if predicate.count("?") == 2 else (needle,)
             drop_count = cursor.execute(
-                f"SELECT COUNT(*) FROM {table} WHERE {predicate}",
+                f"SELECT COUNT(*) FROM {table} WHERE {predicate}",  # nosec B608
                 params,
             ).fetchone()[0]
             total += count
             dropped += drop_count
             if drop_count and not dry_run:
-                cursor.execute(f"DELETE FROM {table} WHERE {predicate}", params)
+                cursor.execute(f"DELETE FROM {table} WHERE {predicate}", params)  # nosec B608
         if not dry_run:
             conn.commit()
 
@@ -730,6 +732,7 @@ def purge_sender_profiles_db(
             "sender_recipients": "last_seen",
             "senders": "last_seen",
         }
+        # SQL identifiers below come only from this static allowlist; values remain parameterized.
         total = dropped = 0
         for table, column in tables.items():
             exists = cursor.execute(
@@ -738,15 +741,15 @@ def purge_sender_profiles_db(
             ).fetchone()
             if not exists:
                 continue
-            count = cursor.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            count = cursor.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]  # nosec B608
             drop_count = cursor.execute(
-                f"SELECT COUNT(*) FROM {table} WHERE {column} < ?",
+                f"SELECT COUNT(*) FROM {table} WHERE {column} < ?",  # nosec B608
                 (cutoff_text,),
             ).fetchone()[0]
             total += count
             dropped += drop_count
             if drop_count and not dry_run:
-                cursor.execute(f"DELETE FROM {table} WHERE {column} < ?", (cutoff_text,))
+                cursor.execute(f"DELETE FROM {table} WHERE {column} < ?", (cutoff_text,))  # nosec B608
         if not dry_run:
             conn.commit()
 
@@ -787,6 +790,7 @@ def erase_subject_from_sender_profiles_db(
             ("sender_recipients", "lower(sender_email) LIKE ? ESCAPE '\\' OR lower(recipient_email) LIKE ? ESCAPE '\\'"),
             ("senders", "lower(sender_email) LIKE ? ESCAPE '\\'"),
         ]
+        # SQL identifiers and predicates below come only from this static allowlist.
         total = dropped = 0
         for table, predicate in specs:
             exists = cursor.execute(
@@ -795,16 +799,16 @@ def erase_subject_from_sender_profiles_db(
             ).fetchone()
             if not exists:
                 continue
-            count = cursor.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            count = cursor.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]  # nosec B608
             params = (needle, needle) if predicate.count("?") == 2 else (needle,)
             drop_count = cursor.execute(
-                f"SELECT COUNT(*) FROM {table} WHERE {predicate}",
+                f"SELECT COUNT(*) FROM {table} WHERE {predicate}",  # nosec B608
                 params,
             ).fetchone()[0]
             total += count
             dropped += drop_count
             if drop_count and not dry_run:
-                cursor.execute(f"DELETE FROM {table} WHERE {predicate}", params)
+                cursor.execute(f"DELETE FROM {table} WHERE {predicate}", params)  # nosec B608
         if not dry_run:
             conn.commit()
 

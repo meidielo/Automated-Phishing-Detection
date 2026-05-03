@@ -382,8 +382,11 @@ export ANALYST_API_TOKEN="secret-token-32-chars-minimum"
 export FEEDBACK_DB_PATH="data/feedback.db"
 export LOG_LEVEL="INFO"
 export DASHBOARD_PORT="8000"
-export FEEDBACK_API_HOST="0.0.0.0"
+export FEEDBACK_API_HOST="127.0.0.1"
 ```
+
+Keep the feedback API on loopback unless it is behind HTTPS, bearer
+authentication, and an access-controlled reverse proxy.
 
 ### Programmatic Configuration
 

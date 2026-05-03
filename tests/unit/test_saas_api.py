@@ -382,6 +382,27 @@ def test_saas_password_reset_request_is_rate_limited(tmp_path):
     assert statuses[5] == 429
 
 
+def test_saas_login_is_rate_limited_after_failed_attempts(tmp_path):
+    client = TestClient(
+        _build_saas_app(tmp_path, signup_enabled=True),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    assert _signup(client).status_code == 200
+    statuses = [
+        client.post(
+            "/api/saas/auth/login",
+            headers=_same_origin_headers(),
+            json={"email": "owner@example.com", "password": "wrong password"},
+        ).status_code
+        for _ in range(11)
+    ]
+
+    assert statuses[:10] == [401] * 10
+    assert statuses[10] == 429
+
+
 def test_saas_password_reset_request_and_confirm(tmp_path, monkeypatch):
     monkeypatch.setattr(app_main, "SMTPPasswordResetMailer", FakePasswordResetMailer)
     FakePasswordResetMailer.enabled = True

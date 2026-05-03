@@ -19,11 +19,24 @@ current test/browser/dependency gates.
 - Updated deployment scripts to use `${APP_ENV_FILE:-.env}` consistently.
 - Updated docs for auth boundaries, MCP limits, current SaaS pricing, and the
   current test count.
+- Closed the remaining SSRF path in browser URL detonation by checking the
+  initial URL plus every Playwright navigation, redirect, and subresource
+  request.
+- Closed SSRF redirect resolution in the URL extractor helper by re-checking
+  every HEAD request target and every redirect hop.
+- Enabled Jinja autoescaping for generated HTML reports and escaped the
+  fallback HTML renderer for email-controlled fields.
+- Added login failure throttling for analyst token login and SaaS
+  email/password login.
+- Cleaned dependency and static-audit gates to zero high/medium Bandit
+  findings, with remaining findings low severity only.
+- Updated the feedback API example docs to keep the default bind on loopback
+  instead of `0.0.0.0`.
 
 ## Audit Evidence
 
-- Full unit/integration suite: `1178 passed`.
-- Focused SaaS/MCP/operation suite: `35 passed`.
+- Full unit/integration suite: `1185 passed`.
+- Focused security regression suite: `181 passed`.
 - Dashboard browser smoke check: charts loaded, strict dashboard CSP observed,
   no console/page errors.
 - MCP live smoke demo: `analyze_payment_email` returned `DO_NOT_PAY`, masked
@@ -31,10 +44,12 @@ current test/browser/dependency gates.
   content.
 - Python dependency audit against `requirements.lock`: no known vulnerabilities
   found.
+- Bandit static scan: `0 high`, `0 medium`, `80 low`, `18 skipped`.
 - Tracked-secret scan found placeholders/test strings only. Runtime `.env`
   remains untracked and must stay that way.
 - Docker Compose production config validates against `.env.production`; remote
   Docker Compose is new enough for raw env-file mode.
+- Desktop MCP bridge JavaScript syntax check passes with `node --check`.
 
 ## Remaining Operator Actions
 

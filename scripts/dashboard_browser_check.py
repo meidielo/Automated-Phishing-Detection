@@ -16,6 +16,7 @@ import sys
 import threading
 import time
 import urllib.request
+from urllib.parse import urlparse
 
 import uvicorn
 from playwright.sync_api import sync_playwright
@@ -26,6 +27,13 @@ if ROOT not in sys.path:
 
 
 DEFAULT_TOKEN = "ci-dashboard-browser-token"
+
+
+def _require_http_url(url: str) -> str:
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError(f"Only http(s) URLs are supported: {url}")
+    return url
 
 
 def _free_port() -> int:
@@ -39,7 +47,8 @@ def _wait_for_health(base_url: str, timeout_seconds: float) -> None:
     last_error: Exception | None = None
     while time.time() < deadline:
         try:
-            with urllib.request.urlopen(f"{base_url}/api/health", timeout=2) as response:
+            health_url = _require_http_url(f"{base_url}/api/health")
+            with urllib.request.urlopen(health_url, timeout=2) as response:  # nosec B310
                 if response.status == 200:
                     return
         except Exception as exc:  # pragma: no cover - only failure path

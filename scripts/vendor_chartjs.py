@@ -8,6 +8,7 @@ import re
 import sys
 import urllib.request
 from pathlib import Path
+from urllib.parse import urlparse
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -58,8 +59,15 @@ def _sha256(path: Path) -> str:
 
 
 def _download(version: str, filename: str) -> bytes:
+    if not re.fullmatch(r"\d+\.\d+\.\d+", version):
+        raise ValueError("version must look like MAJOR.MINOR.PATCH")
+    if filename not in ASSETS:
+        raise ValueError(f"unexpected Chart.js asset: {filename}")
     url = f"https://cdn.jsdelivr.net/npm/chart.js@{version}/dist/{filename}"
-    with urllib.request.urlopen(url, timeout=30) as response:
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or parsed.netloc != "cdn.jsdelivr.net":
+        raise ValueError(f"unexpected download URL: {url}")
+    with urllib.request.urlopen(url, timeout=30) as response:  # nosec B310
         if response.status != 200:
             raise RuntimeError(f"{url} returned HTTP {response.status}")
         return response.read()

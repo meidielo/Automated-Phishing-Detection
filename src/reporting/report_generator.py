@@ -7,11 +7,12 @@ import logging
 import base64
 from dataclasses import asdict, is_dataclass
 from datetime import datetime
+from html import escape
 from io import BytesIO
 from typing import Optional
 
 import qrcode
-from jinja2 import Environment, FileSystemLoader, TemplateNotFound
+from jinja2 import Environment, FileSystemLoader, TemplateNotFound, select_autoescape
 
 from src.models import PipelineResult, Verdict, ExtractedURL
 
@@ -34,7 +35,14 @@ class ReportGenerator:
             template_dir = "./templates"
 
         try:
-            self.env = Environment(loader=FileSystemLoader(template_dir))
+            self.env = Environment(
+                loader=FileSystemLoader(template_dir),
+                autoescape=select_autoescape(
+                    enabled_extensions=("html", "xml"),
+                    default_for_string=True,
+                    default=True,
+                ),
+            )
         except Exception as e:
             logger.warning(f"Could not load templates from {template_dir}: {e}")
             self.env = None
@@ -228,7 +236,7 @@ class ReportGenerator:
         <!DOCTYPE html>
         <html>
         <head>
-            <title>Phishing Analysis Report - {result.email_id}</title>
+            <title>Phishing Analysis Report - {escape(result.email_id)}</title>
             <style>
                 body {{ font-family: Arial, sans-serif; margin: 20px; }}
                 .header {{ background-color: #f8f9fa; padding: 20px; border-radius: 5px; margin-bottom: 20px; }}
@@ -247,10 +255,10 @@ class ReportGenerator:
         <body>
             <div class="header">
                 <h1>Phishing Detection Report</h1>
-                <p><strong>Email ID:</strong> {result.email_id}</p>
-                <p><strong>Analysis Time:</strong> {json_data['timestamp']}</p>
-                <div class="verdict {result.verdict.value.lower().replace('_', '-')}">
-                    Verdict: {result.verdict.value}
+                <p><strong>Email ID:</strong> {escape(result.email_id)}</p>
+                <p><strong>Analysis Time:</strong> {escape(str(json_data['timestamp']))}</p>
+                <div class="verdict {escape(result.verdict.value.lower().replace('_', '-'))}">
+                    Verdict: {escape(result.verdict.value)}
                 </div>
             </div>
 
@@ -259,7 +267,7 @@ class ReportGenerator:
                 <p><strong>Overall Score:</strong> {json_data['overall_score']:.3f}</p>
                 <p><strong>Overall Confidence:</strong> {json_data['overall_confidence']:.3f}</p>
                 <div class="score-bar">
-                    <div class="score-fill" style="width: {json_data['overall_score'] * 100}%"></div>
+                    <div class="score-fill" style="width: {self._percent(json_data['overall_score'])}%"></div>
                 </div>
             </div>
 
@@ -275,12 +283,12 @@ class ReportGenerator:
 
             <div class="section">
                 <h2>Reasoning</h2>
-                <p>{result.reasoning}</p>
+                <p>{escape(result.reasoning)}</p>
             </div>
 
             <div class="section">
                 <h2>Raw Data</h2>
-                <pre>{json.dumps(json_data, indent=2)}</pre>
+                <pre>{escape(json.dumps(json_data, indent=2))}</pre>
             </div>
         </body>
         </html>
@@ -291,10 +299,10 @@ class ReportGenerator:
         """Generate HTML for analyzer results section."""
         html = ""
         for analyzer_name, result in json_data.get("analyzer_breakdown", {}).items():
-            bar_width = int(result["risk_score"] * 100)
+            bar_width = self._percent(result["risk_score"])
             html += f"""
             <div class="analyzer-result">
-                <strong>{analyzer_name}</strong><br>
+                <strong>{escape(str(analyzer_name))}</strong><br>
                 Score: {result['risk_score']:.3f} | Confidence: {result['confidence']:.3f}
                 <div class="score-bar" style="margin-top: 5px;">
                     <div class="score-fill" style="width: {bar_width}%"></div>
@@ -312,8 +320,8 @@ class ReportGenerator:
         for url_obj in json_data["extracted_urls"]:
             html += f"""
             <li>
-                <strong>Defanged:</strong> <code>{url_obj['defanged']}</code><br>
-                <strong>Source:</strong> {url_obj['source']}<br>
+                <strong>Defanged:</strong> <code>{escape(str(url_obj['defanged']))}</code><br>
+                <strong>Source:</strong> {escape(str(url_obj['source']))}<br>
             </li>
             """
         html += "</ul>"
@@ -338,6 +346,15 @@ class ReportGenerator:
         # Replace dots with [.]
         url = url.replace(".", "[.]")
         return url
+
+    @staticmethod
+    def _percent(value: float) -> int:
+        """Return a clamped integer percentage for HTML width values."""
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            number = 0.0
+        return max(0, min(100, int(round(number * 100))))
 
     @staticmethod
     def _generate_qr_image_base64(image_data: bytes) -> str:

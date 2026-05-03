@@ -11,6 +11,7 @@ import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 
 AUTH_ENDPOINTS = (
@@ -19,14 +20,22 @@ AUTH_ENDPOINTS = (
 )
 
 
+def _require_http_url(url: str) -> str:
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError(f"Only http(s) URLs are supported: {url}")
+    return url
+
+
 def _get(url: str, token: str, timeout: float) -> tuple[int, float, str]:
+    url = _require_http_url(url)
     headers = {"Accept": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
     request = urllib.request.Request(url, headers=headers)
     started = time.monotonic()
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with urllib.request.urlopen(request, timeout=timeout) as response:  # nosec B310
             response.read()
             return response.status, (time.monotonic() - started) * 1000, ""
     except urllib.error.HTTPError as exc:
@@ -37,11 +46,12 @@ def _get(url: str, token: str, timeout: float) -> tuple[int, float, str]:
 
 
 def _json_get(url: str, token: str, timeout: float) -> dict:
+    url = _require_http_url(url)
     headers = {"Accept": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
     request = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(request, timeout=timeout) as response:
+    with urllib.request.urlopen(request, timeout=timeout) as response:  # nosec B310
         return json.loads(response.read().decode("utf-8") or "{}")
 
 

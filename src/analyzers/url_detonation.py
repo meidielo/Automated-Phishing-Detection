@@ -25,6 +25,7 @@ from typing import Optional
 from urllib.parse import urlparse
 
 from src.models import AnalyzerResult, ExtractedURL
+from src.security.web_security import SSRFBlockedError, default_ssrf_guard
 
 logger = logging.getLogger(__name__)
 
@@ -150,9 +151,21 @@ class URLDetonationAnalyzer:
             "page_loaded": False,
             "error": None,
             "risk_indicators": [],
+            "ssrf_blocked_requests": [],
         }
 
         try:
+            try:
+                default_ssrf_guard.assert_safe(url)
+            except SSRFBlockedError as exc:
+                reason = str(exc)[:200]
+                result["error"] = f"SSRF blocked: {reason}"
+                result["risk_indicators"] = ["ssrf_blocked_initial_url"]
+                result["ssrf_blocked_requests"] = [
+                    {"url": url, "reason": reason}
+                ]
+                return result
+
             await self._ensure_browser()
 
             context = await self._browser.new_context(
@@ -166,6 +179,23 @@ class URLDetonationAnalyzer:
             redirects = []
 
             page = await context.new_page()
+            ssrf_blocked_requests: list[dict[str, str]] = []
+
+            async def _guard_request(route, request):
+                request_url = getattr(request, "url", "")
+                try:
+                    default_ssrf_guard.assert_safe(request_url)
+                except SSRFBlockedError as exc:
+                    reason = str(exc)[:200]
+                    if len(ssrf_blocked_requests) < 10:
+                        ssrf_blocked_requests.append(
+                            {"url": request_url, "reason": reason}
+                        )
+                    await route.abort()
+                    return
+                await route.continue_()
+
+            await page.route("**/*", _guard_request)
 
             # Capture redirect chain
             page.on("response", lambda response: (
@@ -216,10 +246,22 @@ class URLDetonationAnalyzer:
                 if len(redirects) > 3:
                     risk_indicators.append(f"excessive_redirects:{len(redirects)}")
 
+                if ssrf_blocked_requests:
+                    result["ssrf_blocked_requests"] = ssrf_blocked_requests
+                    risk_indicators.append(
+                        f"ssrf_blocked_requests:{len(ssrf_blocked_requests)}"
+                    )
+
                 result["risk_indicators"] = risk_indicators
 
             except Exception as nav_error:
-                result["error"] = f"Navigation failed: {str(nav_error)[:200]}"
+                if ssrf_blocked_requests:
+                    result["error"] = "Navigation blocked by SSRF guard"
+                    result["ssrf_blocked_requests"] = ssrf_blocked_requests
+                    if "ssrf_blocked_request" not in result["risk_indicators"]:
+                        result["risk_indicators"].append("ssrf_blocked_request")
+                else:
+                    result["error"] = f"Navigation failed: {str(nav_error)[:200]}"
                 if self._should_reconnect_browser(nav_error):
                     await self._close_browser()
                 # Still try to capture whatever loaded
@@ -352,6 +394,12 @@ class URLDetonationAnalyzer:
         risk_signals = []
 
         for url, det in all_results.items():
+            indicators = det.get("risk_indicators", [])
+            if any("ssrf_blocked" in i for i in indicators):
+                risk_score = max(risk_score, 0.8)
+                risk_signals.append(f"{url}: blocked by SSRF guard")
+                continue
+
             if not det.get("page_loaded"):
                 continue
 
@@ -369,7 +417,6 @@ class URLDetonationAnalyzer:
                 url_risk = max(url_risk, 0.7)
                 risk_signals.append(f"{url}: form submits to external domain")
 
-            indicators = det.get("risk_indicators", [])
             if any("redirect_domain_change" in i for i in indicators):
                 url_risk = max(url_risk, 0.4)
             if any("excessive_redirects" in i for i in indicators):
