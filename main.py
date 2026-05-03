@@ -85,6 +85,18 @@ _STATIC_URL_RE = re.compile(
     r"(?:\?v=[^\"']*)?(?P=quote)"
 )
 
+STATIC_PAGE_CSP = (
+    "default-src 'self'; "
+    "img-src 'self' data: blob:; "
+    "style-src 'self'; "
+    "script-src 'self'; "
+    "connect-src 'self'; "
+    "frame-src 'none'; "
+    "object-src 'none'; "
+    "base-uri 'self'; "
+    "form-action 'self'"
+)
+
 
 def _asset_version_from_static_dir(static_dir: Path) -> str:
     """Return a stable cache-busting version for static asset URLs."""
@@ -905,9 +917,10 @@ class PhishingDetectionApp:
         async def saas_app_page():
             """Serve the user-login SaaS shell."""
             app_path = Path("./templates/saas_app.html")
-            return HTMLResponse(content=_inject_shared(
-                app_path.read_text(encoding="utf-8")
-            ))
+            return HTMLResponse(
+                content=_inject_shared(app_path.read_text(encoding="utf-8")),
+                headers={"Content-Security-Policy": STATIC_PAGE_CSP},
+            )
 
         @app.get("/product", response_class=HTMLResponse)
         async def product_page():
@@ -918,9 +931,10 @@ class PhishingDetectionApp:
                 .replace("{{DEMO_NAV_LINKS}}", _product_demo_nav_links())
                 .replace("{{HERO_ACTIONS}}", _product_hero_actions())
             )
-            return HTMLResponse(content=_inject_shared(
-                html_content
-            ))
+            return HTMLResponse(
+                content=_inject_shared(html_content),
+                headers={"Content-Security-Policy": STATIC_PAGE_CSP},
+            )
 
         @app.get("/api/saas/session")
         async def api_saas_session(request: Request):

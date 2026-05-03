@@ -89,6 +89,10 @@ def test_saas_app_login_shell_uses_link_based_auth_navigation():
     assert "Analyze payment-risk emails before money leaves the business" not in response.text
     assert "auth-product-shot" not in response.text
     assert "data-auth-tab" not in response.text
+    csp = response.headers["Content-Security-Policy"]
+    assert "script-src 'self'" in csp
+    assert "style-src 'self'" in csp
+    assert "'unsafe-inline'" not in csp
 
 
 def test_saas_app_upgrade_options_are_hidden_until_requested():
@@ -372,6 +376,10 @@ def test_product_shell_opens_without_analyst_session():
     assert 'href="/app">Open user app</a>' in response.text
     assert "/static/product.css" in response.text
     assert "/static/product-dashboard.png" in response.text
+    csp = response.headers["Content-Security-Policy"]
+    assert "script-src 'self'" in csp
+    assert "style-src 'self'" in csp
+    assert "'unsafe-inline'" not in csp
 
 
 def test_product_shell_links_demo_pages_only_when_demo_is_enabled():
