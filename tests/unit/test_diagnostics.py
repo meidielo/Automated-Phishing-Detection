@@ -6,22 +6,23 @@ slow. Tests here cover:
 
   - SKIP path when no API key is configured
   - CheckResult dataclass shape and to_dict() serialization
-  - Registry contents (all 5 services present)
+  - Registry contents (all expected services present)
   - run_all_checks dispatches to every registered check
   - summarize() counts and headline
 """
 from __future__ import annotations
 
-from unittest.mock import patch
-
 import pytest
 
+from src.diagnostics import api_checks as api_checks_module
 from src.diagnostics import CheckResult, CheckStatus, run_all_checks
 from src.diagnostics.api_checks import (
     _CHECK_REGISTRY,
     check_abuseipdb,
     check_anthropic,
+    check_deepseek,
     check_google_safebrowsing,
+    check_moonshot,
     check_urlscan,
     check_virustotal,
     summarize,
@@ -65,6 +66,18 @@ class TestSkipPathNoApiKey:
         assert result.status == CheckStatus.SKIP
         assert result.service == "anthropic_llm"
 
+    @pytest.mark.asyncio
+    async def test_deepseek_skip(self):
+        result = await check_deepseek("")
+        assert result.status == CheckStatus.SKIP
+        assert result.service == "deepseek_llm"
+
+    @pytest.mark.asyncio
+    async def test_moonshot_skip(self):
+        result = await check_moonshot("")
+        assert result.status == CheckStatus.SKIP
+        assert result.service == "moonshot_llm"
+
 
 class TestCheckResultDataclass:
     def test_to_dict_uses_string_status(self):
@@ -91,13 +104,15 @@ class TestCheckResultDataclass:
 
 
 class TestRegistry:
-    def test_all_five_services_registered(self):
+    def test_expected_services_registered(self):
         env_names = [env_name for env_name, _ in _CHECK_REGISTRY]
         assert "VIRUSTOTAL_API_KEY" in env_names
         assert "GOOGLE_SAFE_BROWSING_API_KEY" in env_names
         assert "URLSCAN_API_KEY" in env_names
         assert "ABUSEIPDB_API_KEY" in env_names
         assert "ANTHROPIC_API_KEY" in env_names
+        assert "DEEPSEEK_API_KEY" in env_names
+        assert "MOONSHOT_API_KEY" in env_names
 
     def test_every_check_is_callable(self):
         for env_name, check_fn in _CHECK_REGISTRY:
@@ -142,10 +157,37 @@ class TestRunAllChecksDispatch:
             urlscan_key = ""
             abuseipdb_key = ""
             anthropic_key = ""
+            deepseek_key = ""
+            moonshot_key = ""
 
         results = await run_all_checks(config_api=FakeApiConfig())
         # All empty -> all SKIP
         assert all(r.status == CheckStatus.SKIP for r in results)
+
+    @pytest.mark.asyncio
+    async def test_config_api_uses_generic_llm_key_for_provider(
+        self,
+        monkeypatch,
+    ):
+        async def fake_check(api_key, timeout):
+            return CheckResult(api_key, CheckStatus.PASS, str(timeout))
+
+        class FakeApiConfig:
+            llm_provider = "deepseek"
+            llm_api_key = "generic-llm-key"
+            deepseek_key = ""
+
+        monkeypatch.setattr(
+            api_checks_module,
+            "_CHECK_REGISTRY",
+            [("DEEPSEEK_API_KEY", fake_check)],
+        )
+
+        results = await run_all_checks(config_api=FakeApiConfig(), timeout=3)
+
+        assert results == [
+            CheckResult("generic-llm-key", CheckStatus.PASS, "3"),
+        ]
 
 
 # ─── summarize() ────────────────────────────────────────────────────────────

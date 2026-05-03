@@ -124,7 +124,40 @@ def test_stripe_client_sends_checkout_session_request(monkeypatch):
     assert captured["data"]["line_items[0][price]"] == "price_123"
     assert captured["data"]["metadata[billing_interval]"] == "monthly"
     assert captured["data"]["subscription_data[metadata][billing_interval]"] == "monthly"
+    assert captured["data"]["adaptive_pricing[enabled]"] == "true"
     assert captured["headers"]["Stripe-Version"] == "2026-02-25.clover"
+
+
+def test_stripe_client_can_disable_adaptive_pricing(monkeypatch):
+    captured = {}
+
+    class Response:
+        status_code = 200
+        content = b"{}"
+
+        @staticmethod
+        def json():
+            return {"id": "cs_123", "url": "https://checkout.stripe.com/c/session"}
+
+    def fake_post(url, **kwargs):
+        captured["data"] = dict(kwargs["data"])
+        return Response()
+
+    monkeypatch.setattr("src.billing.stripe_client.requests.post", fake_post)
+
+    client = StripeBillingClient("stripe_secret_for_tests")
+    client.create_checkout_session(
+        customer_id="cus_123",
+        price_id="price_123",
+        org_id="org_123",
+        user_id="usr_123",
+        plan_slug="starter",
+        success_url="https://example.test/app?billing=success",
+        cancel_url="https://example.test/app?billing=cancelled",
+        adaptive_pricing_enabled=False,
+    )
+
+    assert "adaptive_pricing[enabled]" not in captured["data"]
 
 
 def test_stripe_client_raises_clean_api_error(monkeypatch):

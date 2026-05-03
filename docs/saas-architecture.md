@@ -55,6 +55,10 @@ Implemented foundation:
   subscription mode when `STRIPE_SECRET_KEY` and the target plan price ID are
   configured and accepted by Stripe. Missing config or rejected runtime keys
   return a safe billing-unavailable response.
+- Checkout Sessions enable Stripe Adaptive Pricing by default so eligible
+  customers can see localized currency while the configured Prices remain AUD
+  backed. `STRIPE_ADAPTIVE_PRICING_ENABLED=false` is available as an operational
+  rollback switch.
 - `/api/saas/billing/portal` creates Stripe Customer Portal Sessions for
   organizations that already have a Stripe customer.
 - `/api/stripe/webhook` verifies Stripe signatures and mirrors

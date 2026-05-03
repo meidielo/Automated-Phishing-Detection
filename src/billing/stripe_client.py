@@ -80,27 +80,31 @@ class StripeBillingClient:
         success_url: str,
         cancel_url: str,
         billing_interval: str = "monthly",
+        adaptive_pricing_enabled: bool = True,
     ) -> dict:
+        data = [
+            ("mode", "subscription"),
+            ("customer", customer_id),
+            ("client_reference_id", org_id),
+            ("line_items[0][price]", price_id),
+            ("line_items[0][quantity]", "1"),
+            ("allow_promotion_codes", "true"),
+            ("success_url", success_url),
+            ("cancel_url", cancel_url),
+            ("metadata[org_id]", org_id),
+            ("metadata[user_id]", user_id),
+            ("metadata[plan_slug]", plan_slug),
+            ("metadata[billing_interval]", billing_interval),
+            ("subscription_data[metadata][org_id]", org_id),
+            ("subscription_data[metadata][user_id]", user_id),
+            ("subscription_data[metadata][plan_slug]", plan_slug),
+            ("subscription_data[metadata][billing_interval]", billing_interval),
+        ]
+        if adaptive_pricing_enabled:
+            data.append(("adaptive_pricing[enabled]", "true"))
         return self._post(
             "/v1/checkout/sessions",
-            [
-                ("mode", "subscription"),
-                ("customer", customer_id),
-                ("client_reference_id", org_id),
-                ("line_items[0][price]", price_id),
-                ("line_items[0][quantity]", "1"),
-                ("allow_promotion_codes", "true"),
-                ("success_url", success_url),
-                ("cancel_url", cancel_url),
-                ("metadata[org_id]", org_id),
-                ("metadata[user_id]", user_id),
-                ("metadata[plan_slug]", plan_slug),
-                ("metadata[billing_interval]", billing_interval),
-                ("subscription_data[metadata][org_id]", org_id),
-                ("subscription_data[metadata][user_id]", user_id),
-                ("subscription_data[metadata][plan_slug]", plan_slug),
-                ("subscription_data[metadata][billing_interval]", billing_interval),
-            ],
+            data,
         )
 
     def create_portal_session(self, *, customer_id: str, return_url: str) -> dict:

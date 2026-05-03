@@ -38,7 +38,7 @@ from src.billing.stripe_client import (
     stripe_config_from_env,
     verify_stripe_webhook,
 )
-from src.config import PipelineConfig
+from src.config import PipelineConfig, _coerce_bool
 from src.models import EmailObject
 from src.orchestrator.pipeline import PhishingPipeline
 from src.reporting.report_generator import ReportGenerator
@@ -1155,6 +1155,10 @@ class PhishingDetectionApp:
                     user_id=context.user_id,
                     plan_slug=plan.slug,
                     billing_interval=billing_interval,
+                    adaptive_pricing_enabled=_coerce_bool(
+                        os.getenv("STRIPE_ADAPTIVE_PRICING_ENABLED"),
+                        True,
+                    ),
                     success_url=_external_url(
                         request,
                         "/app?billing=success&session_id={CHECKOUT_SESSION_ID}",
@@ -1598,6 +1602,22 @@ class PhishingDetectionApp:
         async def system_status():
             """Return which API keys are configured and system info (no key values)."""
             a = self.config.api
+            llm_provider = (a.llm_provider or "").lower()
+            deepseek_key_ready = bool(
+                a.deepseek_key
+                or (llm_provider == "deepseek" and a.llm_api_key)
+            )
+            moonshot_key_ready = bool(
+                a.moonshot_key
+                or (llm_provider in {"moonshot", "kimi"} and a.llm_api_key)
+            )
+            openai_key_ready = bool(
+                a.openai_key
+                or (
+                    llm_provider in {"openai", "openai_compatible"}
+                    and a.llm_api_key
+                )
+            )
             return {
                 "api_keys": {
                     "virustotal":          bool(a.virustotal_key),
@@ -1608,7 +1628,9 @@ class PhishingDetectionApp:
                     "anyrun":              bool(a.anyrun_key),
                     "joesandbox":          bool(a.joesandbox_key),
                     "anthropic":           bool(a.anthropic_key),
-                    "openai":              bool(a.openai_key),
+                    "deepseek":            deepseek_key_ready,
+                    "moonshot":            moonshot_key_ready,
+                    "openai":              openai_key_ready,
                 },
                 "llm_provider":     a.llm_provider,
                 "sandbox_provider": a.sandbox_provider,

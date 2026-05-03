@@ -40,6 +40,7 @@ Status is one of:
 | **Dead-domain confidence downgrade in URL reputation** — non-resolving hostnames with clean vendor verdict get confidence capped at 0.3 instead of inflating "clean" signal (~15 point recall gain on phishing corpus) | `src/analyzers/url_reputation.py::_hostname_resolves` (11 regression tests) |
 | **AES-256-GCM credential storage with auto-migration** — plaintext IMAP/OAuth secrets in `accounts.json` are detected and re-encrypted on every load | `src/security/credentials.py`, `src/automation/multi_account_monitor.py::_migrate_plaintext_passwords` (12 migration tests + 30+ existing crypto tests) |
 | **LLM determinism contract** — temperature=0, top_p=1, model version captured per `PipelineResult` for drift detection | `src/analyzers/clients/anthropic_client.py::AnthropicLLMClient` (10 contract tests) |
+| **Cheaper OpenAI-compatible LLM providers** - `LLM_PROVIDER=deepseek`, `moonshot`/`kimi`, `openai`, and `openai_compatible` can route NLP intent classification through provider-specific or generic `LLM_API_KEY` settings; DeepSeek is documented as the cost-first production path while Anthropic remains an explicit quality fallback. API Status reports DeepSeek and Moonshot/Kimi key readiness. | `src/analyzers/clients/openai_compatible_client.py`, `src/orchestrator/pipeline.py`, `src/diagnostics/api_checks.py` |
 | **CSRF trigger checklist** as durable contract in the auth module — any future cookie/session auth must ship CSRF protection in the same PR | `src/security/web_security.py` module docstring |
 | **Hash-pinned dependency lock file** (`requirements.lock`) generated via `uv pip compile --generate-hashes`, installed with `pip install --require-hashes` in Dockerfile | `requirements.lock`, `Dockerfile`               |
 | **GitHub Actions CI** — full pytest on fresh checkout, flake8 lint, daily `pip-audit` against the lock file (fails on any advisory) | `.github/workflows/ci.yml`                      |
@@ -75,8 +76,9 @@ Status is one of:
 | **Plan-aware feature locks** - public demo shows Free/Starter/Pro/Business analyzer locks, and `/api/demo/plans` exposes reusable plan metadata for future Stripe Billing and DB-backed quota gates. | `src/billing/plans.py`, `templates/demo.html`, `docs/saas-architecture.md` |
 | **SaaS account and quota foundation** - `/app` adds normal user login, signed user sessions with CSRF, SQLite `users`/`organizations`/`subscriptions`/`scan_results`/`usage_events`, tenant-scoped user scan history, free-tier scan quota, and analyzer feature gates that return locked tier metadata before paid clients load. Public signup stays disabled by default. | `src/saas/`, `src/billing/entitlements.py`, `main.py`, `templates/saas_app.html`, `static/saas.*` |
 | **Stripe Billing subscription flow** - `/api/saas/billing/checkout` creates hosted subscription Checkout Sessions, `/api/saas/billing/portal` opens Customer Portal, and `/api/stripe/webhook` verifies signatures before mirroring Stripe subscription status into the SaaS DB. | `src/billing/stripe_client.py`, `main.py`, `src/saas/database.py`, `static/saas.js` |
+| **Stripe Checkout Adaptive Pricing** - Checkout sessions can opt into Stripe Adaptive Pricing so eligible customers see localized currency while the configured Stripe Prices remain AUD-backed. | `src/billing/stripe_client.py`, `main.py`, `docs/DEPLOY.md` |
 | **Zoho-compatible password reset flow** - `/app` adds reset-password UI, `/api/saas/auth/password-reset/*` stores hashed one-time tokens, rate-limits reset requests, and sends reset links through configurable SMTP. | `src/saas/email_delivery.py`, `src/saas/database.py`, `main.py`, `templates/saas_app.html`, `static/saas.js` |
-| 1164 tests (57 test modules) | unit + integration |
+| 1173 tests (60 test modules) | unit + integration |
 
 ---
 
@@ -106,7 +108,7 @@ When an analyst marks an email CONFIRMED_PHISHING, push the URL/domain/hash IOCs
 
 ## In progress
 
-*(none currently. Last shipped pass was the Zoho-compatible password reset flow.)*
+*(none currently. Last shipped pass was cheaper LLM provider support, Adaptive Pricing, and SaaS billing UI polish.)*
 
 ---
 

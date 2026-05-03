@@ -87,6 +87,10 @@
     return message || "Billing is not available right now.";
   }
 
+  function billingIntervalLabel() {
+    return selectedBillingInterval === "yearly" ? "/ month, billed yearly" : "/ month";
+  }
+
   async function apiJson(path, options) {
     const response = await fetch(path, {
       credentials: "same-origin",
@@ -229,6 +233,7 @@
       const savingsBadge = selectedBillingInterval === "yearly" && savings > 0
         ? `<span class="plan-badge save">Save ${escapeHtml(String(savings))}%</span>`
         : "";
+      const priceCadence = isFree ? "" : `<small>${escapeHtml(billingIntervalLabel())}</small>`;
       const buttonText = isCurrent ? "Current plan" : (isFree ? "Included" : `Upgrade to ${plan.name}`);
       const previousPlan = payload.plans[index - 1];
       const directFeatures = payload.features.filter((feature) => feature.minimum_plan === plan.slug);
@@ -250,7 +255,7 @@
             ${isCurrent ? '<span class="plan-badge">Current</span>' : ""}
           </div>
         </div>
-        <div class="plan-price"><span>${escapeHtml(price)}</span><small>AUD / month</small></div>
+        <div class="plan-price"><span>${escapeHtml(price)}</span>${priceCadence}</div>
         <div class="plan-billing-note">${escapeHtml(billingNote)}</div>
         <p class="plan-summary">${escapeHtml(plan.summary)}</p>
         <div class="plan-limits">

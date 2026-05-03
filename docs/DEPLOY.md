@@ -65,6 +65,9 @@ Stripe subscription setup:
   `STRIPE_PRICE_STARTER`, `STRIPE_PRICE_STARTER_YEARLY`,
   `STRIPE_PRICE_PRO`, `STRIPE_PRICE_PRO_YEARLY`,
   `STRIPE_PRICE_BUSINESS`, and `STRIPE_PRICE_BUSINESS_YEARLY`.
+- Keep `STRIPE_ADAPTIVE_PRICING_ENABLED=true` to let hosted Checkout present
+  eligible local currencies from the AUD-backed Prices. Set it to `false` only
+  if Stripe rejects adaptive pricing for the account.
 - Register `https://your-domain/api/stripe/webhook` in Stripe for `checkout.session.completed` and `customer.subscription.*`, then set `STRIPE_WEBHOOK_SECRET`.
 - Checkout and Customer Portal stay unavailable if required Stripe env vars are missing or Stripe rejects the runtime secret key.
 

@@ -996,10 +996,36 @@ class PhishingPipeline:
                 analyzer = AttachmentSandboxAnalyzer(sandbox_client=sandbox_client)
             elif name == "nlp_intent":
                 from src.analyzers.nlp_intent import NLPIntentAnalyzer
+                api = self.config.api
                 llm_client = None
-                if self.config.api.anthropic_key:
+                provider = (api.llm_provider or "anthropic").strip().lower()
+                if provider in {"anthropic", "claude"} and api.anthropic_key:
                     from src.analyzers.clients.anthropic_client import AnthropicLLMClient
-                    llm_client = AnthropicLLMClient(self.config.api.anthropic_key)
+                    llm_client = AnthropicLLMClient(
+                        api.anthropic_key,
+                        model=api.llm_model or "claude-haiku-4-5-20251001",
+                    )
+                elif provider == "deepseek" and (api.deepseek_key or api.llm_api_key):
+                    from src.analyzers.clients.openai_compatible_client import OpenAICompatibleLLMClient
+                    llm_client = OpenAICompatibleLLMClient(
+                        api.deepseek_key or api.llm_api_key,
+                        base_url=api.llm_api_base or "https://api.deepseek.com",
+                        model=api.llm_model or "deepseek-v4-flash",
+                    )
+                elif provider in {"moonshot", "kimi"} and (api.moonshot_key or api.llm_api_key):
+                    from src.analyzers.clients.openai_compatible_client import OpenAICompatibleLLMClient
+                    llm_client = OpenAICompatibleLLMClient(
+                        api.moonshot_key or api.llm_api_key,
+                        base_url=api.llm_api_base or "https://api.moonshot.ai/v1",
+                        model=api.llm_model or "kimi-k2.6",
+                    )
+                elif provider in {"openai", "openai_compatible"} and (api.openai_key or api.llm_api_key):
+                    from src.analyzers.clients.openai_compatible_client import OpenAICompatibleLLMClient
+                    llm_client = OpenAICompatibleLLMClient(
+                        api.openai_key or api.llm_api_key,
+                        base_url=api.llm_api_base or "https://api.openai.com/v1",
+                        model=api.llm_model or "gpt-4o-mini",
+                    )
                 analyzer = NLPIntentAnalyzer(llm_client=llm_client)
             elif name == "sender_profiling":
                 from src.analyzers.sender_profiling import SenderProfileAnalyzer

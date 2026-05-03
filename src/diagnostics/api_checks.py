@@ -225,6 +225,93 @@ async def check_anthropic(api_key: str, timeout: float = DEFAULT_TIMEOUT_S) -> C
         return CheckResult("anthropic_llm", CheckStatus.FAIL, f"exception: {e}")
 
 
+async def _check_openai_compatible_llm(
+    *,
+    service: str,
+    api_key: str,
+    base_url: str,
+    model: str,
+    timeout: float = DEFAULT_TIMEOUT_S,
+) -> CheckResult:
+    if not api_key:
+        return CheckResult(service, CheckStatus.SKIP, "no API key configured")
+
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": "Return the word ok."}],
+        "max_tokens": 5,
+        "temperature": 0,
+    }
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{base_url.rstrip('/')}/chat/completions",
+                json=payload,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "content-type": "application/json",
+                },
+                timeout=aiohttp.ClientTimeout(total=timeout),
+            ) as r:
+                if r.status == 200:
+                    return CheckResult(
+                        service,
+                        CheckStatus.PASS,
+                        "API operational",
+                        http_status=200,
+                    )
+                if r.status in {401, 403}:
+                    return CheckResult(
+                        service,
+                        CheckStatus.FAIL,
+                        "invalid API key",
+                        http_status=r.status,
+                    )
+                if r.status == 429:
+                    return CheckResult(
+                        service,
+                        CheckStatus.WARN,
+                        "rate limited",
+                        http_status=429,
+                    )
+                return CheckResult(
+                    service,
+                    CheckStatus.FAIL,
+                    f"HTTP {r.status}",
+                    http_status=r.status,
+                )
+    except asyncio.TimeoutError:
+        return CheckResult(service, CheckStatus.FAIL, f"timeout ({timeout}s)")
+    except Exception as e:
+        return CheckResult(service, CheckStatus.FAIL, f"exception: {e}")
+
+
+async def check_deepseek(
+    api_key: str,
+    timeout: float = DEFAULT_TIMEOUT_S,
+) -> CheckResult:
+    return await _check_openai_compatible_llm(
+        service="deepseek_llm",
+        api_key=api_key,
+        base_url="https://api.deepseek.com",
+        model="deepseek-v4-flash",
+        timeout=timeout,
+    )
+
+
+async def check_moonshot(
+    api_key: str,
+    timeout: float = DEFAULT_TIMEOUT_S,
+) -> CheckResult:
+    return await _check_openai_compatible_llm(
+        service="moonshot_llm",
+        api_key=api_key,
+        base_url="https://api.moonshot.ai/v1",
+        model="kimi-k2.6",
+        timeout=timeout,
+    )
+
+
 # ─── registry + orchestrator ───────────────────────────────────────────────
 
 
@@ -238,6 +325,8 @@ _CHECK_REGISTRY: list[tuple[str, callable]] = [
     ("URLSCAN_API_KEY", check_urlscan),
     ("ABUSEIPDB_API_KEY", check_abuseipdb),
     ("ANTHROPIC_API_KEY", check_anthropic),
+    ("DEEPSEEK_API_KEY", check_deepseek),
+    ("MOONSHOT_API_KEY", check_moonshot),
 ]
 
 
@@ -263,14 +352,34 @@ async def run_all_checks(
 
     def _key_for(env_name: str) -> str:
         if config_api is not None:
+            provider = (getattr(config_api, "llm_provider", "") or "").lower()
+            if env_name == "DEEPSEEK_API_KEY":
+                return getattr(config_api, "deepseek_key", "") or (
+                    getattr(config_api, "llm_api_key", "") if provider == "deepseek" else ""
+                )
+            if env_name == "MOONSHOT_API_KEY":
+                return getattr(config_api, "moonshot_key", "") or (
+                    getattr(config_api, "llm_api_key", "") if provider in {"moonshot", "kimi"} else ""
+                )
             field_name = {
                 "VIRUSTOTAL_API_KEY": "virustotal_key",
                 "GOOGLE_SAFE_BROWSING_API_KEY": "google_safebrowsing_key",
                 "URLSCAN_API_KEY": "urlscan_key",
                 "ABUSEIPDB_API_KEY": "abuseipdb_key",
                 "ANTHROPIC_API_KEY": "anthropic_key",
+                "DEEPSEEK_API_KEY": "deepseek_key",
+                "MOONSHOT_API_KEY": "moonshot_key",
             }.get(env_name)
             return getattr(config_api, field_name, "") if field_name else ""
+        provider = (os.getenv("LLM_PROVIDER", "") or "").lower()
+        if env_name == "DEEPSEEK_API_KEY":
+            return os.getenv("DEEPSEEK_API_KEY", "") or (
+                os.getenv("LLM_API_KEY", "") if provider == "deepseek" else ""
+            )
+        if env_name == "MOONSHOT_API_KEY":
+            return os.getenv("MOONSHOT_API_KEY", "") or (
+                os.getenv("LLM_API_KEY", "") if provider in {"moonshot", "kimi"} else ""
+            )
         return os.getenv(env_name, "")
 
     coros = [

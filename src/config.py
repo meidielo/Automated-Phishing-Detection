@@ -32,8 +32,13 @@ class APIConfig:
     anyrun_key: str = ""
     joesandbox_key: str = ""
     llm_provider: str = "anthropic"
+    llm_api_key: str = ""
+    llm_api_base: str = ""
+    llm_model: str = ""
     anthropic_key: str = ""
     openai_key: str = ""
+    deepseek_key: str = ""
+    moonshot_key: str = ""
 
 
 @dataclass
@@ -136,8 +141,13 @@ class PipelineConfig:
             anyrun_key=os.getenv("ANYRUN_API_KEY", ""),
             joesandbox_key=os.getenv("JOESANDBOX_API_KEY", ""),
             llm_provider=os.getenv("LLM_PROVIDER", "anthropic"),
+            llm_api_key=os.getenv("LLM_API_KEY", ""),
+            llm_api_base=os.getenv("LLM_API_BASE", ""),
+            llm_model=os.getenv("LLM_MODEL", ""),
             anthropic_key=os.getenv("ANTHROPIC_API_KEY", ""),
             openai_key=os.getenv("OPENAI_API_KEY", ""),
+            deepseek_key=os.getenv("DEEPSEEK_API_KEY", ""),
+            moonshot_key=os.getenv("MOONSHOT_API_KEY", ""),
         )
         imap = IMAPConfig(
             host=os.getenv("IMAP_HOST", "imap.example.com"),
@@ -223,8 +233,13 @@ class PipelineConfig:
             anyrun_key=_get(api_data, "anyrun_key", "ANYRUN_API_KEY"),
             joesandbox_key=_get(api_data, "joesandbox_key", "JOESANDBOX_API_KEY"),
             llm_provider=_get(api_data, "llm_provider", "LLM_PROVIDER", "anthropic"),
+            llm_api_key=_get(api_data, "llm_api_key", "LLM_API_KEY"),
+            llm_api_base=_get(api_data, "llm_api_base", "LLM_API_BASE"),
+            llm_model=_get(api_data, "llm_model", "LLM_MODEL"),
             anthropic_key=_get(api_data, "anthropic_key", "ANTHROPIC_API_KEY"),
             openai_key=_get(api_data, "openai_key", "OPENAI_API_KEY"),
+            deepseek_key=_get(api_data, "deepseek_key", "DEEPSEEK_API_KEY"),
+            moonshot_key=_get(api_data, "moonshot_key", "MOONSHOT_API_KEY"),
         )
 
         imap_data = data.get("imap", {})

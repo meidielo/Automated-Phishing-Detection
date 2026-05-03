@@ -467,6 +467,7 @@ def test_saas_checkout_and_portal_create_stripe_sessions(tmp_path, monkeypatch):
     assert FakeStripeBillingClient.created_customers[0]["metadata"]["org_id"].startswith("org_")
     assert FakeStripeBillingClient.checkout_sessions[0]["price_id"] == "price_starter"
     assert FakeStripeBillingClient.checkout_sessions[0]["billing_interval"] == "monthly"
+    assert FakeStripeBillingClient.checkout_sessions[0]["adaptive_pricing_enabled"] is True
     assert FakeStripeBillingClient.checkout_sessions[0]["success_url"].startswith(
         "https://detect.example.test/app?billing=success"
     )

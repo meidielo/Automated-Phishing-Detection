@@ -304,7 +304,7 @@ Zoho Mail supports `smtp.zoho.com` with SSL on port `465` or TLS/STARTTLS on por
 
 When signup is enabled, free accounts get 5 manual scans/month. `/api/saas/analyze/upload` stores user scans in the tenant-scoped SaaS DB instead of the shared analyst `data/results.jsonl` log. Expensive analyzers check plan entitlements before loading clients; locked checks return structured `feature_locked` metadata so the UI can show the required tier instead of burning paid API quota.
 
-Stripe Billing is wired through hosted Checkout and Customer Portal. Configure `PUBLIC_BASE_URL`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and the monthly Stripe Price IDs in `STRIPE_PRICE_STARTER` / `STRIPE_PRICE_PRO` / `STRIPE_PRICE_BUSINESS`. Yearly checkout uses `STRIPE_PRICE_STARTER_YEARLY` / `STRIPE_PRICE_PRO_YEARLY` / `STRIPE_PRICE_BUSINESS_YEARLY`. The app shows lower yearly-per-month pricing, sends the selected billing interval to Checkout, and mirrors `checkout.session.completed` plus `customer.subscription.*` events into `subscriptions`. If Stripe env is missing or the runtime key is rejected by Stripe, checkout reports a safe billing-unavailable response instead of pretending billing is live.
+Stripe Billing is wired through hosted Checkout and Customer Portal. Configure `PUBLIC_BASE_URL`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and the monthly Stripe Price IDs in `STRIPE_PRICE_STARTER` / `STRIPE_PRICE_PRO` / `STRIPE_PRICE_BUSINESS`. Yearly checkout uses `STRIPE_PRICE_STARTER_YEARLY` / `STRIPE_PRICE_PRO_YEARLY` / `STRIPE_PRICE_BUSINESS_YEARLY`. The app shows lower yearly-per-month pricing, sends the selected billing interval to Checkout, enables Stripe Adaptive Pricing by default through `STRIPE_ADAPTIVE_PRICING_ENABLED=true`, and mirrors `checkout.session.completed` plus `customer.subscription.*` events into `subscriptions`. If Stripe env is missing or the runtime key is rejected by Stripe, checkout reports a safe billing-unavailable response instead of pretending billing is live.
 
 ## API Keys Required
 
@@ -316,7 +316,7 @@ Stripe Billing is wired through hosted Checkout and Customer Portal. Configure `
 | Google Safe Browsing | `GOOGLE_SAFE_BROWSING_API_KEY` | URL threat matching | 10,000 req/day |
 | Hybrid Analysis | `HYBRID_ANALYSIS_API_KEY` | File sandbox detonation | Limited |
 
-Optional: Anthropic/OpenAI key for NLP intent classification, ANY.RUN/Joe Sandbox keys for additional sandbox providers.
+Optional: DeepSeek is the recommended cost-first LLM for NLP intent classification. Anthropic can stay as a quality fallback when you explicitly want Claude and accept the higher API cost. Moonshot/Kimi and generic OpenAI-compatible providers are also supported. ANY.RUN/Joe Sandbox keys unlock additional sandbox providers.
 
 ## Project Structure
 
@@ -398,7 +398,7 @@ The static Sigma rule library in [`sigma_rules/`](sigma_rules/) ships hand-writt
 
 ## Testing
 
-The test suite has **1165 tests across 58 test modules** (unit + integration), exercising every analyzer, the decision engine override rules (including the cycle 7 ordering fix that catches pure-text BEC), the cross-analyzer calibration pass (ADR 0001) with explicit cap-ceiling tests, the persistent email_id lookup index (ADR 0002) with cross-restart smoking-gun tests, scoring confidence capping, IOC export, the Sigma exporter, the URL reputation dead-domain confidence downgrade, credential encryption migration, the LLM determinism contract, the generic phishing ML baseline, the payment-fraud dataset/eval/train/demo workflow, the body_html sanitizer with hostile XSS payloads, retention and per-subject erasure across results, alerts, feedback, SaaS scan rows, and sender profiles, dashboard self-hosted chart assets/fallback rendering under a strict dashboard CSP, public demo mode guardrails, SaaS account/session/quota/password-reset/logout gates, compact analyst Analyze page layout, Stripe Checkout/webhook subscription mirroring, safe Stripe credential failure responses, link-based SaaS auth navigation, hidden upgrade options, monthly/yearly subscription pricing, plan/feature-lock metadata, static asset cache busting, public-root routing away from admin login, the privacy-safe shared feedback modal, Docker Playwright version pinning, operational backup/health scripts, and the web security middleware (bearer auth, browser session auth with CSRF, user session auth with CSRF, Stripe webhook signatures, SSRF guard, security headers). CI runs the full suite plus a Playwright dashboard chart smoke check on every push and PR against a fresh checkout from the hash-pinned lock file. CI-bites verified by deliberate-red sanity check on a throwaway branch.
+The test suite has **1173 tests across 60 test modules** (unit + integration), exercising every analyzer, the decision engine override rules (including the cycle 7 ordering fix that catches pure-text BEC), the cross-analyzer calibration pass (ADR 0001) with explicit cap-ceiling tests, the persistent email_id lookup index (ADR 0002) with cross-restart smoking-gun tests, scoring confidence capping, IOC export, the Sigma exporter, the URL reputation dead-domain confidence downgrade, credential encryption migration, the LLM determinism contract plus OpenAI-compatible provider wiring, the generic phishing ML baseline, the payment-fraud dataset/eval/train/demo workflow, the body_html sanitizer with hostile XSS payloads, retention and per-subject erasure across results, alerts, feedback, SaaS scan rows, and sender profiles, dashboard self-hosted chart assets/fallback rendering under a strict dashboard CSP, public demo mode guardrails, SaaS account/session/quota/password-reset/logout gates, compact analyst Analyze page layout, Stripe Checkout/webhook subscription mirroring, safe Stripe credential failure responses, Adaptive Pricing metadata, link-based SaaS auth navigation, hidden upgrade options, monthly/yearly subscription pricing, plan/feature-lock metadata, static asset cache busting, public-root routing away from admin login, the privacy-safe shared feedback modal, Docker Playwright version pinning, operational backup/health scripts, and the web security middleware (bearer auth, browser session auth with CSRF, user session auth with CSRF, Stripe webhook signatures, SSRF guard, security headers). CI runs the full suite plus a Playwright dashboard chart smoke check on every push and PR against a fresh checkout from the hash-pinned lock file. CI-bites verified by deliberate-red sanity check on a throwaway branch.
 
 ```bash
 # Run all tests
@@ -425,7 +425,7 @@ python -m pytest --cov=src --cov-report=html
 | Security & utils | `test_security`, `test_web_security`, `test_html_sanitizer`, `test_credentials`, `test_multi_account_monitor`, `test_models`, `test_utils` |
 | Detection content | `test_sigma_exporter` (34 tests covering canonical analyzer keys, ATT&CK tag derivation, deterministic UUIDs) |
 | URL reputation | `test_url_reputation` (11 tests including the dead-domain confidence downgrade regression) |
-| LLM client | `test_anthropic_client` (10 tests locking the determinism contract: temperature=0, top_p=1, model version capture) |
+| LLM client | `test_anthropic_client`, `test_openai_compatible_client`, `test_pipeline_llm_provider` (deterministic JSON calls, model version capture, provider wiring) |
 | Integration      | `test_full_pipeline`                                                                                  |
 
 ## Known Limitations
@@ -436,7 +436,7 @@ python -m pytest --cov=src --cov-report=html
 
 3. **QR code decoding dependencies**: Full QR decoding requires `pyzbar`, `opencv-python`, and system library `libzbar0`. Without these, QR-embedded URLs in images won't be extracted. Install with: `apt-get install libzbar0 && pip install pyzbar opencv-python`.
 
-4. **NLP intent classification**: Best results require an LLM API key (Anthropic Claude or OpenAI). Falls back to a sklearn TF-IDF classifier with reduced accuracy (~70% vs ~92% with LLM).
+4. **NLP intent classification**: Best results require an LLM API key. For production cost control, start with `LLM_PROVIDER=deepseek` and `DEEPSEEK_API_KEY`; use Anthropic Claude only as an explicit quality fallback. Moonshot/Kimi and generic OpenAI-compatible Chat Completions providers are also supported. Falls back to a sklearn TF-IDF classifier with reduced accuracy (~70% vs ~92% with LLM).
 
 5. **Brand impersonation detection**: Requires `imagehash` and reference brand logos in `brand_references/`. Without reference images, visual similarity scoring is skipped. The pipeline still detects brand impersonation via domain name analysis.
 

@@ -114,6 +114,10 @@ def test_saas_app_upgrade_options_are_hidden_until_requested():
     assert 'data-upgrade-trigger' in js
     assert "selectedBillingInterval" in js
     assert "billing_interval: selectedBillingInterval" in js
+    assert "billingIntervalLabel()" in js
+    assert "AUD / month" not in js
+    assert "currency-pill" not in response.text
+    assert "currency-pill" not in css
     assert 'plan-icon' not in js
     assert "Product style alignment" in css
     assert "--saas-bg: var(--bg-primary);" in css
