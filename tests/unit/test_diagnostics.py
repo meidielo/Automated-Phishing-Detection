@@ -21,6 +21,7 @@ from src.diagnostics.api_checks import (
     check_abuseipdb,
     check_anthropic,
     check_deepseek,
+    check_gemini,
     check_google_safebrowsing,
     check_moonshot,
     check_urlscan,
@@ -78,6 +79,12 @@ class TestSkipPathNoApiKey:
         assert result.status == CheckStatus.SKIP
         assert result.service == "moonshot_llm"
 
+    @pytest.mark.asyncio
+    async def test_gemini_skip(self):
+        result = await check_gemini("")
+        assert result.status == CheckStatus.SKIP
+        assert result.service == "gemini_llm"
+
 
 class TestCheckResultDataclass:
     def test_to_dict_uses_string_status(self):
@@ -113,6 +120,7 @@ class TestRegistry:
         assert "ANTHROPIC_API_KEY" in env_names
         assert "DEEPSEEK_API_KEY" in env_names
         assert "MOONSHOT_API_KEY" in env_names
+        assert "GEMINI_API_KEY" in env_names
 
     def test_every_check_is_callable(self):
         for env_name, check_fn in _CHECK_REGISTRY:
@@ -159,6 +167,7 @@ class TestRunAllChecksDispatch:
             anthropic_key = ""
             deepseek_key = ""
             moonshot_key = ""
+            gemini_key = ""
 
         results = await run_all_checks(config_api=FakeApiConfig())
         # All empty -> all SKIP
@@ -187,6 +196,31 @@ class TestRunAllChecksDispatch:
 
         assert results == [
             CheckResult("generic-llm-key", CheckStatus.PASS, "3"),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_config_api_uses_generic_llm_key_for_gemini_provider(
+        self,
+        monkeypatch,
+    ):
+        async def fake_check(api_key, timeout):
+            return CheckResult(api_key, CheckStatus.PASS, str(timeout))
+
+        class FakeApiConfig:
+            llm_provider = "gemini"
+            llm_api_key = "generic-gemini-key"
+            gemini_key = ""
+
+        monkeypatch.setattr(
+            api_checks_module,
+            "_CHECK_REGISTRY",
+            [("GEMINI_API_KEY", fake_check)],
+        )
+
+        results = await run_all_checks(config_api=FakeApiConfig(), timeout=3)
+
+        assert results == [
+            CheckResult("generic-gemini-key", CheckStatus.PASS, "3"),
         ]
 
 

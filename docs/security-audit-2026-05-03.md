@@ -37,8 +37,12 @@ current test/browser/dependency gates.
 
 ## Audit Evidence
 
-- Full unit/integration suite: `1198 passed`.
+- Full unit/integration suite: `1209 passed`.
 - Focused security regression suite: `181 passed`.
+- Gemini live LLM provider benchmark: `gemini-3-flash-preview` completed
+  15/15 with 0 errors and beat `gemini-3.1-pro-preview` on this label task;
+  no Gemini model reached the 90% tier-assignment threshold on the current
+  small eval slice.
 - Dashboard browser smoke check: charts loaded, strict dashboard CSP observed,
   no console/page errors.
 - MCP live smoke demo: `analyze_payment_email` returned `DO_NOT_PAY`, masked
@@ -59,8 +63,10 @@ current test/browser/dependency gates.
 
 ## Remaining Operator Actions
 
-- Add the chosen LLM key later. `LLM_PROVIDER=deepseek` is the cost-first
-  default; Moonshot/Kimi can also use the OpenAI-compatible path.
+- Add the chosen LLM key later. `LLM_PROVIDER=deepseek` remains the current
+  cost-first default from the local pilot; Gemini and Moonshot/Kimi can also
+  use the OpenAI-compatible path and should be benchmarked on redacted samples
+  before tier assignment.
 - Keep `ACCOUNTS_ENCRYPTION_KEY` stable. If the monitor says reconnect, re-enter
   the mailbox app password once with the stable key set.
 - Keep `SAAS_PUBLIC_SIGNUP_ENABLED=false` until privacy, abuse handling, and

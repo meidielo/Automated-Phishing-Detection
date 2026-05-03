@@ -240,8 +240,24 @@ async def _check_openai_compatible_llm(
         "model": model,
         "messages": [{"role": "user", "content": "Return the word ok."}],
         "max_tokens": 5,
-        "temperature": 0,
     }
+    base_url_lower = base_url.lower()
+    if base_url_lower.startswith("https://api.deepseek.com"):
+        payload["thinking"] = {"type": "disabled"}
+        payload["temperature"] = 0
+    elif (
+        base_url_lower.startswith("https://api.moonshot.ai")
+        and model.startswith(("kimi-k2.6", "kimi-k2.5"))
+    ):
+        payload["thinking"] = {"type": "disabled"}
+    elif "generativelanguage.googleapis.com" in base_url_lower:
+        payload["temperature"] = 0
+        if model.startswith("gemini-2.5"):
+            payload["reasoning_effort"] = "none"
+        elif model.startswith("gemini-3"):
+            payload["reasoning_effort"] = "minimal"
+    else:
+        payload["temperature"] = 0
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(
@@ -312,6 +328,19 @@ async def check_moonshot(
     )
 
 
+async def check_gemini(
+    api_key: str,
+    timeout: float = DEFAULT_TIMEOUT_S,
+) -> CheckResult:
+    return await _check_openai_compatible_llm(
+        service="gemini_llm",
+        api_key=api_key,
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai",
+        model="gemini-3-flash-preview",
+        timeout=timeout,
+    )
+
+
 # ─── registry + orchestrator ───────────────────────────────────────────────
 
 
@@ -327,6 +356,7 @@ _CHECK_REGISTRY: list[tuple[str, callable]] = [
     ("ANTHROPIC_API_KEY", check_anthropic),
     ("DEEPSEEK_API_KEY", check_deepseek),
     ("MOONSHOT_API_KEY", check_moonshot),
+    ("GEMINI_API_KEY", check_gemini),
 ]
 
 
@@ -361,6 +391,10 @@ async def run_all_checks(
                 return getattr(config_api, "moonshot_key", "") or (
                     getattr(config_api, "llm_api_key", "") if provider in {"moonshot", "kimi"} else ""
                 )
+            if env_name == "GEMINI_API_KEY":
+                return getattr(config_api, "gemini_key", "") or (
+                    getattr(config_api, "llm_api_key", "") if provider == "gemini" else ""
+                )
             field_name = {
                 "VIRUSTOTAL_API_KEY": "virustotal_key",
                 "GOOGLE_SAFE_BROWSING_API_KEY": "google_safebrowsing_key",
@@ -369,6 +403,7 @@ async def run_all_checks(
                 "ANTHROPIC_API_KEY": "anthropic_key",
                 "DEEPSEEK_API_KEY": "deepseek_key",
                 "MOONSHOT_API_KEY": "moonshot_key",
+                "GEMINI_API_KEY": "gemini_key",
             }.get(env_name)
             return getattr(config_api, field_name, "") if field_name else ""
         provider = (os.getenv("LLM_PROVIDER", "") or "").lower()
@@ -379,6 +414,10 @@ async def run_all_checks(
         if env_name == "MOONSHOT_API_KEY":
             return os.getenv("MOONSHOT_API_KEY", "") or (
                 os.getenv("LLM_API_KEY", "") if provider in {"moonshot", "kimi"} else ""
+            )
+        if env_name == "GEMINI_API_KEY":
+            return os.getenv("GEMINI_API_KEY", "") or (
+                os.getenv("LLM_API_KEY", "") if provider == "gemini" else ""
             )
         return os.getenv(env_name, "")
 

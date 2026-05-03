@@ -39,6 +39,7 @@ class APIConfig:
     openai_key: str = ""
     deepseek_key: str = ""
     moonshot_key: str = ""
+    gemini_key: str = ""
 
 
 @dataclass
@@ -148,6 +149,7 @@ class PipelineConfig:
             openai_key=os.getenv("OPENAI_API_KEY", ""),
             deepseek_key=os.getenv("DEEPSEEK_API_KEY", ""),
             moonshot_key=os.getenv("MOONSHOT_API_KEY", ""),
+            gemini_key=os.getenv("GEMINI_API_KEY", ""),
         )
         imap = IMAPConfig(
             host=os.getenv("IMAP_HOST", "imap.example.com"),
@@ -240,6 +242,7 @@ class PipelineConfig:
             openai_key=_get(api_data, "openai_key", "OPENAI_API_KEY"),
             deepseek_key=_get(api_data, "deepseek_key", "DEEPSEEK_API_KEY"),
             moonshot_key=_get(api_data, "moonshot_key", "MOONSHOT_API_KEY"),
+            gemini_key=_get(api_data, "gemini_key", "GEMINI_API_KEY"),
         )
 
         imap_data = data.get("imap", {})

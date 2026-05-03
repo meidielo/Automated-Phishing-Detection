@@ -82,3 +82,25 @@ def test_smtp_password_reset_config_reads_yaml_with_env_override(tmp_path, monke
     assert config.smtp.username == "yaml@example.com"
     assert config.smtp.from_name == "YAML Sender"
     assert config.password_reset_token_ttl_minutes == 35
+
+
+def test_gemini_api_key_reads_env(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "gemini-env-key")
+
+    config = PipelineConfig._from_env_only()
+
+    assert config.api.gemini_key == "gemini-env-key"
+
+
+def test_gemini_api_key_reads_yaml_with_env_override(tmp_path, monkeypatch):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "api:\n"
+        "  gemini_key: yaml-gemini-key\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("GEMINI_API_KEY", "env-gemini-key")
+
+    config = PipelineConfig.from_yaml(str(config_path))
+
+    assert config.api.gemini_key == "env-gemini-key"

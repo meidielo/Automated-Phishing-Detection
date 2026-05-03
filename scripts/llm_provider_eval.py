@@ -144,6 +144,33 @@ MODEL_CATALOG: dict[str, ProviderModel] = {
         output_usd_per_million=4.00,
         pricing_note="Kimi official current input and output pricing.",
     ),
+    "gemini:gemini-3.1-flash-lite-preview": ProviderModel(
+        provider="gemini",
+        model="gemini-3.1-flash-lite-preview",
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai",
+        api_key_env="GEMINI_API_KEY",
+        input_usd_per_million=0.25,
+        output_usd_per_million=1.50,
+        pricing_note="Google official Gemini Developer API paid-tier standard pricing.",
+    ),
+    "gemini:gemini-3-flash-preview": ProviderModel(
+        provider="gemini",
+        model="gemini-3-flash-preview",
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai",
+        api_key_env="GEMINI_API_KEY",
+        input_usd_per_million=0.50,
+        output_usd_per_million=3.00,
+        pricing_note="Google official Gemini Developer API paid-tier standard pricing.",
+    ),
+    "gemini:gemini-3.1-pro-preview": ProviderModel(
+        provider="gemini",
+        model="gemini-3.1-pro-preview",
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai",
+        api_key_env="GEMINI_API_KEY",
+        input_usd_per_million=2.00,
+        output_usd_per_million=12.00,
+        pricing_note="Google official Gemini 3.1 Pro paid-tier pricing for prompts <=200k tokens.",
+    ),
     "anthropic:claude-opus-4-7": ProviderModel(
         provider="anthropic",
         model="claude-opus-4-7",
@@ -172,6 +199,9 @@ def parse_model_spec(spec: str) -> ProviderModel:
         provider = "moonshot"
         base_url = "https://api.moonshot.ai/v1"
         key_env = "MOONSHOT_API_KEY"
+    elif provider == "gemini":
+        base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
+        key_env = "GEMINI_API_KEY"
     elif provider == "anthropic":
         base_url = ""
         key_env = "ANTHROPIC_API_KEY"
@@ -206,6 +236,12 @@ def available_default_models() -> list[ProviderModel]:
         os.getenv("LLM_API_KEY") if os.getenv("LLM_PROVIDER", "").lower() in {"moonshot", "kimi"} else ""
     ):
         models.append(MODEL_CATALOG["moonshot:kimi-k2.6"])
+    if os.getenv("GEMINI_API_KEY") or (
+        os.getenv("LLM_API_KEY") if os.getenv("LLM_PROVIDER", "").lower() == "gemini" else ""
+    ):
+        models.append(MODEL_CATALOG["gemini:gemini-3.1-pro-preview"])
+        models.append(MODEL_CATALOG["gemini:gemini-3.1-flash-lite-preview"])
+        models.append(MODEL_CATALOG["gemini:gemini-3-flash-preview"])
     if os.getenv("ANTHROPIC_API_KEY"):
         models.append(MODEL_CATALOG["anthropic:claude-opus-4-7"])
     return models
@@ -506,6 +542,15 @@ def openai_compatible_body(model: ProviderModel, prompt: str) -> dict[str, Any]:
         body["temperature"] = 0
     elif model.provider == "moonshot" and model.model.startswith(("kimi-k2.6", "kimi-k2.5")):
         body["thinking"] = {"type": "disabled"}
+    elif model.provider == "gemini":
+        body["temperature"] = 0
+        if model.model.startswith("gemini-3.1-pro"):
+            body["reasoning_effort"] = "low"
+            body["max_tokens"] = 1024
+        elif model.model.startswith("gemini-2.5"):
+            body["reasoning_effort"] = "none"
+        elif model.model.startswith("gemini-3"):
+            body["reasoning_effort"] = "minimal"
     else:
         body["temperature"] = 0
     return body

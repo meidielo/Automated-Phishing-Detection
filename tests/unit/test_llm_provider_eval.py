@@ -55,6 +55,16 @@ def test_parse_model_spec_uses_priced_catalog():
     assert model.output_usd_per_million == 0.87
 
 
+def test_parse_model_spec_supports_priced_gemini_catalog():
+    model = eval_script.parse_model_spec("gemini:gemini-3.1-pro-preview")
+
+    assert model.provider == "gemini"
+    assert model.model == "gemini-3.1-pro-preview"
+    assert model.base_url == "https://generativelanguage.googleapis.com/v1beta/openai"
+    assert model.input_usd_per_million == 2.00
+    assert model.output_usd_per_million == 12.00
+
+
 def test_parse_model_spec_supports_generic_openai_compatible(monkeypatch):
     monkeypatch.setenv("LLM_API_BASE", "https://router.example/v1")
 
@@ -132,6 +142,42 @@ def test_openai_compatible_body_uses_kimi_non_thinking_parameters():
     assert "temperature" not in body
     assert body["thinking"] == {"type": "disabled"}
     assert body["response_format"] == {"type": "json_object"}
+
+
+def test_openai_compatible_body_uses_gemini_minimal_reasoning():
+    model = eval_script.MODEL_CATALOG["gemini:gemini-3-flash-preview"]
+
+    body = eval_script.openai_compatible_body(model, "classify")
+
+    assert body["temperature"] == 0
+    assert body["reasoning_effort"] == "minimal"
+    assert body["response_format"] == {"type": "json_object"}
+
+
+def test_openai_compatible_body_uses_gemini_pro_supported_reasoning():
+    model = eval_script.MODEL_CATALOG["gemini:gemini-3.1-pro-preview"]
+
+    body = eval_script.openai_compatible_body(model, "classify")
+
+    assert body["temperature"] == 0
+    assert body["reasoning_effort"] == "low"
+    assert body["max_tokens"] == 1024
+
+
+def test_available_default_models_includes_gemini_cost_models(monkeypatch):
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.delenv("MOONSHOT_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    monkeypatch.setenv("GEMINI_API_KEY", "gemini-key")
+
+    keys = [model.key for model in eval_script.available_default_models()]
+
+    assert keys == [
+        "gemini:gemini-3.1-pro-preview",
+        "gemini:gemini-3.1-flash-lite-preview",
+        "gemini:gemini-3-flash-preview",
+    ]
 
 
 @pytest.mark.asyncio

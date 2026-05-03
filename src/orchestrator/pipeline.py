@@ -1019,6 +1019,13 @@ class PhishingPipeline:
                         base_url=api.llm_api_base or "https://api.moonshot.ai/v1",
                         model=api.llm_model or "kimi-k2.6",
                     )
+                elif provider == "gemini" and (api.gemini_key or api.llm_api_key):
+                    from src.analyzers.clients.openai_compatible_client import OpenAICompatibleLLMClient
+                    llm_client = OpenAICompatibleLLMClient(
+                        api.gemini_key or api.llm_api_key,
+                        base_url=api.llm_api_base or "https://generativelanguage.googleapis.com/v1beta/openai",
+                        model=api.llm_model or "gemini-3-flash-preview",
+                    )
                 elif provider in {"openai", "openai_compatible"} and (api.openai_key or api.llm_api_key):
                     from src.analyzers.clients.openai_compatible_client import OpenAICompatibleLLMClient
                     llm_client = OpenAICompatibleLLMClient(

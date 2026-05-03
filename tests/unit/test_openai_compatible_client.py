@@ -97,6 +97,57 @@ async def test_openai_compatible_client_uses_kimi_supported_parameters():
 
 
 @pytest.mark.asyncio
+async def test_openai_compatible_client_uses_gemini_lowest_reasoning_parameters():
+    session = _FakeSession(
+        _FakeResponse(
+            payload={
+                "model": "gemini-3-flash-preview",
+                "choices": [{"message": {"content": '{"intent":"legitimate"}'}}],
+            }
+        )
+    )
+    client = OpenAICompatibleLLMClient(
+        "test-key",
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+        model="gemini-3-flash-preview",
+    )
+    client._session = session
+
+    await client.analyze("classify this")
+
+    url, kwargs = session.calls[0]
+    assert url == "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+    assert kwargs["json"]["temperature"] == 0
+    assert kwargs["json"]["reasoning_effort"] == "minimal"
+    assert kwargs["json"]["response_format"] == {"type": "json_object"}
+
+
+@pytest.mark.asyncio
+async def test_openai_compatible_client_uses_gemini_pro_supported_reasoning_parameters():
+    session = _FakeSession(
+        _FakeResponse(
+            payload={
+                "model": "gemini-3.1-pro-preview",
+                "choices": [{"message": {"content": '{"intent":"legitimate"}'}}],
+            }
+        )
+    )
+    client = OpenAICompatibleLLMClient(
+        "test-key",
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+        model="gemini-3.1-pro-preview",
+    )
+    client._session = session
+
+    await client.analyze("classify this")
+
+    _, kwargs = session.calls[0]
+    assert kwargs["json"]["temperature"] == 0
+    assert kwargs["json"]["reasoning_effort"] == "low"
+    assert kwargs["json"]["max_tokens"] == 1024
+
+
+@pytest.mark.asyncio
 async def test_openai_compatible_client_raises_clean_provider_error():
     session = _FakeSession(
         _FakeResponse(

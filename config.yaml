@@ -22,12 +22,13 @@ api:
   anyrun_key: ""                        # env: ANYRUN_API_KEY
   joesandbox_key: ""                    # env: JOESANDBOX_API_KEY
 
-  # LLM for NLP intent classification: anthropic | deepseek | moonshot | openai
+  # LLM for NLP intent classification: anthropic | deepseek | moonshot | gemini | openai
   llm_provider: "deepseek"    # env: LLM_PROVIDER
   anthropic_key: ""           # env: ANTHROPIC_API_KEY
   openai_key: ""              # env: OPENAI_API_KEY
   deepseek_key: ""            # env: DEEPSEEK_API_KEY
   moonshot_key: ""            # env: MOONSHOT_API_KEY
+  gemini_key: ""              # env: GEMINI_API_KEY
 
 # ── IMAP Polling Configuration ────────────────────────────────────
 imap:

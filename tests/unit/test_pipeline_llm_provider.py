@@ -46,3 +46,23 @@ async def test_pipeline_builds_kimi_llm_client_from_provider_config():
         assert analyzer.llm_client.model == "kimi-k2.6"
     finally:
         await pipeline.close()
+
+
+@pytest.mark.asyncio
+async def test_pipeline_builds_gemini_llm_client_from_provider_config():
+    pipeline = PhishingPipeline(
+        PipelineConfig(
+            api=APIConfig(
+                llm_provider="gemini",
+                gemini_key="gemini_test_key",
+            )
+        )
+    )
+
+    analyzer = await pipeline._load_analyzer("nlp_intent")
+    try:
+        assert isinstance(analyzer.llm_client, OpenAICompatibleLLMClient)
+        assert analyzer.llm_client.base_url == "https://generativelanguage.googleapis.com/v1beta/openai"
+        assert analyzer.llm_client.model == "gemini-3-flash-preview"
+    finally:
+        await pipeline.close()

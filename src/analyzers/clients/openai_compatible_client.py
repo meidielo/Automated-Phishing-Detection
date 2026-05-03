@@ -1,6 +1,6 @@
 """OpenAI-compatible LLM client for NLP intent analysis.
 
-DeepSeek, Kimi/Moonshot, OpenAI, and several routing providers expose a
+DeepSeek, Kimi/Moonshot, Gemini, OpenAI, and several routing providers expose a
 Chat Completions-compatible endpoint. The NLP intent analyzer only needs a
 small deterministic JSON classification call, so this wrapper keeps the
 provider surface narrow and easy to evaluate.
@@ -94,6 +94,15 @@ class OpenAICompatibleLLMClient:
             self.model.startswith(("kimi-k2.6", "kimi-k2.5"))
         ):
             body["thinking"] = {"type": "disabled"}
+        elif "generativelanguage.googleapis.com" in self.base_url.lower():
+            body["temperature"] = 0
+            if self.model.startswith("gemini-3.1-pro"):
+                body["reasoning_effort"] = "low"
+                body["max_tokens"] = max(int(body["max_tokens"]), 1024)
+            elif self.model.startswith("gemini-2.5"):
+                body["reasoning_effort"] = "none"
+            elif self.model.startswith("gemini-3"):
+                body["reasoning_effort"] = "minimal"
         else:
             body["temperature"] = 0
         return body

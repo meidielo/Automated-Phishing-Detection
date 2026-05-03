@@ -1795,6 +1795,10 @@ class PhishingDetectionApp:
                 a.moonshot_key
                 or (llm_provider in {"moonshot", "kimi"} and a.llm_api_key)
             )
+            gemini_key_ready = bool(
+                a.gemini_key
+                or (llm_provider == "gemini" and a.llm_api_key)
+            )
             openai_key_ready = bool(
                 a.openai_key
                 or (
@@ -1814,6 +1818,7 @@ class PhishingDetectionApp:
                     "anthropic":           bool(a.anthropic_key),
                     "deepseek":            deepseek_key_ready,
                     "moonshot":            moonshot_key_ready,
+                    "gemini":              gemini_key_ready,
                     "openai":              openai_key_ready,
                 },
                 "llm_provider":     a.llm_provider,
