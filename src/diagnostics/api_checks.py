@@ -256,6 +256,10 @@ async def _check_openai_compatible_llm(
             payload["reasoning_effort"] = "none"
         elif model.startswith("gemini-3"):
             payload["reasoning_effort"] = "minimal"
+    elif base_url_lower.startswith("https://api.openai.com") and model.startswith("gpt-5"):
+        payload.pop("max_tokens", None)
+        payload["max_completion_tokens"] = 16
+        payload["reasoning_effort"] = "none"
     else:
         payload["temperature"] = 0
     try:
@@ -348,6 +352,19 @@ async def check_gemini(
 # Adding a new service: append a row here and write the corresponding
 # `check_<service>` function above. The CLI tools and the dashboard
 # endpoint pick up the new check automatically.
+async def check_openai(
+    api_key: str,
+    timeout: float = DEFAULT_TIMEOUT_S,
+) -> CheckResult:
+    return await _check_openai_compatible_llm(
+        service="openai_llm",
+        api_key=api_key,
+        base_url="https://api.openai.com/v1",
+        model="gpt-5.4-mini",
+        timeout=timeout,
+    )
+
+
 _CHECK_REGISTRY: list[tuple[str, callable]] = [
     ("VIRUSTOTAL_API_KEY", check_virustotal),
     ("GOOGLE_SAFE_BROWSING_API_KEY", check_google_safebrowsing),
@@ -357,6 +374,7 @@ _CHECK_REGISTRY: list[tuple[str, callable]] = [
     ("DEEPSEEK_API_KEY", check_deepseek),
     ("MOONSHOT_API_KEY", check_moonshot),
     ("GEMINI_API_KEY", check_gemini),
+    ("OPENAI_API_KEY", check_openai),
 ]
 
 
@@ -395,6 +413,12 @@ async def run_all_checks(
                 return getattr(config_api, "gemini_key", "") or (
                     getattr(config_api, "llm_api_key", "") if provider == "gemini" else ""
                 )
+            if env_name == "OPENAI_API_KEY":
+                return getattr(config_api, "openai_key", "") or (
+                    getattr(config_api, "llm_api_key", "")
+                    if provider in {"openai", "openai_compatible"}
+                    else ""
+                )
             field_name = {
                 "VIRUSTOTAL_API_KEY": "virustotal_key",
                 "GOOGLE_SAFE_BROWSING_API_KEY": "google_safebrowsing_key",
@@ -404,6 +428,7 @@ async def run_all_checks(
                 "DEEPSEEK_API_KEY": "deepseek_key",
                 "MOONSHOT_API_KEY": "moonshot_key",
                 "GEMINI_API_KEY": "gemini_key",
+                "OPENAI_API_KEY": "openai_key",
             }.get(env_name)
             return getattr(config_api, field_name, "") if field_name else ""
         provider = (os.getenv("LLM_PROVIDER", "") or "").lower()
@@ -418,6 +443,12 @@ async def run_all_checks(
         if env_name == "GEMINI_API_KEY":
             return os.getenv("GEMINI_API_KEY", "") or (
                 os.getenv("LLM_API_KEY", "") if provider == "gemini" else ""
+            )
+        if env_name == "OPENAI_API_KEY":
+            return os.getenv("OPENAI_API_KEY", "") or (
+                os.getenv("LLM_API_KEY", "")
+                if provider in {"openai", "openai_compatible"}
+                else ""
             )
         return os.getenv(env_name, "")
 

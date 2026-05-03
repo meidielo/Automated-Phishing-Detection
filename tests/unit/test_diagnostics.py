@@ -24,6 +24,7 @@ from src.diagnostics.api_checks import (
     check_gemini,
     check_google_safebrowsing,
     check_moonshot,
+    check_openai,
     check_urlscan,
     check_virustotal,
     summarize,
@@ -85,6 +86,12 @@ class TestSkipPathNoApiKey:
         assert result.status == CheckStatus.SKIP
         assert result.service == "gemini_llm"
 
+    @pytest.mark.asyncio
+    async def test_openai_skip(self):
+        result = await check_openai("")
+        assert result.status == CheckStatus.SKIP
+        assert result.service == "openai_llm"
+
 
 class TestCheckResultDataclass:
     def test_to_dict_uses_string_status(self):
@@ -121,6 +128,7 @@ class TestRegistry:
         assert "DEEPSEEK_API_KEY" in env_names
         assert "MOONSHOT_API_KEY" in env_names
         assert "GEMINI_API_KEY" in env_names
+        assert "OPENAI_API_KEY" in env_names
 
     def test_every_check_is_callable(self):
         for env_name, check_fn in _CHECK_REGISTRY:
@@ -168,6 +176,7 @@ class TestRunAllChecksDispatch:
             deepseek_key = ""
             moonshot_key = ""
             gemini_key = ""
+            openai_key = ""
 
         results = await run_all_checks(config_api=FakeApiConfig())
         # All empty -> all SKIP
@@ -222,6 +231,76 @@ class TestRunAllChecksDispatch:
         assert results == [
             CheckResult("generic-gemini-key", CheckStatus.PASS, "3"),
         ]
+
+    @pytest.mark.asyncio
+    async def test_config_api_uses_generic_llm_key_for_openai_provider(
+        self,
+        monkeypatch,
+    ):
+        async def fake_check(api_key, timeout):
+            return CheckResult(api_key, CheckStatus.PASS, str(timeout))
+
+        class FakeApiConfig:
+            llm_provider = "openai"
+            llm_api_key = "generic-openai-key"
+            openai_key = ""
+
+        monkeypatch.setattr(
+            api_checks_module,
+            "_CHECK_REGISTRY",
+            [("OPENAI_API_KEY", fake_check)],
+        )
+
+        results = await run_all_checks(config_api=FakeApiConfig(), timeout=3)
+
+        assert results == [
+            CheckResult("generic-openai-key", CheckStatus.PASS, "3"),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_openai_gpt5_diagnostic_uses_supported_parameters(
+        self,
+        monkeypatch,
+    ):
+        captured = {}
+
+        class FakeResponse:
+            status = 200
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return None
+
+        class FakeSession:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return None
+
+            def post(self, url, **kwargs):
+                captured["url"] = url
+                captured["json"] = kwargs["json"]
+                return FakeResponse()
+
+        monkeypatch.setattr(api_checks_module.aiohttp, "ClientSession", FakeSession)
+
+        result = await api_checks_module._check_openai_compatible_llm(
+            service="openai_llm",
+            api_key="test-key",
+            base_url="https://api.openai.com/v1",
+            model="gpt-5.5",
+            timeout=3,
+        )
+
+        assert result.status == CheckStatus.PASS
+        assert captured["url"] == "https://api.openai.com/v1/chat/completions"
+        assert "temperature" not in captured["json"]
+        assert "max_tokens" not in captured["json"]
+        assert captured["json"]["max_completion_tokens"] == 16
+        assert captured["json"]["reasoning_effort"] == "none"
 
 
 # ─── summarize() ────────────────────────────────────────────────────────────

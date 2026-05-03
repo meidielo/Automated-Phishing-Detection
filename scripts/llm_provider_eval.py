@@ -181,6 +181,24 @@ MODEL_CATALOG: dict[str, ProviderModel] = {
         pricing_note="Anthropic official Opus 4.7 platform pricing.",
         json_mode=False,
     ),
+    "openai:gpt-5.5": ProviderModel(
+        provider="openai",
+        model="gpt-5.5",
+        base_url="https://api.openai.com/v1",
+        api_key_env="OPENAI_API_KEY",
+        input_usd_per_million=5.00,
+        output_usd_per_million=30.00,
+        pricing_note="OpenAI official GPT-5.5 standard pricing.",
+    ),
+    "openai:gpt-5.4-mini": ProviderModel(
+        provider="openai",
+        model="gpt-5.4-mini",
+        base_url="https://api.openai.com/v1",
+        api_key_env="OPENAI_API_KEY",
+        input_usd_per_million=0.75,
+        output_usd_per_million=4.50,
+        pricing_note="OpenAI official GPT-5.4 mini standard pricing.",
+    ),
 }
 
 
@@ -244,6 +262,11 @@ def available_default_models() -> list[ProviderModel]:
         models.append(MODEL_CATALOG["gemini:gemini-3-flash-preview"])
     if os.getenv("ANTHROPIC_API_KEY"):
         models.append(MODEL_CATALOG["anthropic:claude-opus-4-7"])
+    if os.getenv("OPENAI_API_KEY") or (
+        os.getenv("LLM_API_KEY") if os.getenv("LLM_PROVIDER", "").lower() in {"openai", "openai_compatible"} else ""
+    ):
+        models.append(MODEL_CATALOG["openai:gpt-5.5"])
+        models.append(MODEL_CATALOG["openai:gpt-5.4-mini"])
     return models
 
 
@@ -551,6 +574,10 @@ def openai_compatible_body(model: ProviderModel, prompt: str) -> dict[str, Any]:
             body["reasoning_effort"] = "none"
         elif model.model.startswith("gemini-3"):
             body["reasoning_effort"] = "minimal"
+    elif model.provider == "openai" and model.model.startswith("gpt-5"):
+        body.pop("max_tokens", None)
+        body["max_completion_tokens"] = 512
+        body["reasoning_effort"] = "none"
     else:
         body["temperature"] = 0
     return body

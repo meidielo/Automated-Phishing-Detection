@@ -65,6 +65,16 @@ def test_parse_model_spec_supports_priced_gemini_catalog():
     assert model.output_usd_per_million == 12.00
 
 
+def test_parse_model_spec_supports_priced_openai_catalog():
+    model = eval_script.parse_model_spec("openai:gpt-5.5")
+
+    assert model.provider == "openai"
+    assert model.model == "gpt-5.5"
+    assert model.base_url == "https://api.openai.com/v1"
+    assert model.input_usd_per_million == 5.00
+    assert model.output_usd_per_million == 30.00
+
+
 def test_parse_model_spec_supports_generic_openai_compatible(monkeypatch):
     monkeypatch.setenv("LLM_API_BASE", "https://router.example/v1")
 
@@ -164,10 +174,23 @@ def test_openai_compatible_body_uses_gemini_pro_supported_reasoning():
     assert body["max_tokens"] == 1024
 
 
+def test_openai_compatible_body_uses_gpt5_supported_parameters():
+    model = eval_script.MODEL_CATALOG["openai:gpt-5.5"]
+
+    body = eval_script.openai_compatible_body(model, "classify")
+
+    assert "temperature" not in body
+    assert "max_tokens" not in body
+    assert body["max_completion_tokens"] == 512
+    assert body["reasoning_effort"] == "none"
+    assert body["response_format"] == {"type": "json_object"}
+
+
 def test_available_default_models_includes_gemini_cost_models(monkeypatch):
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
     monkeypatch.delenv("MOONSHOT_API_KEY", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("LLM_API_KEY", raising=False)
     monkeypatch.setenv("GEMINI_API_KEY", "gemini-key")
 
@@ -177,6 +200,22 @@ def test_available_default_models_includes_gemini_cost_models(monkeypatch):
         "gemini:gemini-3.1-pro-preview",
         "gemini:gemini-3.1-flash-lite-preview",
         "gemini:gemini-3-flash-preview",
+    ]
+
+
+def test_available_default_models_includes_openai_cost_models(monkeypatch):
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.delenv("MOONSHOT_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
+
+    keys = [model.key for model in eval_script.available_default_models()]
+
+    assert keys == [
+        "openai:gpt-5.5",
+        "openai:gpt-5.4-mini",
     ]
 
 

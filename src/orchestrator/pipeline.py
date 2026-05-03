@@ -1031,7 +1031,7 @@ class PhishingPipeline:
                     llm_client = OpenAICompatibleLLMClient(
                         api.openai_key or api.llm_api_key,
                         base_url=api.llm_api_base or "https://api.openai.com/v1",
-                        model=api.llm_model or "gpt-4o-mini",
+                        model=api.llm_model or "gpt-5.4-mini",
                     )
                 analyzer = NLPIntentAnalyzer(llm_client=llm_client)
             elif name == "sender_profiling":

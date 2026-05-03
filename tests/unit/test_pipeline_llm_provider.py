@@ -66,3 +66,23 @@ async def test_pipeline_builds_gemini_llm_client_from_provider_config():
         assert analyzer.llm_client.model == "gemini-3-flash-preview"
     finally:
         await pipeline.close()
+
+
+@pytest.mark.asyncio
+async def test_pipeline_builds_openai_llm_client_from_provider_config():
+    pipeline = PhishingPipeline(
+        PipelineConfig(
+            api=APIConfig(
+                llm_provider="openai",
+                openai_key="openai_test_key",
+            )
+        )
+    )
+
+    analyzer = await pipeline._load_analyzer("nlp_intent")
+    try:
+        assert isinstance(analyzer.llm_client, OpenAICompatibleLLMClient)
+        assert analyzer.llm_client.base_url == "https://api.openai.com/v1"
+        assert analyzer.llm_client.model == "gpt-5.4-mini"
+    finally:
+        await pipeline.close()

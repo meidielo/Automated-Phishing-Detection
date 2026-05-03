@@ -148,6 +148,34 @@ async def test_openai_compatible_client_uses_gemini_pro_supported_reasoning_para
 
 
 @pytest.mark.asyncio
+async def test_openai_compatible_client_uses_gpt5_supported_parameters():
+    session = _FakeSession(
+        _FakeResponse(
+            payload={
+                "model": "gpt-5.5-2026-04-23",
+                "choices": [{"message": {"content": '{"intent":"legitimate"}'}}],
+            }
+        )
+    )
+    client = OpenAICompatibleLLMClient(
+        "test-key",
+        base_url="https://api.openai.com/v1/",
+        model="gpt-5.5",
+    )
+    client._session = session
+
+    await client.analyze("classify this")
+
+    url, kwargs = session.calls[0]
+    assert url == "https://api.openai.com/v1/chat/completions"
+    assert "temperature" not in kwargs["json"]
+    assert "max_tokens" not in kwargs["json"]
+    assert kwargs["json"]["max_completion_tokens"] == 1024
+    assert kwargs["json"]["reasoning_effort"] == "none"
+    assert kwargs["json"]["response_format"] == {"type": "json_object"}
+
+
+@pytest.mark.asyncio
 async def test_openai_compatible_client_raises_clean_provider_error():
     session = _FakeSession(
         _FakeResponse(

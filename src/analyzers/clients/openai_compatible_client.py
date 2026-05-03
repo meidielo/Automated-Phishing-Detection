@@ -103,6 +103,13 @@ class OpenAICompatibleLLMClient:
                 body["reasoning_effort"] = "none"
             elif self.model.startswith("gemini-3"):
                 body["reasoning_effort"] = "minimal"
+        elif (
+            self.base_url.lower().startswith("https://api.openai.com") and
+            self.model.startswith("gpt-5")
+        ):
+            body.pop("max_tokens", None)
+            body["max_completion_tokens"] = 1024
+            body["reasoning_effort"] = "none"
         else:
             body["temperature"] = 0
         return body
