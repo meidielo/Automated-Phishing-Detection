@@ -28,7 +28,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from uvicorn import run
 
-from src.billing.plans import plan_payload
+from src.billing.plans import PLAN_ORDER, plan_payload
 from src.billing.stripe_client import (
     StripeAPIError,
     StripeBillingClient,
@@ -1287,6 +1287,20 @@ class PhishingDetectionApp:
                 raise HTTPException(status_code=400, detail="Unknown plan")
             if plan.slug == "free":
                 raise HTTPException(status_code=400, detail="Free does not need checkout")
+            current_rank = PLAN_ORDER.index(context.plan_slug) if context.plan_slug in PLAN_ORDER else 0
+            target_rank = PLAN_ORDER.index(plan.slug) if plan.slug in PLAN_ORDER else -1
+            if target_rank <= current_rank:
+                return JSONResponse(
+                    status_code=409,
+                    content={
+                        "billing_available": False,
+                        "reason": (
+                            f"{plan.name} is already included in your "
+                            f"{context.plan_name} plan."
+                        ),
+                        "account": context.to_dict(),
+                    },
+                )
 
             missing = missing_checkout_env(
                 plan,

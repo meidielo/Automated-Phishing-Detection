@@ -119,6 +119,10 @@ def test_saas_app_upgrade_options_are_hidden_until_requested():
     assert "selectedBillingInterval" in js
     assert "billing_interval: selectedBillingInterval" in js
     assert "billingIntervalLabel()" in js
+    assert 'const planOrder = ["free", "starter", "pro", "business"]' in js
+    assert "targetRank < currentRank" in js
+    assert "Plan coverage" in js
+    assert "You are already on the highest plan" in js
     assert "AUD / month" not in js
     assert "currency-pill" not in response.text
     assert "currency-pill" not in css

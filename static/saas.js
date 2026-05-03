@@ -31,8 +31,18 @@
   let selectedBillingInterval = "monthly";
   let lastPlansPayload = null;
   let selectedScanFile = null;
+  const planOrder = ["free", "starter", "pro", "business"];
   const defaultScanDropTitle = "Drop your .eml file here, or click to browse";
   const defaultScanDropHint = "Payment-risk scans use .eml files";
+
+  function planRank(slug) {
+    const rank = planOrder.indexOf(String(slug || "").toLowerCase());
+    return rank >= 0 ? rank : 0;
+  }
+
+  function highestPlanSlug() {
+    return planOrder[planOrder.length - 1];
+  }
 
   function cookieValue(name) {
     const parts = document.cookie.split(";").map((item) => item.trim());
@@ -155,14 +165,23 @@
     document.getElementById("userEmail").textContent = account.email;
     document.getElementById("usageText").textContent =
       `${account.monthly_scan_used} / ${account.monthly_scan_quota}`;
+    const upgradeButton = document.getElementById("upgradeButton");
     const portalButton = document.getElementById("portalButton");
     const billingHelp = document.getElementById("billingHelp");
     const hasStripeCustomer = Boolean(account.stripe_customer_id);
+    const isHighestPlan = account.plan_slug === highestPlanSlug();
+    upgradeButton.textContent = isHighestPlan ? "Plan details" : "Upgrade";
+    upgradeButton.setAttribute(
+      "aria-label",
+      isHighestPlan ? "View plan details" : "View upgrade options",
+    );
     portalButton.disabled = !hasStripeCustomer;
     portalButton.textContent = hasStripeCustomer ? "Manage billing" : "Billing portal locked";
     billingHelp.textContent = hasStripeCustomer
       ? "Manage invoices, cards, and subscription changes in Stripe."
-      : "Use Upgrade when you need more scans or paid checks.";
+      : isHighestPlan
+        ? "You are already on the highest plan. Billing portal appears after first checkout."
+        : "Use Upgrade when you need more scans or paid checks.";
     const pct = account.monthly_scan_quota > 0
       ? Math.min((account.monthly_scan_used / account.monthly_scan_quota) * 100, 100)
       : 0;
@@ -212,13 +231,27 @@
 
   function renderPricing(payload) {
     const currentPlan = payload.current_plan || "free";
+    const currentRank = planRank(currentPlan);
+    const maxPlanRank = Math.max(...payload.plans.map((plan) => planRank(plan.slug)));
+    const isHighestPlan = currentRank >= maxPlanRank;
+    const pricingTitle = document.getElementById("pricingTitle");
+    const pricingDescription = document.getElementById("pricingDescription");
+    if (pricingTitle && pricingDescription) {
+      pricingTitle.textContent = isHighestPlan ? "Plan coverage" : "Upgrade options";
+      pricingDescription.textContent = isHighestPlan
+        ? "You are already on the highest plan. Lower tiers are included here for comparison."
+        : "Open this when you need more scans, mailbox monitoring, or paid API-backed checks.";
+    }
     lastPlansPayload = payload;
     planGrid.innerHTML = "";
     payload.plans.forEach((plan, index) => {
+      const targetRank = planRank(plan.slug);
       const isCurrent = plan.slug === currentPlan;
+      const isCovered = targetRank < currentRank;
+      const canUpgrade = targetRank > currentRank;
       const isFree = plan.slug === "free";
       const card = document.createElement("article");
-      card.className = `plan-card ${isCurrent ? "current" : ""}`;
+      card.className = `plan-card ${isCurrent ? "current" : ""} ${isCovered ? "covered" : ""}`;
       const priceValue = selectedBillingInterval === "yearly"
         ? Number(plan.yearly_monthly_price_aud || plan.monthly_price_aud || 0)
         : Number(plan.monthly_price_aud || 0);
@@ -234,7 +267,11 @@
         ? `<span class="plan-badge save">Save ${escapeHtml(String(savings))}%</span>`
         : "";
       const priceCadence = isFree ? "" : `<small>${escapeHtml(billingIntervalLabel())}</small>`;
-      const buttonText = isCurrent ? "Current plan" : (isFree ? "Included" : `Upgrade to ${plan.name}`);
+      const buttonText = isCurrent
+        ? "Current plan"
+        : isCovered || isFree
+          ? "Included"
+          : `Upgrade to ${plan.name}`;
       const previousPlan = payload.plans[index - 1];
       const directFeatures = payload.features.filter((feature) => feature.minimum_plan === plan.slug);
       const featureIntro = isFree
@@ -252,6 +289,7 @@
           </div>
           <div class="plan-card-badges">
             ${savingsBadge}
+            ${isCovered ? '<span class="plan-badge included">Included</span>' : ""}
             ${isCurrent ? '<span class="plan-badge">Current</span>' : ""}
           </div>
         </div>
@@ -262,7 +300,7 @@
           <span>${escapeHtml(formatCount(plan.scan_quota, "scan"))} / month</span>
           <span>${escapeHtml(formatCount(plan.mailbox_quota, "mailbox"))}</span>
         </div>
-        <button type="button" data-plan="${escapeHtml(plan.slug)}" ${isCurrent || isFree ? "disabled" : ""}>
+        <button type="button" data-plan="${escapeHtml(plan.slug)}" ${canUpgrade ? "" : "disabled"}>
           ${escapeHtml(buttonText)}
         </button>
         <div class="plan-divider"></div>

@@ -556,6 +556,36 @@ def test_saas_checkout_invalid_stripe_key_returns_safe_billing_error(tmp_path, m
     assert "sk_live" not in json.dumps(payload)
 
 
+def test_saas_checkout_rejects_current_or_lower_plan(tmp_path):
+    client = TestClient(
+        _build_saas_app(tmp_path, signup_enabled=True),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    signup = _signup(client)
+    context = signup.json()["account"]
+    store = SaaSStore(tmp_path / "saas.db")
+    store.set_subscription(org_id=context["org_id"], plan_slug="business")
+
+    lower_plan = _post_json_with_csrf(
+        client,
+        "/api/saas/billing/checkout",
+        {"plan": "pro"},
+    )
+    current_plan = _post_json_with_csrf(
+        client,
+        "/api/saas/billing/checkout",
+        {"plan": "business"},
+    )
+
+    assert lower_plan.status_code == 409
+    assert lower_plan.json()["billing_available"] is False
+    assert lower_plan.json()["reason"] == "Pro is already included in your Business plan."
+    assert current_plan.status_code == 409
+    assert current_plan.json()["reason"] == "Business is already included in your Business plan."
+
+
 def test_saas_checkout_and_portal_create_stripe_sessions(tmp_path, monkeypatch):
     monkeypatch.setenv("STRIPE_SECRET_KEY", "stripe_secret_for_tests")
     monkeypatch.setenv("STRIPE_PRICE_STARTER", "price_starter")
