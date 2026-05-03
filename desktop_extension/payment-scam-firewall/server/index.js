@@ -8,6 +8,8 @@ const readline = require("node:readline");
 
 const TOOL_NAME = "analyze_payment_email";
 const PROTOCOL_VERSION = "2025-06-18";
+const DEFAULT_TOOL_TIMEOUT_MS = 60000;
+const DEFAULT_MAX_TOOL_OUTPUT_BYTES = 2 * 1024 * 1024;
 
 const INPUT_SCHEMA = {
   type: "object",
@@ -77,6 +79,15 @@ function pythonExecutable() {
   return process.env.PAYMENT_FIREWALL_PYTHON || "python";
 }
 
+function positiveIntegerFromEnv(name, fallback) {
+  const raw = process.env[name];
+  if (!raw) {
+    return fallback;
+  }
+  const value = Number.parseInt(raw, 10);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
 function resolveToolScript() {
   return path.join(projectRoot(), "scripts", "agent_payment_tool.py");
 }
@@ -91,6 +102,27 @@ function runPythonTool(args) {
       });
       return;
     }
+
+    const timeoutMs = positiveIntegerFromEnv(
+      "PAYMENT_FIREWALL_TOOL_TIMEOUT_MS",
+      DEFAULT_TOOL_TIMEOUT_MS
+    );
+    const maxOutputBytes = positiveIntegerFromEnv(
+      "PAYMENT_FIREWALL_MAX_TOOL_OUTPUT_BYTES",
+      DEFAULT_MAX_TOOL_OUTPUT_BYTES
+    );
+    let settled = false;
+    let timeout = null;
+    const finish = (payload) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+      resolve(payload);
+    };
 
     const child = spawn(
       pythonExecutable(),
@@ -107,24 +139,45 @@ function runPythonTool(args) {
 
     let stdout = "";
     let stderr = "";
+    timeout = setTimeout(() => {
+      child.kill();
+      finish({
+        ok: false,
+        message: `Python tool timed out after ${timeoutMs}ms`
+      });
+    }, timeoutMs);
     child.stdout.on("data", (chunk) => {
       stdout += chunk.toString("utf8");
+      if (Buffer.byteLength(stdout, "utf8") > maxOutputBytes) {
+        child.kill();
+        finish({
+          ok: false,
+          message: `Python tool output exceeded ${maxOutputBytes} bytes`
+        });
+      }
     });
     child.stderr.on("data", (chunk) => {
       stderr += chunk.toString("utf8");
+      if (Buffer.byteLength(stderr, "utf8") > maxOutputBytes) {
+        child.kill();
+        finish({
+          ok: false,
+          message: `Python tool error output exceeded ${maxOutputBytes} bytes`
+        });
+      }
     });
     child.on("error", (err) => {
-      resolve({ ok: false, message: err.message });
+      finish({ ok: false, message: err.message });
     });
     child.on("close", (code) => {
       if (code !== 0) {
-        resolve({ ok: false, message: stderr.trim() || `Python tool exited with ${code}` });
+        finish({ ok: false, message: stderr.trim() || `Python tool exited with ${code}` });
         return;
       }
       try {
-        resolve({ ok: true, payload: JSON.parse(stdout) });
+        finish({ ok: true, payload: JSON.parse(stdout) });
       } catch (err) {
-        resolve({ ok: false, message: `Could not parse Python tool JSON: ${err.message}` });
+        finish({ ok: false, message: `Could not parse Python tool JSON: ${err.message}` });
       }
     });
   });
@@ -137,6 +190,15 @@ async function callTool(params) {
   const args = params.arguments || {};
   if (typeof args.email_path !== "string" || args.email_path.length === 0) {
     throw new Error("email_path is required");
+  }
+  if (path.extname(args.email_path).toLowerCase() !== ".eml") {
+    throw new Error("Only .eml files are supported");
+  }
+  if (
+    Object.prototype.hasOwnProperty.call(args, "include_email_metadata") &&
+    typeof args.include_email_metadata !== "boolean"
+  ) {
+    throw new Error("include_email_metadata must be a boolean");
   }
 
   const analysis = await runPythonTool(args);

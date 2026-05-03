@@ -8,6 +8,7 @@ Supports two modes:
 """
 import argparse
 import asyncio
+import hmac
 import html
 import json
 import logging
@@ -17,6 +18,7 @@ import sys
 from collections import deque
 from pathlib import Path
 from time import monotonic
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 load_dotenv(override=True)  # override=True so .env values win over empty system env vars
@@ -96,6 +98,34 @@ STATIC_PAGE_CSP = (
     "base-uri 'self'; "
     "form-action 'self'"
 )
+
+DEFAULT_MAX_EMAIL_UPLOAD_BYTES = 10 * 1024 * 1024
+
+
+def _max_email_upload_bytes() -> int:
+    """Return the maximum accepted manual upload size."""
+    raw = os.getenv("MAX_EMAIL_UPLOAD_BYTES", str(DEFAULT_MAX_EMAIL_UPLOAD_BYTES))
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        logger.warning("Invalid MAX_EMAIL_UPLOAD_BYTES=%r; using default", raw)
+        return DEFAULT_MAX_EMAIL_UPLOAD_BYTES
+    if value <= 0:
+        logger.warning("MAX_EMAIL_UPLOAD_BYTES must be positive; using default")
+        return DEFAULT_MAX_EMAIL_UPLOAD_BYTES
+    return value
+
+
+async def _read_limited_email_upload(file: UploadFile) -> bytes:
+    """Read an uploaded email with a hard size cap before parsing."""
+    max_bytes = _max_email_upload_bytes()
+    raw = await file.read(max_bytes + 1)
+    if len(raw) > max_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Email upload exceeds {max_bytes} byte limit",
+        )
+    return raw
 
 
 def _asset_version_from_static_dir(static_dir: Path) -> str:
@@ -608,6 +638,36 @@ class PhishingDetectionApp:
             scheme = (forwarded_proto.split(",")[0].strip() or request.url.scheme).lower()
             return scheme == "https"
 
+        def _request_origin_tuple(request: Request) -> tuple[str, str]:
+            forwarded_proto = request.headers.get("x-forwarded-proto", "")
+            forwarded_host = request.headers.get("x-forwarded-host", "")
+            scheme = (forwarded_proto.split(",")[0].strip() or request.url.scheme).lower()
+            host = (
+                forwarded_host.split(",")[0].strip()
+                or request.headers.get("host")
+                or request.url.netloc
+            ).lower()
+            return scheme, host
+
+        def _same_origin_header(request: Request, value: str) -> bool:
+            parsed = urlparse(value)
+            if not parsed.scheme or not parsed.netloc:
+                return False
+            expected_scheme, expected_host = _request_origin_tuple(request)
+            return parsed.scheme.lower() == expected_scheme and parsed.netloc.lower() == expected_host
+
+        def _require_same_origin(request: Request) -> None:
+            origin = request.headers.get("origin")
+            referer = request.headers.get("referer")
+            if origin and _same_origin_header(request, origin):
+                return
+            if not origin and referer and _same_origin_header(request, referer):
+                return
+            raise HTTPException(
+                status_code=403,
+                detail="Missing or invalid Origin/Referer header",
+            )
+
         def _set_auth_cookies(response, request: Request) -> None:
             session_cookie = self.token_verifier.create_session_cookie()
             csrf_token = self.token_verifier.create_csrf_token()
@@ -868,7 +928,11 @@ class PhishingDetectionApp:
             form = await request.form()
             token = _normalize_analyst_token(form.get("token", ""))
             next_path = str(form.get("next", "/dashboard"))
-            if not self.token_verifier.enabled or token != self.token_verifier.expected_token:
+            expected_token = self.token_verifier.expected_token or ""
+            if (
+                not self.token_verifier.enabled
+                or not hmac.compare_digest(token, expected_token)
+            ):
                 return _render_login(next_path, "Invalid analyst token")
             response = _login_success_redirect(next_path)
             _set_auth_cookies(response, request)
@@ -878,7 +942,11 @@ class PhishingDetectionApp:
         async def api_login(request: Request):
             payload = await _json_object_body(request)
             token = _normalize_analyst_token(payload.get("token", ""))
-            if not self.token_verifier.enabled or token != self.token_verifier.expected_token:
+            expected_token = self.token_verifier.expected_token or ""
+            if (
+                not self.token_verifier.enabled
+                or not hmac.compare_digest(token, expected_token)
+            ):
                 raise HTTPException(status_code=401, detail="Invalid analyst token")
             response = JSONResponse({"status": "ok"})
             _set_auth_cookies(response, request)
@@ -944,6 +1012,7 @@ class PhishingDetectionApp:
         @app.post("/api/saas/auth/signup")
         async def api_saas_signup(request: Request):
             """Create a free-tier user account when public signup is enabled."""
+            _require_same_origin(request)
             if not getattr(self.config, "saas_public_signup_enabled", False):
                 raise HTTPException(
                     status_code=403,
@@ -977,6 +1046,7 @@ class PhishingDetectionApp:
         @app.post("/api/saas/auth/login")
         async def api_saas_login(request: Request):
             """Log in a normal SaaS user with email/password."""
+            _require_same_origin(request)
             if not self.saas_session_manager.enabled:
                 raise HTTPException(
                     status_code=503,
@@ -997,6 +1067,7 @@ class PhishingDetectionApp:
         @app.post("/api/saas/auth/password-reset/request")
         async def api_saas_password_reset_request(request: Request):
             """Request a password reset email without leaking account existence."""
+            _require_same_origin(request)
             if not self.saas_session_manager.enabled:
                 raise HTTPException(
                     status_code=503,
@@ -1046,6 +1117,7 @@ class PhishingDetectionApp:
         @app.post("/api/saas/auth/password-reset/confirm")
         async def api_saas_password_reset_confirm(request: Request):
             """Set a new password from a one-time reset token."""
+            _require_same_origin(request)
             if not self.saas_session_manager.enabled:
                 raise HTTPException(
                     status_code=503,
@@ -1298,7 +1370,7 @@ class PhishingDetectionApp:
             if not scan_access.available:
                 return JSONResponse(status_code=402, content={"locked": scan_access.to_dict()})
 
-            raw = await file.read()
+            raw = await _read_limited_email_upload(file)
             if not raw:
                 raise HTTPException(status_code=400, detail="Empty file uploaded")
 
@@ -1447,7 +1519,7 @@ class PhishingDetectionApp:
                 Analysis result with verdict, scores, and IOCs.
             """
             try:
-                raw = await file.read()
+                raw = await _read_limited_email_upload(file)
                 if not raw:
                     raise HTTPException(status_code=400, detail="Empty file uploaded")
 

@@ -8,6 +8,7 @@ returning full email bodies, raw headers, or unmasked attachment content.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,7 @@ SCHEMA_VERSION = "1.0"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_AGENT_DEMO_DIR = PROJECT_ROOT / "demo_samples" / "agent_payment"
 DEMO_MANIFEST = "manifest.json"
+DEFAULT_MAX_EMAIL_BYTES = 10 * 1024 * 1024
 
 TOOL_INPUT_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -134,6 +136,17 @@ def _next_action(decision: str) -> str:
     return "Proceed through the normal payment approval workflow."
 
 
+def _max_email_bytes() -> int:
+    raw = os.getenv("AGENT_PAYMENT_MAX_EMAIL_BYTES", str(DEFAULT_MAX_EMAIL_BYTES))
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return DEFAULT_MAX_EMAIL_BYTES
+    if value <= 0:
+        return DEFAULT_MAX_EMAIL_BYTES
+    return value
+
+
 def _validate_email_path(email_path: str | Path) -> Path:
     path = Path(email_path).expanduser()
     if not path.exists():
@@ -142,6 +155,13 @@ def _validate_email_path(email_path: str | Path) -> Path:
         raise ValueError(f"Email path is not a file: {path}")
     if path.suffix.lower() != ".eml":
         raise ValueError("Only .eml files are supported by this agent tool")
+    max_bytes = _max_email_bytes()
+    size_bytes = path.stat().st_size
+    if size_bytes > max_bytes:
+        raise ValueError(
+            f"Email file is too large for this agent tool: {size_bytes} bytes "
+            f"(limit {max_bytes} bytes)"
+        )
     return path
 
 

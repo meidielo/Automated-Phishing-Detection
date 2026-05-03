@@ -74,12 +74,17 @@ async def _fake_analyze(email, feature_gate=None):
 def _signup(client: TestClient):
     return client.post(
         "/api/saas/auth/signup",
+        headers=_same_origin_headers(),
         json={
             "email": "owner@example.com",
             "password": "correct horse battery",
             "org_name": "Example Finance",
         },
     )
+
+
+def _same_origin_headers() -> dict[str, str]:
+    return {"origin": "https://testserver"}
 
 
 def _upload(client: TestClient):
@@ -102,12 +107,11 @@ def _upload(client: TestClient):
 
 def _post_json_with_csrf(client: TestClient, path: str, payload: dict):
     csrf = client.cookies.get(USER_CSRF_COOKIE_NAME)
+    headers = _same_origin_headers()
+    headers["x-csrf-token"] = csrf
     return client.post(
         path,
-        headers={
-            "x-csrf-token": csrf,
-            "origin": "https://testserver",
-        },
+        headers=headers,
         json=payload,
     )
 
@@ -173,6 +177,56 @@ def test_saas_signup_disabled_by_default(tmp_path):
     assert response.status_code == 403
 
 
+def test_saas_auth_cookie_setters_require_same_origin(tmp_path):
+    client = TestClient(
+        _build_saas_app(tmp_path, signup_enabled=True),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    missing_origin_signup = client.post(
+        "/api/saas/auth/signup",
+        json={
+            "email": "missing-origin@example.com",
+            "password": "correct horse battery",
+            "org_name": "Missing Origin",
+        },
+    )
+    cross_origin_signup = client.post(
+        "/api/saas/auth/signup",
+        headers={"origin": "https://evil.example"},
+        json={
+            "email": "cross-origin@example.com",
+            "password": "correct horse battery",
+            "org_name": "Cross Origin",
+        },
+    )
+
+    assert missing_origin_signup.status_code == 403
+    assert cross_origin_signup.status_code == 403
+    assert _signup(client).status_code == 200
+
+    cross_origin_login = client.post(
+        "/api/saas/auth/login",
+        headers={"origin": "https://evil.example"},
+        json={"email": "owner@example.com", "password": "correct horse battery"},
+    )
+    cross_origin_reset_request = client.post(
+        "/api/saas/auth/password-reset/request",
+        headers={"origin": "https://evil.example"},
+        json={"email": "owner@example.com"},
+    )
+    cross_origin_reset_confirm = client.post(
+        "/api/saas/auth/password-reset/confirm",
+        headers={"origin": "https://evil.example"},
+        json={"token": "not-real", "password": "new secure password"},
+    )
+
+    assert cross_origin_login.status_code == 403
+    assert cross_origin_reset_request.status_code == 403
+    assert cross_origin_reset_confirm.status_code == 403
+
+
 def test_saas_signup_session_plans_upload_and_history(tmp_path):
     client = TestClient(
         _build_saas_app(tmp_path, signup_enabled=True),
@@ -193,6 +247,35 @@ def test_saas_signup_session_plans_upload_and_history(tmp_path):
     assert upload.json()["account"]["monthly_scan_used"] == 1
     assert upload.json()["feature_locks"][0]["details"]["required_plan_name"] == "Starter"
     assert history.json()["results"][0]["payment_decision"] == "VERIFY"
+
+
+def test_saas_upload_rejects_oversized_email_before_parsing(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAX_EMAIL_UPLOAD_BYTES", "12")
+    client = TestClient(
+        _build_saas_app(tmp_path, signup_enabled=True),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    assert _signup(client).status_code == 200
+    csrf = client.cookies.get(USER_CSRF_COOKIE_NAME)
+    response = client.post(
+        "/api/saas/analyze/upload",
+        headers={
+            "x-csrf-token": csrf,
+            "origin": "https://testserver",
+        },
+        files={
+            "file": (
+                "sample.eml",
+                b"From: vendor@example.com\r\nSubject: Invoice update\r\n\r\nBody",
+                "message/rfc822",
+            )
+        },
+    )
+
+    assert response.status_code == 413
+    assert "byte limit" in response.json()["detail"]
 
 
 def test_saas_logout_clears_user_session_with_csrf(tmp_path):
@@ -246,6 +329,7 @@ def test_saas_password_reset_disabled_smtp_returns_generic_ok(tmp_path):
     assert _signup(client).status_code == 200
     response = client.post(
         "/api/saas/auth/password-reset/request",
+        headers=_same_origin_headers(),
         json={"email": "owner@example.com"},
     )
 
@@ -263,10 +347,11 @@ def test_saas_password_reset_rejects_invalid_json(tmp_path):
     malformed = client.post(
         "/api/saas/auth/password-reset/request",
         content="{bad json",
-        headers={"content-type": "application/json"},
+        headers={**_same_origin_headers(), "content-type": "application/json"},
     )
     wrong_shape = client.post(
         "/api/saas/auth/password-reset/request",
+        headers=_same_origin_headers(),
         json=["not", "an", "object"],
     )
 
@@ -287,6 +372,7 @@ def test_saas_password_reset_request_is_rate_limited(tmp_path):
     statuses = [
         client.post(
             "/api/saas/auth/password-reset/request",
+            headers=_same_origin_headers(),
             json={"email": "owner@example.com"},
         ).status_code
         for _ in range(6)
@@ -310,23 +396,28 @@ def test_saas_password_reset_request_and_confirm(tmp_path, monkeypatch):
     assert _signup(client).status_code == 200
     request = client.post(
         "/api/saas/auth/password-reset/request",
+        headers=_same_origin_headers(),
         json={"email": "owner@example.com"},
     )
     token = parse_qs(urlparse(FakePasswordResetMailer.sent[0].reset_url).query)["reset_token"][0]
     confirm = client.post(
         "/api/saas/auth/password-reset/confirm",
+        headers=_same_origin_headers(),
         json={"token": token, "password": "new secure password"},
     )
     old_login = client.post(
         "/api/saas/auth/login",
+        headers=_same_origin_headers(),
         json={"email": "owner@example.com", "password": "correct horse battery"},
     )
     new_login = client.post(
         "/api/saas/auth/login",
+        headers=_same_origin_headers(),
         json={"email": "owner@example.com", "password": "new secure password"},
     )
     replay = client.post(
         "/api/saas/auth/password-reset/confirm",
+        headers=_same_origin_headers(),
         json={"token": token, "password": "another secure password"},
     )
 
@@ -353,6 +444,7 @@ def test_saas_password_reset_unknown_email_does_not_send_or_leak(tmp_path, monke
 
     response = client.post(
         "/api/saas/auth/password-reset/request",
+        headers=_same_origin_headers(),
         json={"email": "missing@example.com"},
     )
 
@@ -376,6 +468,7 @@ def test_saas_password_reset_delivery_failure_returns_503(tmp_path, monkeypatch)
     assert _signup(client).status_code == 200
     response = client.post(
         "/api/saas/auth/password-reset/request",
+        headers=_same_origin_headers(),
         json={"email": "owner@example.com"},
     )
 

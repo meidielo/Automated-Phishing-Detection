@@ -10,7 +10,10 @@
 set -euo pipefail
 
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.production.yml}"
+APP_ENV_FILE="${APP_ENV_FILE:-.env}"
 SERVICES=(phishing-browser-sandbox phishing-orchestrator cloudflared-tunnel)
+
+export APP_ENV_FILE
 
 if ! command -v docker >/dev/null 2>&1; then
     echo "[self-heal] docker CLI not found" >&2
@@ -22,12 +25,21 @@ if [ ! -f "$COMPOSE_FILE" ]; then
     exit 1
 fi
 
+if [ ! -f "$APP_ENV_FILE" ]; then
+    echo "[self-heal] env file not found: $APP_ENV_FILE" >&2
+    exit 1
+fi
+
+compose() {
+    docker compose --env-file "$APP_ENV_FILE" -f "$COMPOSE_FILE" "$@"
+}
+
 changed=0
 
 for container in "${SERVICES[@]}"; do
     if ! docker inspect "$container" >/dev/null 2>&1; then
         echo "[self-heal] missing $container; recreating stack"
-        docker compose -f "$COMPOSE_FILE" up -d --build --remove-orphans
+        compose up -d --build --remove-orphans
         changed=1
         continue
     fi

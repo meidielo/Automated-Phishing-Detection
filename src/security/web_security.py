@@ -186,7 +186,7 @@ class TokenVerifier:
                 )
 
             token = parts[1]
-            if token != self.expected_token:
+            if not hmac.compare_digest(token, self.expected_token or ""):
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Invalid token",

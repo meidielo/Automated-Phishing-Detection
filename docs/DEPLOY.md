@@ -87,6 +87,11 @@ echo "CLOUDFLARE_TUNNEL_TOKEN=eyJ..." >> .env
 bash scripts/docker_deploy.sh
 ```
 
+By default the production Compose file reads runtime secrets from `.env` in
+raw mode so values containing `$` are not re-expanded by Docker Compose. To use
+a different file, set `APP_ENV_FILE=/path/to/env` before running the deploy or
+self-heal scripts.
+
 Check it's healthy:
 ```bash
 docker compose -f docker-compose.production.yml ps

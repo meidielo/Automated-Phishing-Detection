@@ -34,7 +34,8 @@ Implemented foundation:
 
 - `/app` serves the normal user account shell.
 - `/api/saas/auth/signup`, `/api/saas/auth/login`, and
-  `/api/saas/auth/logout` use signed user sessions plus CSRF protection.
+  `/api/saas/auth/logout` use signed user sessions, same-origin checks on
+  cookie-setting routes, and CSRF protection on logged-in mutations.
 - `/api/saas/auth/password-reset/request` and
   `/api/saas/auth/password-reset/confirm` implement a normal reset-password
   flow with one-time hashed reset tokens and SMTP delivery. The request route
@@ -78,9 +79,9 @@ checks, and Stripe webhook handlers share one catalog.
 | Plan | Price | Monthly scans | Mailboxes | Intended use |
 |---|---:|---:|---:|---|
 | Free | AUD 0 | 5 | 0 | Demo visitors and tiny manual checks |
-| Starter | AUD 19 | 100 | 1 | Freelancers and very small teams |
-| Pro | AUD 49 | 1000 | 3 | SMEs that receive invoices by email |
-| Business | AUD 149 | 5000 | 10 | Finance teams and agencies |
+| Starter | AUD 9.99 monthly, AUD 7.99/mo yearly | 100 | 1 | Freelancers and very small teams |
+| Pro | AUD 29.99 monthly, AUD 23.99/mo yearly | 1000 | 3 | SMEs that receive invoices by email |
+| Business | AUD 79.99 monthly, AUD 63.99/mo yearly | 5000 | 10 | Finance teams and agencies |
 
 Free includes manual scans, header checks, payment rules, and account-scoped
 history. Starter unlocks reputation, domain, brand, and sender-profile checks.

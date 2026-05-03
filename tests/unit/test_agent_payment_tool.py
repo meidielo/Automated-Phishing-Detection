@@ -62,6 +62,15 @@ async def test_agent_payment_tool_returns_sanitized_decision(tmp_path, monkeypat
     assert any(signal["name"] == "bank_detail_change_request" for signal in payload["signals"])
 
 
+@pytest.mark.asyncio
+async def test_agent_payment_tool_rejects_oversized_email(tmp_path, monkeypatch):
+    monkeypatch.setenv("AGENT_PAYMENT_MAX_EMAIL_BYTES", "12")
+    sample = _write_sample(tmp_path)
+
+    with pytest.raises(ValueError, match="too large"):
+        await analyze_payment_email_file(sample)
+
+
 def test_agent_payment_cli_prints_json(tmp_path):
     sample = _write_sample(tmp_path)
 
@@ -161,6 +170,77 @@ def test_desktop_extension_node_bridge_calls_python_tool():
     responses = [json.loads(line) for line in proc.stdout.splitlines()]
     assert responses[1]["result"]["tools"][0]["name"] == "analyze_payment_email"
     assert responses[2]["result"]["structuredContent"]["decision"] == "DO_NOT_PAY"
+
+
+def test_desktop_extension_rejects_non_boolean_metadata_flag():
+    project_root = Path(__file__).resolve().parents[2]
+    env = {
+        "PAYMENT_FIREWALL_PROJECT_ROOT": str(project_root),
+        "PAYMENT_FIREWALL_PYTHON": sys.executable,
+    }
+    message = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+            "name": "analyze_payment_email",
+            "arguments": {
+                "email_path": str(project_root / "demo_samples" / "agent_payment" / "do_not_pay_bank_redirect.eml"),
+                "include_email_metadata": "false",
+            },
+        },
+    }
+
+    proc = subprocess.run(
+        ["node", "desktop_extension/payment-scam-firewall/server/index.js"],
+        cwd=project_root,
+        input=json.dumps(message) + "\n",
+        text=True,
+        capture_output=True,
+        timeout=30,
+        env={**os.environ, **env},
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    response = json.loads(proc.stdout)
+    assert response["error"]["code"] == -32602
+    assert "include_email_metadata must be a boolean" in response["error"]["message"]
+
+
+def test_desktop_extension_times_out_python_bridge():
+    project_root = Path(__file__).resolve().parents[2]
+    env = {
+        "PAYMENT_FIREWALL_PROJECT_ROOT": str(project_root),
+        "PAYMENT_FIREWALL_PYTHON": sys.executable,
+        "PAYMENT_FIREWALL_TOOL_TIMEOUT_MS": "1",
+    }
+    message = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+            "name": "analyze_payment_email",
+            "arguments": {
+                "email_path": str(project_root / "demo_samples" / "agent_payment" / "do_not_pay_bank_redirect.eml"),
+                "include_email_metadata": False,
+            },
+        },
+    }
+
+    proc = subprocess.run(
+        ["node", "desktop_extension/payment-scam-firewall/server/index.js"],
+        cwd=project_root,
+        input=json.dumps(message) + "\n",
+        text=True,
+        capture_output=True,
+        timeout=30,
+        env={**os.environ, **env},
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    response = json.loads(proc.stdout)
+    assert response["result"]["isError"] is True
+    assert "timed out" in response["result"]["content"][0]["text"]
 
 
 def test_agent_payment_mcp_stdio_exposes_and_calls_tool(tmp_path):

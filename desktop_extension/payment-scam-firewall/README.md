@@ -14,6 +14,14 @@ The bundle asks for two local paths during install:
 - Project folder containing this repository
 - Python executable with the project's dependencies installed
 
+Runtime safety limits are inherited from environment variables:
+
+- `AGENT_PAYMENT_MAX_EMAIL_BYTES` caps `.eml` file size before parsing
+  in the Python tool.
+- `PAYMENT_FIREWALL_TOOL_TIMEOUT_MS` caps each Python bridge call.
+- `PAYMENT_FIREWALL_MAX_TOOL_OUTPUT_BYTES` caps stdout/stderr collected
+  from the Python process.
+
 The MCPB itself does not bundle the full Python app or virtual environment. It
 is a local development/demo package for Meidie's machine, not a public
 redistributable extension.

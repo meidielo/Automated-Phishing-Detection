@@ -60,6 +60,14 @@ python scripts/agent_payment_tool.py demo_samples/agent_payment/do_not_pay_bank_
 
 Use `--no-metadata` when an agent only needs the decision payload.
 
+Safety limits:
+
+- `AGENT_PAYMENT_MAX_EMAIL_BYTES` caps local `.eml` files before parsing.
+  The default is 10 MB.
+- The desktop extension bridge also enforces
+  `PAYMENT_FIREWALL_TOOL_TIMEOUT_MS` and
+  `PAYMENT_FIREWALL_MAX_TOOL_OUTPUT_BYTES` before returning tool output.
+
 Run the narrative demo:
 
 ```bash

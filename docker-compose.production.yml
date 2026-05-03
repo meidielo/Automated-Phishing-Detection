@@ -38,7 +38,9 @@ services:
       browser-sandbox:
         condition: service_healthy
     env_file:
-      - .env
+      - path: ${APP_ENV_FILE:-.env}
+        required: true
+        format: raw
     environment:
       - LOG_LEVEL=WARNING
       - DASHBOARD_PORT=8000
@@ -71,7 +73,7 @@ services:
     container_name: cloudflared-tunnel
     command: tunnel run
     environment:
-      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN:-}
     restart: unless-stopped
     depends_on:
       orchestrator:
