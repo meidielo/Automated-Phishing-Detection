@@ -13,6 +13,16 @@ from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 
+DEFAULT_USER_AGENT = os.getenv(
+    "PHISHANALYZE_HEALTHCHECK_USER_AGENT",
+    (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    ),
+)
+
+
 def _require_http_url(url: str) -> str:
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
@@ -22,7 +32,10 @@ def _require_http_url(url: str) -> str:
 
 def _request_json(url: str, *, token: str = "", timeout: float = 5.0) -> tuple[int, dict]:
     url = _require_http_url(url)
-    headers = {"Accept": "application/json"}
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": DEFAULT_USER_AGENT,
+    }
     if token:
         headers["Authorization"] = f"Bearer {token}"
     request = urllib.request.Request(url, headers=headers)
@@ -45,7 +58,10 @@ def _post_webhook(url: str, payload: dict, timeout: float = 5.0) -> None:
     request = urllib.request.Request(
         url,
         data=data,
-        headers={"Content-Type": "application/json"},
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": DEFAULT_USER_AGENT,
+        },
         method="POST",
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:  # nosec B310

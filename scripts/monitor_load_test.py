@@ -14,6 +14,16 @@ from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 
+DEFAULT_USER_AGENT = os.getenv(
+    "PHISHANALYZE_HEALTHCHECK_USER_AGENT",
+    (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    ),
+)
+
+
 AUTH_ENDPOINTS = (
     "/api/monitor/stats",
     "/api/monitor/log?limit=50&compact=true",
@@ -29,7 +39,10 @@ def _require_http_url(url: str) -> str:
 
 def _get(url: str, token: str, timeout: float) -> tuple[int, float, str]:
     url = _require_http_url(url)
-    headers = {"Accept": "application/json"}
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": DEFAULT_USER_AGENT,
+    }
     if token:
         headers["Authorization"] = f"Bearer {token}"
     request = urllib.request.Request(url, headers=headers)
@@ -47,7 +60,10 @@ def _get(url: str, token: str, timeout: float) -> tuple[int, float, str]:
 
 def _json_get(url: str, token: str, timeout: float) -> dict:
     url = _require_http_url(url)
-    headers = {"Accept": "application/json"}
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": DEFAULT_USER_AGENT,
+    }
     if token:
         headers["Authorization"] = f"Bearer {token}"
     request = urllib.request.Request(url, headers=headers)

@@ -32,6 +32,8 @@ current test/browser/dependency gates.
   findings, with remaining findings low severity only.
 - Updated the feedback API example docs to keep the default bind on loopback
   instead of `0.0.0.0`.
+- Updated production health/load probes to send a configurable browser-compatible
+  user-agent so Cloudflare browser-signature rules do not block uptime checks.
 
 ## Audit Evidence
 
@@ -50,6 +52,10 @@ current test/browser/dependency gates.
 - Docker Compose production config validates against `.env.production`; remote
   Docker Compose is new enough for raw env-file mode.
 - Desktop MCP bridge JavaScript syntax check passes with `node --check`.
+- Public production health check passes against
+  `https://phishanalyze.mdpstudio.com.au/api/health`.
+- Public unauthenticated load probe against `/api/health`: `32` requests,
+  `0.0` error rate.
 
 ## Remaining Operator Actions
 
