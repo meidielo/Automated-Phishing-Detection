@@ -2011,7 +2011,14 @@ class PhishingDetectionApp:
                 raise HTTPException(status_code=504, detail="URL detonation timed out (30s)")
             except Exception as e:
                 logger.error(f"URL detonation failed: {e}", exc_info=True)
-                raise HTTPException(status_code=500, detail=str(e))
+                message = str(e)[:300]
+                lower_message = message.lower()
+                if any(marker in lower_message for marker in ("<!doctype", "<html", "<head", "<body")):
+                    message = (
+                        "URL detonation failed because the sandbox returned an HTML "
+                        "error page instead of a structured result."
+                    )
+                raise HTTPException(status_code=500, detail=message)
 
         @app.get("/api/monitor/alerts", dependencies=[Depends(require_token)])
         async def monitor_alerts(limit: int = 50):

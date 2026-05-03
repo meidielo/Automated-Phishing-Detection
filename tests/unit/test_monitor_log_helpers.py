@@ -1,6 +1,7 @@
 """Tests for monitor log tailing and dashboard compaction helpers."""
 
 import json
+from pathlib import Path
 
 from main import _compact_monitor_record, _tail_jsonl_records
 
@@ -74,3 +75,11 @@ def test_compact_monitor_record_keeps_payment_protection_when_present():
     compact = _compact_monitor_record(record)
 
     assert compact["payment_protection"] == record["payment_protection"]
+
+
+def test_monitor_template_formats_html_detonation_errors():
+    template = Path("templates/monitor.html").read_text(encoding="utf-8")
+
+    assert "function formatDetonationError" in template
+    assert "returned an HTML error page" in template
+    assert "formatDetonationError(data.detail" in template

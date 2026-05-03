@@ -905,12 +905,12 @@
         try {
           data = JSON.parse(raw);
         } catch(parseError) {
-          data = { detail: raw.slice(0, 300) };
+          data = { detail: formatDetonationError(raw) };
         }
       }
 
       if (!r.ok) {
-        resultSlot.innerHTML = '<div class="det-result"><strong style="color:var(--v-phishing)">Error:</strong> ' + esc(data.detail || ('HTTP ' + r.status)) + '</div>';
+        resultSlot.innerHTML = '<div class="det-result"><strong style="color:var(--v-phishing)">Error:</strong> ' + esc(formatDetonationError(data.detail || ('HTTP ' + r.status))) + '</div>';
         resetDetonateBtn(btn, urlItem);
         return;
       }
@@ -960,10 +960,20 @@
       resultSlot.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
     } catch(e) {
-      resultSlot.innerHTML = '<div class="det-result"><strong style="color:var(--v-phishing)">Failed:</strong> ' + esc(e.message) + '</div>';
+      resultSlot.innerHTML = '<div class="det-result"><strong style="color:var(--v-phishing)">Failed:</strong> ' + esc(formatDetonationError(e.message)) + '</div>';
     }
 
     resetDetonateBtn(btn, urlItem);
+  }
+
+  function formatDetonationError(value) {
+    var text = String(value || '').trim();
+    if (!text) return 'URL detonation failed.';
+    var lower = text.toLowerCase();
+    if (lower.indexOf('<!doctype') !== -1 || lower.indexOf('<html') !== -1 || lower.indexOf('<head') !== -1 || lower.indexOf('<body') !== -1) {
+      return 'The sandbox returned an HTML error page instead of a structured result. The target may block automated analysis, or the browser sandbox may need a retry.';
+    }
+    return text.length > 180 ? text.slice(0, 180) + '...' : text;
   }
 
   function resetDetonateBtn(btn, urlItem) {

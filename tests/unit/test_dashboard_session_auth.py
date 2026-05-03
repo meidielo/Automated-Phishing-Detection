@@ -848,3 +848,39 @@ def test_detonate_url_endpoint_sanitizes_raw_screenshot_bytes(monkeypatch):
     payload = response.json()
     assert payload["screenshot_b64"] == "base64-image"
     assert "screenshot_bytes" not in payload
+
+
+def test_detonate_url_endpoint_does_not_return_raw_html_errors(monkeypatch):
+    client = TestClient(
+        _build_app_with_token(),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+    client.post("/login", data={"token": "secret", "next": "/monitor"})
+    csrf = client.cookies.get(CSRF_COOKIE_NAME)
+
+    import main as main_module
+    import src.analyzers.url_detonation as url_detonation
+
+    monkeypatch.setattr(main_module.default_ssrf_guard, "assert_safe", lambda url: None)
+
+    async def fake_detonate(_url: str):
+        raise RuntimeError(
+            '<!DOCTYPE html><html><body>Internal Server Error</body></html>'
+        )
+
+    monkeypatch.setattr(url_detonation, "detonate_single_url", fake_detonate)
+
+    response = client.post(
+        "/api/detonate-url",
+        json={"url": "https://example.com"},
+        headers={
+            "X-CSRF-Token": csrf,
+            "Origin": "https://testserver",
+        },
+    )
+
+    assert response.status_code == 500
+    assert "<!DOCTYPE html>" not in response.text
+    assert "<html" not in response.text.lower()
+    assert "HTML error page" in response.json()["detail"]
