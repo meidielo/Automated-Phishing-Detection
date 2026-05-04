@@ -768,6 +768,7 @@ def test_saas_checkout_and_portal_create_stripe_sessions(tmp_path, monkeypatch):
     monkeypatch.setenv("STRIPE_PRICE_STARTER", "price_starter")
     monkeypatch.setenv("STRIPE_PRICE_STARTER_YEARLY", "price_starter_yearly")
     monkeypatch.setenv("PUBLIC_BASE_URL", "https://detect.example.test")
+    monkeypatch.setenv("PAYSHIELD_PUBLIC_URL", "https://payshield.example.test")
     monkeypatch.setattr(app_main, "StripeBillingClient", FakeStripeBillingClient)
     FakeStripeBillingClient.created_customers = []
     FakeStripeBillingClient.checkout_sessions = []
@@ -790,7 +791,10 @@ def test_saas_checkout_and_portal_create_stripe_sessions(tmp_path, monkeypatch):
     assert FakeStripeBillingClient.checkout_sessions[0]["billing_interval"] == "monthly"
     assert FakeStripeBillingClient.checkout_sessions[0]["adaptive_pricing_enabled"] is True
     assert FakeStripeBillingClient.checkout_sessions[0]["success_url"].startswith(
-        "https://detect.example.test/app?billing=success"
+        "https://payshield.example.test/app?billing=success"
+    )
+    assert FakeStripeBillingClient.portal_sessions[0]["return_url"] == (
+        "https://payshield.example.test/app?billing=portal"
     )
     assert portal.status_code == 200
     assert portal.json()["portal_url"] == "https://billing.stripe.com/p/session/test"

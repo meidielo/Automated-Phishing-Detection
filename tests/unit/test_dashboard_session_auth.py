@@ -55,7 +55,7 @@ def test_admin_dashboard_redirects_to_admin_login_without_session():
     assert response.headers["location"].startswith("/admin/login?next=")
 
 
-def test_public_root_redirects_to_product_not_admin_login():
+def test_public_root_redirects_to_phishanalyze_app_not_admin_login():
     client = TestClient(
         _build_app_with_token(),
         base_url="https://testserver",
@@ -65,7 +65,41 @@ def test_public_root_redirects_to_product_not_admin_login():
     response = client.get("/")
 
     assert response.status_code == 303
-    assert response.headers["location"] == "/product"
+    assert response.headers["location"] == "/analyze"
+
+
+def test_brand_hosts_split_phishanalyze_and_payshield(monkeypatch):
+    monkeypatch.setenv("PHISHANALYZE_PUBLIC_URL", "https://phishanalyze.example.test")
+    monkeypatch.setenv("PAYSHIELD_PUBLIC_URL", "https://payshield.example.test")
+    phish_client = TestClient(
+        _build_app_with_token(),
+        base_url="https://phishanalyze.example.test",
+        follow_redirects=False,
+    )
+    pay_client = TestClient(
+        _build_app_with_token(),
+        base_url="https://payshield.example.test",
+        follow_redirects=False,
+    )
+
+    phish_root = phish_client.get("/")
+    phish_product = phish_client.get("/product")
+    phish_analyze = phish_client.get("/analyze")
+    pay_root = pay_client.get("/")
+    pay_analyze = pay_client.get("/analyze")
+
+    assert phish_root.status_code == 303
+    assert phish_root.headers["location"] == "/analyze"
+    assert phish_product.status_code == 303
+    assert phish_product.headers["location"] == "https://payshield.example.test/product"
+    assert phish_analyze.status_code == 200
+    assert 'href="https://payshield.example.test/product">PayShield</a>' in phish_analyze.text
+    assert 'href="https://payshield.example.test/app" id="upgradeLink">Upgrade</a>' in phish_analyze.text
+    assert "API Status" not in phish_analyze.text
+    assert pay_root.status_code == 200
+    assert "PayShield for invoice-heavy SMEs" in pay_root.text
+    assert pay_analyze.status_code == 303
+    assert pay_analyze.headers["location"] == "https://phishanalyze.example.test/analyze"
 
 
 def test_saas_app_login_shell_uses_link_based_auth_navigation():

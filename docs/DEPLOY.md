@@ -19,8 +19,10 @@ On the deployment machine:
 3. Choose **Cloudflared** connector
 4. Name it something like `phishing-detector`
 5. Copy the tunnel token (starts with `eyJ...`)
-6. Under **Public Hostnames**, add a route:
-   - Subdomain: whatever you want (e.g. `detect.mdpstudio.com.au` or just `mdpstudio.com.au`)
+6. Under **Public Hostnames**, add routes:
+   - Subdomain: `phishanalyze` (`phishanalyze.mdpstudio.com.au`)
+   - Service: `http://orchestrator:8000`
+   - Subdomain: `payshield` (`payshield.mdpstudio.com.au`)
    - Service: `http://orchestrator:8000`
    
    The service URL uses the Docker container name because cloudflared
@@ -60,7 +62,9 @@ Optional public preview:
 - Leave `SAAS_PUBLIC_SIGNUP_ENABLED=false` until the deployment is ready to accept visitor email uploads. `/analyze`, `/dashboard`, `/monitor`, `/app`, and `/api/saas/*` support normal user accounts, tenant-scoped scan storage, and free-tier quota gates, but public signup is an explicit deployment decision.
 
 Stripe subscription setup:
-- Set `PUBLIC_BASE_URL` to the public HTTPS origin, for example `https://phishanalyze.mdpstudio.com.au`.
+- Set `PHISHANALYZE_PUBLIC_URL=https://phishanalyze.mdpstudio.com.au`.
+- Set `PAYSHIELD_PUBLIC_URL=https://payshield.mdpstudio.com.au`.
+- Set `PUBLIC_BASE_URL` to a public HTTPS origin fallback, for example `https://phishanalyze.mdpstudio.com.au`.
 - Set `STRIPE_SECRET_KEY` and all monthly/yearly Price IDs:
   `STRIPE_PRICE_STARTER`, `STRIPE_PRICE_STARTER_YEARLY`,
   `STRIPE_PRICE_PRO`, `STRIPE_PRICE_PRO_YEARLY`,
@@ -103,7 +107,8 @@ docker exec phishing-orchestrator python -c \
   "import urllib.request; print(urllib.request.urlopen('http://localhost:8000/api/health').read())"
 ```
 
-Visit your domain. You should see the public PhishAnalyze product shell.
+Visit `https://phishanalyze.mdpstudio.com.au`. You should see the public PhishAnalyze app.
+Visit `https://payshield.mdpstudio.com.au`. You should see the PayShield product page.
 Use `/admin/login` with `ANALYST_API_TOKEN` for owner browser access.
 If `PUBLIC_DEMO_MODE=true`, `/demo` is the only public sample page.
 

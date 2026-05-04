@@ -622,6 +622,79 @@ class PhishingDetectionApp:
                 '<a class="secondary-action" href="/trust">Trust and privacy</a>'
             )
 
+        def _request_host(request: Request) -> str:
+            forwarded_host = request.headers.get("x-forwarded-host", "")
+            raw_host = (
+                forwarded_host.split(",")[0].strip()
+                or request.headers.get("host")
+                or request.url.netloc
+            )
+            host = raw_host.lower().strip()
+            if host.startswith("["):
+                return host.split("]", 1)[0].lstrip("[")
+            return host.split(":", 1)[0]
+
+        def _host_from_public_url(value: str) -> str:
+            raw = (value or "").strip()
+            if not raw:
+                return ""
+            parsed = urlparse(raw if "://" in raw else f"https://{raw}")
+            host = parsed.netloc or parsed.path
+            return host.lower().split(":", 1)[0]
+
+        def _public_base(env_name: str) -> str:
+            return os.getenv(env_name, "").strip().rstrip("/")
+
+        def _absolute_public_url(request: Request, env_name: str, path: str) -> str:
+            base_url = _public_base(env_name)
+            if base_url:
+                return f"{base_url}{path}"
+            return path
+
+        def _is_payshield_host(request: Request) -> bool:
+            host = _request_host(request)
+            configured_host = _host_from_public_url(_public_base("PAYSHIELD_PUBLIC_URL"))
+            return bool(
+                host
+                and (
+                    host == configured_host
+                    or host.startswith("payshield.")
+                )
+            )
+
+        def _is_phishanalyze_host(request: Request) -> bool:
+            host = _request_host(request)
+            configured_host = _host_from_public_url(_public_base("PHISHANALYZE_PUBLIC_URL"))
+            return bool(
+                host
+                and (
+                    host == configured_host
+                    or host.startswith("phishanalyze.")
+                )
+            )
+
+        def _payshield_url(request: Request, path: str = "/product") -> str:
+            base_url = _public_base("PAYSHIELD_PUBLIC_URL")
+            if base_url:
+                return f"{base_url}{path}"
+            return path
+
+        def _phishanalyze_url(request: Request, path: str = "/analyze") -> str:
+            base_url = _public_base("PHISHANALYZE_PUBLIC_URL")
+            if base_url:
+                return f"{base_url}{path}"
+            return path
+
+        def _redirect_pay_app_to_payshield(request: Request, path: str) -> RedirectResponse | None:
+            if _is_phishanalyze_host(request) and _public_base("PAYSHIELD_PUBLIC_URL"):
+                return RedirectResponse(url=_payshield_url(request, path), status_code=303)
+            return None
+
+        def _redirect_phish_app_to_phishanalyze(request: Request, path: str) -> RedirectResponse | None:
+            if _is_payshield_host(request) and _public_base("PHISHANALYZE_PUBLIC_URL"):
+                return RedirectResponse(url=_phishanalyze_url(request, path), status_code=303)
+            return None
+
         def _render_login(
             next_path: str,
             error_message: str = "",
@@ -855,6 +928,12 @@ class PhishingDetectionApp:
                 or request.url.netloc
             )
             return f"{scheme}://{host}{path}"
+
+        def _payshield_external_url(request: Request, path: str) -> str:
+            base_url = _public_base("PAYSHIELD_PUBLIC_URL")
+            if base_url:
+                return f"{base_url}{path}"
+            return _external_url(request, path)
 
         async def _json_object_body(request: Request) -> dict:
             try:
@@ -1142,8 +1221,11 @@ class PhishingDetectionApp:
             }
 
         @app.get("/app", response_class=HTMLResponse)
-        async def saas_app_page():
+        async def saas_app_page(request: Request):
             """Serve the user-login SaaS shell."""
+            redirect = _redirect_pay_app_to_payshield(request, "/app")
+            if redirect:
+                return redirect
             app_path = Path("./templates/saas_app.html")
             return HTMLResponse(
                 content=_inject_shared(app_path.read_text(encoding="utf-8")),
@@ -1151,8 +1233,11 @@ class PhishingDetectionApp:
             )
 
         @app.get("/product", response_class=HTMLResponse)
-        async def product_page():
+        async def product_page(request: Request):
             """Serve the public product shell for the payment scam firewall."""
+            redirect = _redirect_pay_app_to_payshield(request, "/product")
+            if redirect:
+                return redirect
             product_path = Path("./templates/product.html")
             html_content = (
                 product_path.read_text(encoding="utf-8")
@@ -1165,8 +1250,11 @@ class PhishingDetectionApp:
             )
 
         @app.get("/trust", response_class=HTMLResponse)
-        async def trust_page():
+        async def trust_page(request: Request):
             """Serve public trust and privacy controls for customer reviewers."""
+            redirect = _redirect_pay_app_to_payshield(request, "/trust")
+            if redirect:
+                return redirect
             trust_path = Path("./templates/trust.html")
             return HTMLResponse(
                 content=_inject_shared(trust_path.read_text(encoding="utf-8")),
@@ -1586,11 +1674,11 @@ class PhishingDetectionApp:
                         os.getenv("STRIPE_ADAPTIVE_PRICING_ENABLED"),
                         True,
                     ),
-                    success_url=_external_url(
+                    success_url=_payshield_external_url(
                         request,
                         "/app?billing=success&session_id={CHECKOUT_SESSION_ID}",
                     ),
-                    cancel_url=_external_url(request, "/app?billing=cancelled"),
+                    cancel_url=_payshield_external_url(request, "/app?billing=cancelled"),
                 )
                 if not session.get("id") or not session.get("url"):
                     raise StripeAPIError("Stripe did not return a Checkout Session URL")
@@ -1643,7 +1731,7 @@ class PhishingDetectionApp:
                 stripe_client = StripeBillingClient(stripe_config.secret_key)
                 portal = stripe_client.create_portal_session(
                     customer_id=context.stripe_customer_id,
-                    return_url=_external_url(request, "/app?billing=portal"),
+                    return_url=_payshield_external_url(request, "/app?billing=portal"),
                 )
                 if not portal.get("url"):
                     raise StripeAPIError("Stripe did not return a Customer Portal URL")
@@ -1772,8 +1860,11 @@ class PhishingDetectionApp:
             return response_payload
 
         @app.get("/demo", response_class=HTMLResponse)
-        async def public_demo():
+        async def public_demo(request: Request):
             """Serve the safe public demo page without opening analyst APIs."""
+            redirect = _redirect_pay_app_to_payshield(request, "/demo")
+            if redirect:
+                return redirect
             if not _demo_enabled():
                 return RedirectResponse(url="/product", status_code=303)
             demo_path = Path("./templates/demo.html")
@@ -1782,8 +1873,11 @@ class PhishingDetectionApp:
             ))
 
         @app.get("/agent-demo", response_class=HTMLResponse)
-        async def agent_demo():
+        async def agent_demo(request: Request):
             """Serve the sample-only agent payment analysis page."""
+            redirect = _redirect_pay_app_to_payshield(request, "/agent-demo")
+            if redirect:
+                return redirect
             if not _demo_enabled():
                 return RedirectResponse(url="/product", status_code=303)
             demo_path = Path("./templates/agent_demo.html")
@@ -1839,7 +1933,10 @@ class PhishingDetectionApp:
                 raise HTTPException(status_code=404, detail="Public demo mode is not enabled")
             return plan_payload(current_plan="free")
 
-        def _render_phish_user_page(page: str) -> HTMLResponse:
+        def _render_phish_user_page(request: Request, page: str) -> HTMLResponse:
+            redirect = _redirect_phish_app_to_phishanalyze(request, f"/{page}")
+            if redirect:
+                return redirect
             page_title = {
                 "analyze": "Analyze - PhishAnalyze",
                 "dashboard": "Dashboard - PhishAnalyze",
@@ -1850,6 +1947,8 @@ class PhishingDetectionApp:
                 page_path.read_text(encoding="utf-8")
                 .replace("{{PAGE}}", html.escape(page, quote=True))
                 .replace("{{PAGE_TITLE}}", html.escape(page_title, quote=True))
+                .replace("{{PAYSHIELD_URL}}", html.escape(_payshield_url(request, "/product"), quote=True))
+                .replace("{{PAYSHIELD_APP_URL}}", html.escape(_payshield_url(request, "/app"), quote=True))
             )
             return HTMLResponse(
                 content=_inject_shared(html_content),
@@ -1857,24 +1956,26 @@ class PhishingDetectionApp:
             )
 
         @app.get("/", response_class=HTMLResponse)
-        async def public_home():
-            """Send visitors to the public product page, not the analyst console."""
-            return RedirectResponse(url="/product", status_code=303)
+        async def public_home(request: Request):
+            """Route brand hostnames to the right public product."""
+            if _is_payshield_host(request):
+                return await product_page(request)
+            return RedirectResponse(url="/analyze", status_code=303)
 
         @app.get("/analyze", response_class=HTMLResponse)
-        async def public_analyze_page():
+        async def public_analyze_page(request: Request):
             """Serve the public user-owned PhishAnalyze upload page."""
-            return _render_phish_user_page("analyze")
+            return _render_phish_user_page(request, "analyze")
 
         @app.get("/dashboard", response_class=HTMLResponse)
-        async def public_dashboard_page():
+        async def public_dashboard_page(request: Request):
             """Serve tenant-scoped public PhishAnalyze scan history."""
-            return _render_phish_user_page("dashboard")
+            return _render_phish_user_page(request, "dashboard")
 
         @app.get("/monitor", response_class=HTMLResponse)
-        async def public_monitor_page():
+        async def public_monitor_page(request: Request):
             """Serve tenant-scoped public PhishAnalyze mailbox monitoring."""
-            return _render_phish_user_page("monitor")
+            return _render_phish_user_page(request, "monitor")
 
         @app.get("/admin", response_class=HTMLResponse)
         async def admin_overview_page():
