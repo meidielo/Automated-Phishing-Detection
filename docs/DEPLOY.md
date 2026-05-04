@@ -63,6 +63,7 @@ Optional public preview:
 
 Transactional email setup:
 - Prefer Zoho Mail API direct send for password reset email: set `ZOHO_CLIENT_ID`, `ZOHO_CLIENT_SECRET`, `ZOHO_REFRESH_TOKEN`, `ZOHO_ACCOUNT_ID`, `ZOHO_FROM`, `ZOHO_ACCOUNTS_BASE`, `ZOHO_API_BASE`, and `ZOHO_ENABLE_DIRECT_SEND=true`.
+- Generate the refresh token in the same Zoho data center as `ZOHO_ACCOUNTS_BASE`, with the `ZohoMail.messages.CREATE` or `ZohoMail.messages.ALL` OAuth scope. A `general_error` response from Zoho token refresh usually means the token is not a valid refresh token for that client/data center pair.
 - SMTP is a fallback only when Zoho direct send is not configured. Keep `SMTP_*` empty on deployments where SMTP has already failed.
 - Reset links are host-aware: PhishAnalyze users return to `/analyze`, while PayShield users return to `/app`.
 

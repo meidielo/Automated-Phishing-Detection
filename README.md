@@ -306,6 +306,8 @@ ZOHO_API_BASE=https://mail.zoho.com.au
 ZOHO_ENABLE_DIRECT_SEND=true
 ```
 
+The refresh token must be generated in the same Zoho data center as `ZOHO_ACCOUNTS_BASE`, with the `ZohoMail.messages.CREATE` or `ZohoMail.messages.ALL` OAuth scope. If Zoho returns `general_error` during token refresh, regenerate the refresh token for the same client ID/secret instead of reusing an access token, grant code, or token from another Zoho data center.
+
 SMTP remains available only as a fallback when Zoho direct send is not configured:
 
 ```bash
