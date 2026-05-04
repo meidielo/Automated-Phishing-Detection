@@ -51,7 +51,7 @@
       }
       return _origFetch.call(window, url, opts).then(function(response) {
         if (response.status === 401 && isApi && !isSaasApi) {
-          window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname);
+          window.location.href = '/admin/login?next=' + encodeURIComponent(window.location.pathname);
         }
         return response;
       });
@@ -261,7 +261,7 @@
     }
 
     function isAnalystPage() {
-      return /^\/(analyze|dashboard|status|monitor|accounts)(\/|$)/.test(window.location.pathname);
+      return /^\/admin(\/|$)/.test(window.location.pathname);
     }
 
     function installAnalystLogout(nav) {
@@ -278,7 +278,7 @@
           logoutBtn.addEventListener('click', function() {
             fetch('/api/auth/logout', {method: 'POST'})
               .finally(function() {
-                window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname);
+                window.location.href = '/admin/login?next=' + encodeURIComponent(window.location.pathname);
               });
           });
           nav.appendChild(logoutBtn);

@@ -85,7 +85,10 @@ def _run_browser_check(base_url: str, token: str) -> dict:
         )
         page.on("pageerror", lambda exc: page_errors.append(str(exc)))
 
-        login_response = page.goto(f"{base_url}/login?next=/dashboard", wait_until="networkidle")
+        login_response = page.goto(
+            f"{base_url}/admin/login?next=/admin/dashboard",
+            wait_until="networkidle",
+        )
         if not login_response or login_response.status >= 400:
             raise RuntimeError(f"login page failed with status {login_response.status if login_response else 'none'}")
 
@@ -93,7 +96,7 @@ def _run_browser_check(base_url: str, token: str) -> dict:
         with page.expect_navigation(wait_until="networkidle"):
             page.click('button[type="submit"]')
 
-        response = page.goto(f"{base_url}/dashboard/", wait_until="networkidle")
+        response = page.goto(f"{base_url}/admin/dashboard/", wait_until="networkidle")
         if not response or response.status >= 400:
             raise RuntimeError(f"dashboard failed with status {response.status if response else 'none'}")
 

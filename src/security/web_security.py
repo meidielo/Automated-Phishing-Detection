@@ -5,7 +5,7 @@ Three independent pieces, all importable separately:
 
 1. `TokenVerifier` - FastAPI dependency that enforces either
    `Authorization: Bearer <token>` or a signed browser session cookie
-   created by `/login`. Session-cookie requests use SameSite cookies,
+   created by `/admin/login`. Session-cookie requests use SameSite cookies,
    a double-submit CSRF token, and Origin/Referer checks for
    state-changing methods.
 

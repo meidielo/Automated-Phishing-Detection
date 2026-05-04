@@ -113,7 +113,7 @@ Production must set a high-entropy analyst token:
 python3 -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
-Use `/login` for browser sessions. API clients should use
+Use `/admin/login` for owner browser sessions. API clients should use
 `Authorization: Bearer $ANALYST_API_TOKEN`.
 
 Operational checks:

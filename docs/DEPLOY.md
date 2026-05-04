@@ -51,13 +51,13 @@ At minimum, fill in:
   missing or changed, previously saved mailbox passwords cannot be decrypted
   and those mailboxes must be reconnected.
   When the monitor shows `Reconnect account`, keep the key as-is and re-enter
-  the mailbox app password once from `/monitor`; adding the same email replaces
+  the mailbox app password once from `/admin/monitor`; adding the same email replaces
   the stale encrypted credential.
 
 Optional public preview:
-- Set `PUBLIC_DEMO_MODE=true` only if you want `/demo` to be reachable without login. It is sample-only: it does not expose live upload analysis, mailbox monitoring, paid API-backed checks, feedback learning, dashboard data, or account management.
+- Set `PUBLIC_DEMO_MODE=true` only if you want `/demo` to be reachable without login. It is sample-only: it does not expose owner live upload analysis, global mailbox monitoring, paid API-backed owner checks, feedback learning, admin dashboard data, or owner account management.
 - `/api/demo/plans` is also public in demo mode. It exposes non-secret plan and lock metadata only, so visitors can see which analyzers require Starter, Pro, or Business.
-- Leave `SAAS_PUBLIC_SIGNUP_ENABLED=false` until the deployment is ready to accept visitor email uploads. `/app` and `/api/saas/*` support normal user accounts, tenant-scoped scan storage, and free-tier quota gates, but public signup is an explicit deployment decision.
+- Leave `SAAS_PUBLIC_SIGNUP_ENABLED=false` until the deployment is ready to accept visitor email uploads. `/analyze`, `/dashboard`, `/monitor`, `/app`, and `/api/saas/*` support normal user accounts, tenant-scoped scan storage, and free-tier quota gates, but public signup is an explicit deployment decision.
 
 Stripe subscription setup:
 - Set `PUBLIC_BASE_URL` to the public HTTPS origin, for example `https://phishanalyze.mdpstudio.com.au`.
@@ -103,8 +103,8 @@ docker exec phishing-orchestrator python -c \
   "import urllib.request; print(urllib.request.urlopen('http://localhost:8000/api/health').read())"
 ```
 
-Visit your domain. You should see the login page for the dashboard.
-Use `/login` with `ANALYST_API_TOKEN` for browser access.
+Visit your domain. You should see the public PhishAnalyze product shell.
+Use `/admin/login` with `ANALYST_API_TOKEN` for owner browser access.
 If `PUBLIC_DEMO_MODE=true`, `/demo` is the only public sample page.
 
 The production stack also binds `127.0.0.1:8000:8000` on the host. This is

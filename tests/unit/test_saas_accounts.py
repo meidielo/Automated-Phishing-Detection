@@ -155,3 +155,53 @@ def test_scan_history_is_tenant_scoped(tmp_path):
 
     assert len(store.list_scan_results(alice.org_id)) == 1
     assert store.list_scan_results(bob.org_id) == []
+
+
+def test_admin_overview_is_aggregate_and_redacted(tmp_path):
+    store = SaaSStore(tmp_path / "saas.db")
+    context = store.create_user_with_org(email="alice@example.com", password="long-password-1")
+    store.set_subscription(org_id=context.org_id, plan_slug="pro")
+    mailbox = store.register_mail_account(
+        org_id=context.org_id,
+        user_id=context.user_id,
+        provider="gmail",
+        external_account_id="alice@example.com",
+        encrypted_token_ref="enc:v2:secret",
+        status="active",
+    )
+    scan_id = store.create_scan_job(
+        org_id=context.org_id,
+        user_id=context.user_id,
+        source="manual_upload",
+        mail_account_id=mailbox.id,
+    )
+    store.record_scan_result(
+        org_id=context.org_id,
+        user_id=context.user_id,
+        scan_job_id=scan_id,
+        email_id="email-1",
+        verdict="SUSPICIOUS",
+        payment_decision="VERIFY",
+        result={
+            "subject": "private invoice",
+            "body_preview": "customer secret body",
+            "external_account_id": "alice@example.com",
+            "encrypted_token_ref": "enc:v2:secret",
+            "stripe_customer_id": "cus_secret",
+        },
+    )
+
+    payload = store.admin_overview()
+    serialized = str(payload)
+
+    assert payload["totals"]["users"] == 1
+    assert payload["totals"]["organizations"] == 1
+    assert payload["totals"]["scans"] == 1
+    assert payload["totals"]["mailboxes"] == 1
+    assert payload["privacy"]["raw_result_json"] is False
+    assert payload["privacy"]["mailbox_credentials"] is False
+    assert "private invoice" not in serialized
+    assert "customer secret body" not in serialized
+    assert "alice@example.com" not in serialized
+    assert "enc:v2:secret" not in serialized
+    assert "cus_secret" not in serialized

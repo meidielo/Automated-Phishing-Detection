@@ -35,7 +35,10 @@ def _build_saas_app(tmp_path, *, signup_enabled: bool):
     app_wrapper.report_gen = MagicMock()
     app_wrapper.ioc_exporter = MagicMock()
     app_wrapper.sigma_exporter = MagicMock()
-    app_wrapper.dashboard = PhishingDashboard(template_dir="./templates")
+    app_wrapper.dashboard = PhishingDashboard(
+        template_dir="./templates",
+        route_prefix="/admin/dashboard",
+    )
     app_wrapper.token_verifier = TokenVerifier("analyst-secret")
     app_wrapper.saas_session_manager = SaaSSessionManager("saas-secret-for-tests")
     app_wrapper._saas_store = None
@@ -374,6 +377,53 @@ def test_saas_mailbox_connection_encrypts_and_lists_masked_metadata(tmp_path, mo
     assert delete.status_code == 200
     assert delete.json()["deleted"] is True
     assert after_delete.json()["mailboxes"] == []
+
+
+def test_saas_mailbox_listing_marks_full_quota_locked(tmp_path, monkeypatch):
+    monkeypatch.setenv("ACCOUNTS_ENCRYPTION_KEY", "test-mailbox-encryption-key-for-unit-tests")
+    client = TestClient(
+        _build_saas_app(tmp_path, signup_enabled=True),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    signup = _signup(client)
+    context = signup.json()["account"]
+    store = SaaSStore(tmp_path / "saas.db")
+    store.set_subscription(org_id=context["org_id"], plan_slug="pro")
+
+    for index in range(3):
+        response = _post_json_with_csrf(
+            client,
+            "/api/saas/mailboxes",
+            {
+                "provider": "imap",
+                "email": f"owner{index}@example.com",
+                "host": "imap.example.com",
+                "app_password": "secret app password",
+            },
+        )
+        assert response.status_code == 200
+
+    listing = client.get("/api/saas/mailboxes")
+    extra = _post_json_with_csrf(
+        client,
+        "/api/saas/mailboxes",
+        {
+            "provider": "imap",
+            "email": "extra@example.com",
+            "host": "imap.example.com",
+            "app_password": "secret app password",
+        },
+    )
+
+    assert listing.status_code == 200
+    assert listing.json()["quota"] == {"used": 3, "limit": 3, "remaining": 0}
+    assert listing.json()["entitlement"]["available"] is False
+    assert listing.json()["entitlement"]["limit_kind"] == "quota"
+    assert listing.json()["entitlement"]["required_plan_name"] == "Business"
+    assert extra.status_code == 402
+    assert extra.json()["locked"]["required_plan_name"] == "Business"
 
 
 def test_saas_upload_rejects_oversized_email_before_parsing(tmp_path, monkeypatch):

@@ -249,7 +249,8 @@ python main.py --serve
 cp .env.example .env
 # Edit .env with your API keys
 docker-compose up -d
-# Dashboard at http://localhost:8000
+# Public PhishAnalyze app at http://localhost:8000/analyze
+# Owner admin console at http://localhost:8000/admin
 ```
 
 ### Verify it works
@@ -273,15 +274,15 @@ See `config.yaml` for all available options with inline documentation.
 
 ### Public demo mode
 
-Set `PUBLIC_DEMO_MODE=true` to expose `/demo` and `/agent-demo` as sample-only public previews. When public demo mode is off, those HTML pages redirect back to `/product` instead of showing raw API errors. This is intentionally not an auth bypass for the real app: `/analyze`, `/dashboard`, `/monitor`, `/accounts`, live upload analysis, mailbox monitoring, feedback learning, and account management still require the analyst token. The public root `/` redirects to `/product` so visitors do not land on an admin login.
+Set `PUBLIC_DEMO_MODE=true` to expose `/demo` and `/agent-demo` as sample-only public previews. When public demo mode is off, those HTML pages redirect back to `/product` instead of showing raw API errors. This is intentionally not an auth bypass for owner tooling: `/admin`, `/admin/dashboard`, `/admin/status`, `/admin/analyze`, `/admin/monitor`, `/admin/accounts`, live owner upload analysis, global mailbox monitoring, feedback learning, and account management still require the analyst token. The public root `/` redirects to `/product` so visitors do not land on an admin login.
 
-The demo page uses fixed sample content and `/api/demo/status` advertises the locked capabilities. Keep `ANALYST_API_TOKEN` configured before exposing the deployment publicly. A real multi-user mailbox version still needs per-user OAuth or IMAP credentials and encrypted per-user tokens so each person only sees their own mailbox.
+The demo page uses fixed sample content and `/api/demo/status` advertises the locked capabilities. Keep `ANALYST_API_TOKEN` configured before exposing the deployment publicly. Normal users use `/analyze`, `/dashboard`, and `/monitor` with email/password SaaS sessions and tenant-scoped data, so each person sees only their own workspace.
 
 `/api/demo/plans` exposes the public plan and feature-lock catalog used by the demo. The same plan slugs now back the SaaS account foundation and are intended to back Stripe Billing webhook state later. See [`docs/saas-architecture.md`](docs/saas-architecture.md) for the user/org database schema, tenant isolation rules, and subscription rollout order.
 
 ### SaaS account mode
 
-`/app` serves the PayShield customer product separate from the PhishAnalyze analyst dashboard. It uses signed user sessions, same-origin checks on cookie-setting auth routes, CSRF protection on logged-in mutations, and `data/saas.db` for `users`, `organizations`, `memberships`, `subscriptions`, `mail_accounts`, `scan_jobs`, `scan_results`, `usage_events`, `feature_locks`, and `audit_logs`. The customer app lists analyzer evidence for each scan, lets signed-in users delete stored scan results from workspace history without resetting usage quota, and exposes a first-class mailbox onboarding workflow. `/trust` is the public trust and privacy page for customer reviewers.
+`/analyze`, `/dashboard`, and `/monitor` serve the public PhishAnalyze user app. `/app` serves the PayShield payment-risk product on the same SaaS account foundation. Both use signed user sessions, same-origin checks on cookie-setting auth routes, CSRF protection on logged-in mutations, and `data/saas.db` for `users`, `organizations`, `memberships`, `subscriptions`, `mail_accounts`, `scan_jobs`, `scan_results`, `usage_events`, `feature_locks`, and `audit_logs`. The customer app lists analyzer evidence for each scan, lets signed-in users delete stored scan results from workspace history without resetting usage quota, and exposes a first-class mailbox onboarding workflow. `/admin` is the owner console with token auth and privacy-preserving aggregate monitoring. `/trust` is the public trust and privacy page for customer reviewers.
 
 Public signup is off by default:
 

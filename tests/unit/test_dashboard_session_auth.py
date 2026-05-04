@@ -32,7 +32,7 @@ def _build_app_with_token(
     app_wrapper.report_gen = MagicMock()
     app_wrapper.ioc_exporter = MagicMock()
     app_wrapper.sigma_exporter = MagicMock()
-    app_wrapper.dashboard = PhishingDashboard(template_dir="./templates")
+    app_wrapper.dashboard = PhishingDashboard(template_dir="./templates", route_prefix="/admin/dashboard")
     app_wrapper.token_verifier = TokenVerifier(token)
     app_wrapper.saas_session_manager = SaaSSessionManager(f"{token}-saas-session")
     app_wrapper._saas_store = None
@@ -42,17 +42,17 @@ def _build_app_with_token(
     return app_wrapper.create_fastapi_app()
 
 
-def test_dashboard_redirects_to_login_without_session():
+def test_admin_dashboard_redirects_to_admin_login_without_session():
     client = TestClient(
         _build_app_with_token(),
         base_url="https://testserver",
         follow_redirects=False,
     )
 
-    response = client.get("/dashboard")
+    response = client.get("/admin/dashboard")
 
     assert response.status_code == 303
-    assert response.headers["location"].startswith("/login?next=")
+    assert response.headers["location"].startswith("/admin/login?next=")
 
 
 def test_public_root_redirects_to_product_not_admin_login():
@@ -201,18 +201,40 @@ def test_saas_app_mailbox_workflow_is_first_class_and_plan_gated():
     assert ".mailbox-row" in css
 
 
-def test_analyze_page_redirects_to_login_without_session():
+def test_public_phishanalyze_routes_open_without_analyst_session():
     client = TestClient(
         _build_app_with_token(),
         base_url="https://testserver",
         follow_redirects=False,
     )
 
-    response = client.get("/analyze")
+    for path, active in [
+        ("/analyze", 'data-page="analyze"'),
+        ("/dashboard", 'data-page="dashboard"'),
+        ("/monitor", 'data-page="monitor"'),
+    ]:
+        response = client.get(path)
+
+        assert response.status_code == 200
+        assert active in response.text
+        assert "Sign in to PhishAnalyze" in response.text
+        assert "/static/phish_app.css" in response.text
+        assert "/static/phish_app.js" in response.text
+        assert "Analyst token" not in response.text
+
+
+def test_admin_analyze_redirects_to_admin_login_without_session():
+    client = TestClient(
+        _build_app_with_token(),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    response = client.get("/admin/analyze")
 
     assert response.status_code == 303
-    assert response.headers["location"].startswith("/login?next=")
-    assert response.headers["location"].endswith("next=/analyze")
+    assert response.headers["location"].startswith("/admin/login?next=")
+    assert response.headers["location"].endswith("next=/admin/analyze")
 
 
 def test_dashboard_uses_self_hosted_chart_asset_after_login():
@@ -221,9 +243,9 @@ def test_dashboard_uses_self_hosted_chart_asset_after_login():
         base_url="https://testserver",
         follow_redirects=False,
     )
-    client.post("/login", data={"token": "secret", "next": "/dashboard"})
+    client.post("/admin/login", data={"token": "secret", "next": "/admin/dashboard"})
 
-    response = client.get("/dashboard/")
+    response = client.get("/admin/dashboard/")
 
     assert response.status_code == 200
     assert '/static/vendor/chart.umd.js' in response.text
@@ -252,12 +274,39 @@ def test_dashboard_without_trailing_slash_serves_after_login():
         base_url="https://testserver",
         follow_redirects=False,
     )
-    client.post("/login", data={"token": "secret", "next": "/dashboard"})
+    client.post("/admin/login", data={"token": "secret", "next": "/admin/dashboard"})
 
-    response = client.get("/dashboard")
+    response = client.get("/admin/dashboard")
 
     assert response.status_code == 200
     assert "Email Analysis Dashboard" in response.text
+
+
+def test_admin_overview_requires_token_and_uses_redacted_aggregate_api():
+    client = TestClient(
+        _build_app_with_token(),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    blocked_page = client.get("/admin")
+    blocked_api = client.get("/admin/api/overview")
+    client.post("/admin/login", data={"token": "secret", "next": "/admin"})
+    page = client.get("/admin")
+    api = client.get("/admin/api/overview")
+
+    assert blocked_page.status_code == 303
+    assert blocked_page.headers["location"].startswith("/admin/login?next=")
+    assert blocked_api.status_code == 401
+    assert page.status_code == 200
+    assert "/static/admin.css" in page.text
+    assert "/static/admin.js" in page.text
+    assert "Privacy boundary" in page.text
+    assert api.status_code == 200
+    payload = api.json()
+    assert "totals" in payload
+    assert payload["privacy"]["raw_result_json"] is False
+    assert "encrypted_token_ref" not in str(payload)
 
 
 def test_dashboard_serves_self_hosted_chart_asset_without_session():
@@ -294,6 +343,10 @@ def test_dashboard_static_assets_are_served_without_session():
         ("/static/product.css", ".product-hero"),
         ("/static/saas.css", ".saas-shell"),
         ("/static/saas.js", "/api/saas/session"),
+        ("/static/phish_app.css", ".phish-shell"),
+        ("/static/phish_app.js", "/api/saas/analyze/upload"),
+        ("/static/admin.css", ".admin-shell"),
+        ("/static/admin.js", "/admin/api/overview"),
         ("/static/shared.css", ".feedback-modal"),
         ("/static/shared.js", "product-feedback-open"),
     ]:
@@ -484,7 +537,7 @@ def test_shared_controls_use_icon_theme_and_page_scoped_logout():
     assert "var isSaasApi = path.startsWith('/api/saas/');" in script
     assert "!isSaasApi && method !== 'GET'" in script
     assert "response.status === 401 && isApi && !isSaasApi" in script
-    assert "Product-aligned analyst shell" in css
+    assert "Product-aligned admin shell" in css
     assert "body > nav" in css
     assert "body > .page" in css
 
@@ -541,7 +594,7 @@ def test_public_demo_plan_catalog_is_not_available_by_default():
     assert response.status_code == 404
 
 
-def test_public_demo_does_not_bypass_real_analysis_or_dashboard_auth():
+def test_public_demo_does_not_bypass_real_analysis_or_admin_auth():
     client = TestClient(
         _build_app_with_token(public_demo_mode=True),
         base_url="https://testserver",
@@ -552,11 +605,14 @@ def test_public_demo_does_not_bypass_real_analysis_or_dashboard_auth():
         "/api/analyze/upload",
         files={"file": ("sample.eml", b"Subject: hi\r\n\r\nbody", "message/rfc822")},
     )
-    dashboard = client.get("/dashboard")
+    dashboard = client.get("/admin/dashboard")
+    public_dashboard = client.get("/dashboard")
 
     assert upload.status_code == 401
     assert dashboard.status_code == 303
-    assert dashboard.headers["location"].startswith("/login?next=")
+    assert dashboard.headers["location"].startswith("/admin/login?next=")
+    assert public_dashboard.status_code == 200
+    assert "Sign in to PhishAnalyze" in public_dashboard.text
 
 
 def test_login_page_links_public_demo_only_when_enabled():
@@ -571,29 +627,30 @@ def test_login_page_links_public_demo_only_when_enabled():
         follow_redirects=False,
     )
 
-    plain = plain_client.get("/login")
-    demo = demo_client.get("/login")
+    plain = plain_client.get("/admin/login")
+    demo = demo_client.get("/admin/login")
 
-    assert 'href="/app"' in plain.text
+    assert 'href="/analyze"' in plain.text
     assert 'href="/demo"' not in plain.text
     assert 'href="/demo"' in demo.text
     assert "paid API checks" in demo.text
 
 
-def test_analyze_page_uses_global_feedback_control_not_inline_panel():
+def test_admin_analyze_page_uses_global_feedback_control_not_inline_panel():
     client = TestClient(
         _build_app_with_token(),
         base_url="https://testserver",
         follow_redirects=False,
     )
-    client.post("/login", data={"token": "secret", "next": "/analyze"})
+    client.post("/admin/login", data={"token": "secret", "next": "/admin/analyze"})
 
-    response = client.get("/analyze")
+    response = client.get("/admin/analyze")
 
     assert response.status_code == 200
     assert "<title>Analyze - PhishAnalyze</title>" in response.text
     assert "Email Risk Analyzer" in response.text
     assert 'id="drop-zone"' in response.text
+    assert 'href="/admin/analyze" class="active">Owner Analyze</a>' in response.text
     assert "Drop your .eml file here, or click to browse" in response.text
     assert "height: 56px;" in response.text
     assert "font-size: 26px;" in response.text
@@ -658,7 +715,7 @@ def test_session_status_reports_browser_session_expiry():
     assert logged_out.status_code == 200
     assert logged_out.json()["authenticated"] is False
 
-    client.post("/login", data={"token": "secret", "next": "/dashboard"})
+    client.post("/admin/login", data={"token": "secret", "next": "/admin/dashboard"})
     logged_in = client.get("/api/auth/session")
 
     payload = logged_in.json()
@@ -690,8 +747,8 @@ def test_login_sets_secure_session_and_csrf_cookies():
     )
 
     response = client.post(
-        "/login",
-        data={"token": "secret", "next": "/dashboard"},
+        "/admin/login",
+        data={"token": "secret", "next": "/admin/dashboard"},
     )
 
     assert response.status_code == 303
@@ -711,12 +768,12 @@ def test_login_trims_copied_token_whitespace():
     )
 
     response = client.post(
-        "/login",
-        data={"token": "  secret\r\n", "next": "/dashboard"},
+        "/admin/login",
+        data={"token": "  secret\r\n", "next": "/admin/dashboard"},
     )
 
     assert response.status_code == 303
-    assert response.headers["location"] == "/dashboard"
+    assert response.headers["location"] == "/admin/dashboard"
 
 
 def test_login_accepts_copied_env_line_token():
@@ -727,12 +784,12 @@ def test_login_accepts_copied_env_line_token():
     )
 
     response = client.post(
-        "/login",
-        data={"token": "ANALYST_API_TOKEN=secret", "next": "/dashboard"},
+        "/admin/login",
+        data={"token": "ANALYST_API_TOKEN=secret", "next": "/admin/dashboard"},
     )
 
     assert response.status_code == 303
-    assert response.headers["location"] == "/dashboard"
+    assert response.headers["location"] == "/admin/dashboard"
 
 
 def test_api_login_trims_copied_token_whitespace():
@@ -785,8 +842,8 @@ def test_login_uses_non_secure_cookies_on_local_http():
     )
 
     response = client.post(
-        "/login",
-        data={"token": "secret", "next": "/dashboard"},
+        "/admin/login",
+        data={"token": "secret", "next": "/admin/dashboard"},
     )
 
     assert response.status_code == 303
@@ -803,11 +860,11 @@ def test_login_escapes_next_value_in_form():
         follow_redirects=False,
     )
 
-    response = client.get('/login?next=/dashboard"><script>alert(1)</script>')
+    response = client.get('/admin/login?next=/dashboard"><script>alert(1)</script>')
 
     assert response.status_code == 200
     assert 'value="/dashboard&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;"' in response.text
-    assert 'value="/dashboard"><script>alert(1)</script>"' not in response.text
+    assert 'value="/admin/dashboard"><script>alert(1)</script>"' not in response.text
 
 
 def test_session_post_requires_csrf_header():
@@ -816,7 +873,7 @@ def test_session_post_requires_csrf_header():
         base_url="https://testserver",
         follow_redirects=False,
     )
-    client.post("/login", data={"token": "secret", "next": "/dashboard"})
+    client.post("/admin/login", data={"token": "secret", "next": "/admin/dashboard"})
 
     response = client.post("/api/auth/logout")
 
@@ -829,7 +886,7 @@ def test_session_post_accepts_csrf_header():
         base_url="https://testserver",
         follow_redirects=False,
     )
-    client.post("/login", data={"token": "secret", "next": "/dashboard"})
+    client.post("/admin/login", data={"token": "secret", "next": "/admin/dashboard"})
     csrf = client.cookies.get(CSRF_COOKIE_NAME)
 
     response = client.post(
@@ -849,7 +906,7 @@ def test_monitor_stats_reports_saved_account_reconnect_state(monkeypatch):
         base_url="https://testserver",
         follow_redirects=False,
     )
-    client.post("/login", data={"token": "secret", "next": "/monitor"})
+    client.post("/admin/login", data={"token": "secret", "next": "/admin/monitor"})
 
     import src.automation.multi_account_monitor as multi_account_monitor
 
@@ -877,9 +934,9 @@ def test_monitor_page_guides_mailbox_reconnect():
         base_url="https://testserver",
         follow_redirects=False,
     )
-    client.post("/login", data={"token": "secret", "next": "/monitor"})
+    client.post("/admin/login", data={"token": "secret", "next": "/admin/monitor"})
 
-    response = client.get("/monitor")
+    response = client.get("/admin/monitor")
 
     assert response.status_code == 200
     body = response.text
@@ -894,7 +951,7 @@ def test_detonate_url_endpoint_sanitizes_raw_screenshot_bytes(monkeypatch):
         base_url="https://testserver",
         follow_redirects=False,
     )
-    client.post("/login", data={"token": "secret", "next": "/monitor"})
+    client.post("/admin/login", data={"token": "secret", "next": "/admin/monitor"})
     csrf = client.cookies.get(CSRF_COOKIE_NAME)
 
     import main as main_module
@@ -933,7 +990,7 @@ def test_detonate_url_endpoint_does_not_return_raw_html_errors(monkeypatch):
         base_url="https://testserver",
         follow_redirects=False,
     )
-    client.post("/login", data={"token": "secret", "next": "/monitor"})
+    client.post("/admin/login", data={"token": "secret", "next": "/admin/monitor"})
     csrf = client.cookies.get(CSRF_COOKIE_NAME)
 
     import main as main_module

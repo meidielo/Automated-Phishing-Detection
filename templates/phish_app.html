@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{PAGE_TITLE}}</title>
+  <link rel="stylesheet" href="/static/phish_app.css">
+</head>
+<body data-page="{{PAGE}}">
+  <header class="phish-topbar">
+    <a class="phish-brand" href="/analyze" aria-label="PhishAnalyze home">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <circle cx="11" cy="11" r="7"></circle>
+        <path d="m20 20-4-4"></path>
+      </svg>
+      <span>PhishAnalyze</span>
+    </a>
+    <nav class="phish-nav" aria-label="PhishAnalyze navigation">
+      <a href="/analyze" data-nav="analyze">Analyze</a>
+      <a href="/dashboard" data-nav="dashboard">Dashboard</a>
+      <a href="/monitor" data-nav="monitor">Monitor</a>
+      <a href="/app">PayShield</a>
+      <a href="/trust">Trust</a>
+    </nav>
+  </header>
+
+  <main class="phish-shell">
+    <section class="auth-view" id="authView" hidden>
+      <article class="auth-panel">
+        <div>
+          <h1 id="authTitle">Sign in to PhishAnalyze</h1>
+          <p id="authSubtext">Use your workspace account to scan emails, review private history, and connect your own mailbox.</p>
+        </div>
+
+        <form class="auth-form" id="loginForm">
+          <label>Email <input name="email" type="email" autocomplete="email" required></label>
+          <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+          <button type="submit">Login</button>
+          <p>Don't have an account yet? <button class="link-button" type="button" data-auth-mode="signup">Create account</button></p>
+          <p><button class="link-button" type="button" data-auth-mode="reset">Forgot password?</button></p>
+        </form>
+
+        <form class="auth-form" id="signupForm" hidden>
+          <label>Email <input name="email" type="email" autocomplete="email" required></label>
+          <label>Password <input name="password" type="password" autocomplete="new-password" minlength="10" required></label>
+          <label>Workspace name <input name="org_name" type="text" autocomplete="organization"></label>
+          <button type="submit">Create free account</button>
+          <p>Already have an account? <button class="link-button" type="button" data-auth-mode="login">Sign in</button></p>
+        </form>
+
+        <form class="auth-form" id="resetForm" hidden>
+          <label>Email <input name="email" type="email" autocomplete="email" required></label>
+          <button type="submit">Send reset link</button>
+          <p><button class="link-button" type="button" data-auth-mode="login">Back to login</button></p>
+        </form>
+
+        <form class="auth-form" id="resetConfirmForm" hidden>
+          <input name="token" type="hidden" id="resetToken">
+          <label>New password <input name="password" type="password" autocomplete="new-password" minlength="10" required></label>
+          <button type="submit">Set new password</button>
+          <p><button class="link-button" type="button" data-auth-mode="login">Back to login</button></p>
+        </form>
+
+        <div class="notice" id="authNotice" hidden></div>
+      </article>
+    </section>
+
+    <section class="workspace-view" id="workspaceView" hidden>
+      <header class="workspace-header">
+        <div>
+          <p class="workspace-label" id="workspaceLabel">Workspace</p>
+          <h1 id="pageHeading">Email risk analyzer</h1>
+          <p id="pageSubheading">Upload an .eml file to analyze phishing indicators, malicious URLs, and payment-risk signals.</p>
+        </div>
+        <button type="button" id="logoutButton">Logout</button>
+      </header>
+
+      <section class="account-strip" aria-label="Account summary">
+        <article>
+          <span>Plan</span>
+          <strong id="planName">Free</strong>
+        </article>
+        <article>
+          <span>Monthly scans</span>
+          <strong id="usageText">0 / 5</strong>
+          <div class="meter" aria-hidden="true"><span id="usageBar"></span></div>
+        </article>
+        <article>
+          <span>Email</span>
+          <strong id="userEmail">-</strong>
+        </article>
+        <article class="account-actions">
+          <a href="/app" id="upgradeLink">Upgrade</a>
+        </article>
+      </section>
+
+      <section class="page-panel" id="analyzePanel" data-panel="analyze">
+        <div class="panel-grid">
+          <article class="scan-card">
+            <h2>Analyze an email</h2>
+            <p>Upload one suspicious .eml file. The result is saved only to this workspace.</p>
+            <form id="scanForm" class="scan-form">
+              <div class="drop-zone" id="dropZone" role="button" tabindex="0" aria-labelledby="dropTitle" aria-describedby="dropHint">
+                <input id="emailFile" name="file" type="file" accept=".eml,message/rfc822">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                  <path d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5"></path>
+                </svg>
+                <h3 id="dropTitle">Drop your .eml file here, or click to browse</h3>
+                <p id="dropHint">Supports .eml files</p>
+              </div>
+              <div class="scan-actions">
+                <button id="analyzeButton" type="submit" disabled>Analyze email</button>
+                <button id="clearButton" class="secondary-button" type="button" hidden>Clear</button>
+              </div>
+            </form>
+            <div class="notice" id="scanNotice" hidden></div>
+          </article>
+
+          <article class="result-card">
+            <h2 id="resultTitle">No scan selected</h2>
+            <p id="resultNote">Choose a file to start a fresh analysis.</p>
+            <div id="resultBody" class="result-body"></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="page-panel" id="dashboardPanel" data-panel="dashboard" hidden>
+        <div class="stats-row" id="statsRow"></div>
+        <article class="wide-card">
+          <div class="card-heading">
+            <div>
+              <h2>Private scan history</h2>
+              <p>Only results from this signed-in workspace are shown.</p>
+            </div>
+            <button class="secondary-button" id="refreshHistoryButton" type="button">Refresh</button>
+          </div>
+          <div class="history-list" id="historyList"></div>
+          <div class="notice" id="historyNotice" hidden></div>
+        </article>
+      </section>
+
+      <section class="page-panel" id="monitorPanel" data-panel="monitor" hidden>
+        <article class="wide-card">
+          <div class="card-heading">
+            <div>
+              <h2>Mailbox monitoring</h2>
+              <p>Connect mailboxes owned by this workspace. Credentials are encrypted and never returned to the browser.</p>
+            </div>
+            <span class="quota-pill" id="mailboxQuota">0 / 0 mailboxes</span>
+          </div>
+          <div class="monitor-grid">
+            <form class="mailbox-form" id="mailboxForm">
+              <label>Provider
+                <select name="provider">
+                  <option value="gmail">Gmail</option>
+                  <option value="outlook">Outlook</option>
+                  <option value="imap">IMAP</option>
+                </select>
+              </label>
+              <label>Email address <input name="email" type="email" autocomplete="email" required></label>
+              <label>IMAP host <input name="host" type="text" autocomplete="off" placeholder="imap.gmail.com"></label>
+              <label>App password <input name="app_password" type="password" autocomplete="new-password" required></label>
+              <button id="mailboxButton" type="submit">Connect mailbox</button>
+            </form>
+            <div>
+              <h3>Connected accounts</h3>
+              <p id="mailboxStatus">Loading mailbox state.</p>
+              <div class="mailbox-list" id="mailboxList"></div>
+            </div>
+          </div>
+          <div class="notice" id="mailboxNotice" hidden></div>
+        </article>
+      </section>
+    </section>
+  </main>
+  <script src="/static/phish_app.js" defer></script>
+</body>
+</html>

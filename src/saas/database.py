@@ -802,6 +802,159 @@ class SaaSStore:
             conn.commit()
             return True
 
+    def admin_overview(self, *, audit_limit: int = 20) -> dict:
+        """Return privacy-preserving aggregate SaaS state for owner/admin views.
+
+        This intentionally avoids raw emails, result JSON, mailbox credentials,
+        Stripe identifiers, external mailbox IDs, and audit metadata. Admins get
+        counts and redacted org references for operations without reading
+        customer mail content.
+        """
+        audit_limit = max(1, min(int(audit_limit or 20), 100))
+        with self._connect() as conn:
+            total_users = int(
+                conn.execute(
+                    "SELECT COUNT(*) AS count FROM users WHERE disabled_at IS NULL"
+                ).fetchone()["count"]
+                or 0
+            )
+            total_orgs = int(
+                conn.execute("SELECT COUNT(*) AS count FROM organizations").fetchone()["count"]
+                or 0
+            )
+            total_scans = int(
+                conn.execute("SELECT COUNT(*) AS count FROM scan_results").fetchone()["count"]
+                or 0
+            )
+            total_mailboxes = int(
+                conn.execute(
+                    """
+                    SELECT COUNT(*) AS count
+                    FROM mail_accounts
+                    WHERE status != 'disabled'
+                    """
+                ).fetchone()["count"]
+                or 0
+            )
+
+            def grouped(query: str, params: tuple = ()) -> list[dict]:
+                return [
+                    {"name": row["name"], "count": int(row["count"] or 0)}
+                    for row in conn.execute(query, params).fetchall()
+                ]
+
+            plans = grouped(
+                """
+                SELECT COALESCE(plan_slug, 'free') AS name, COUNT(*) AS count
+                FROM subscriptions
+                GROUP BY COALESCE(plan_slug, 'free')
+                ORDER BY count DESC, name ASC
+                """
+            )
+            subscription_status = grouped(
+                """
+                SELECT COALESCE(status, 'unknown') AS name, COUNT(*) AS count
+                FROM subscriptions
+                GROUP BY COALESCE(status, 'unknown')
+                ORDER BY count DESC, name ASC
+                """
+            )
+            verdicts = grouped(
+                """
+                SELECT verdict AS name, COUNT(*) AS count
+                FROM scan_results
+                GROUP BY verdict
+                ORDER BY count DESC, name ASC
+                """
+            )
+            payment_decisions = grouped(
+                """
+                SELECT COALESCE(payment_decision, 'not_payment_specific') AS name, COUNT(*) AS count
+                FROM scan_results
+                GROUP BY COALESCE(payment_decision, 'not_payment_specific')
+                ORDER BY count DESC, name ASC
+                """
+            )
+            mailboxes_by_status = grouped(
+                """
+                SELECT status AS name, COUNT(*) AS count
+                FROM mail_accounts
+                GROUP BY status
+                ORDER BY count DESC, name ASC
+                """
+            )
+            mailboxes_by_provider = grouped(
+                """
+                SELECT provider AS name, COUNT(*) AS count
+                FROM mail_accounts
+                GROUP BY provider
+                ORDER BY count DESC, name ASC
+                """
+            )
+            usage_this_month = grouped(
+                """
+                SELECT feature_slug AS name, COALESCE(SUM(quantity), 0) AS count
+                FROM usage_events
+                WHERE occurred_at >= ?
+                GROUP BY feature_slug
+                ORDER BY count DESC, name ASC
+                """,
+                (month_start_iso(),),
+            )
+            feature_locks = grouped(
+                """
+                SELECT feature_slug AS name, COUNT(*) AS count
+                FROM feature_locks
+                GROUP BY feature_slug
+                ORDER BY count DESC, name ASC
+                LIMIT 12
+                """
+            )
+
+            audit_rows = conn.execute(
+                """
+                SELECT org_id, action, target_type, created_at
+                FROM audit_logs
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (audit_limit,),
+            ).fetchall()
+            recent_audit = [
+                {
+                    "org_ref": hashlib.sha256(row["org_id"].encode("utf-8")).hexdigest()[:12],
+                    "action": row["action"],
+                    "target_type": row["target_type"],
+                    "created_at": row["created_at"],
+                }
+                for row in audit_rows
+            ]
+
+        return {
+            "totals": {
+                "users": total_users,
+                "organizations": total_orgs,
+                "scans": total_scans,
+                "mailboxes": total_mailboxes,
+            },
+            "plans": plans,
+            "subscription_status": subscription_status,
+            "verdicts": verdicts,
+            "payment_decisions": payment_decisions,
+            "mailboxes_by_status": mailboxes_by_status,
+            "mailboxes_by_provider": mailboxes_by_provider,
+            "usage_this_month": usage_this_month,
+            "feature_locks": feature_locks,
+            "recent_audit": recent_audit,
+            "privacy": {
+                "raw_email_bodies": False,
+                "raw_result_json": False,
+                "mailbox_credentials": False,
+                "external_mailbox_ids": False,
+                "stripe_ids": False,
+            },
+        }
+
     def feature_lock_count(self, org_id: str) -> int:
         with self._connect() as conn:
             row = conn.execute(

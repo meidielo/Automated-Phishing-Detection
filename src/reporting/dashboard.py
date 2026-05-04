@@ -32,13 +32,19 @@ DASHBOARD_CSP = (
 class PhishingDashboard:
     """Dashboard service providing web routes and statistics."""
 
-    def __init__(self, template_dir: Optional[str] = None, storage_backend=None):
+    def __init__(
+        self,
+        template_dir: Optional[str] = None,
+        storage_backend=None,
+        route_prefix: str = "/dashboard",
+    ):
         """
         Initialize dashboard.
 
         Args:
             template_dir: Directory containing Jinja2 templates.
             storage_backend: Backend for storing/retrieving analysis results.
+            route_prefix: URL prefix for this dashboard router.
         """
         if template_dir is None:
             template_dir = "./templates"
@@ -57,7 +63,7 @@ class PhishingDashboard:
             self.env = None
 
         self.storage = storage_backend
-        self.router = APIRouter(prefix="/dashboard", tags=["dashboard"])
+        self.router = APIRouter(prefix=route_prefix, tags=["dashboard"])
         self._register_routes()
 
     def _register_routes(self):
@@ -71,7 +77,7 @@ class PhishingDashboard:
 
     async def get_dashboard(self) -> HTMLResponse:
         """
-        GET /dashboard
+        GET {route_prefix}
         Main dashboard page.  All data loads client-side via fetch(),
         so there is nothing to template-render server-side.  We serve
         the file directly (same pattern as every other page) so Jinja2
@@ -93,7 +99,7 @@ class PhishingDashboard:
 
     async def get_stats(self) -> HTMLResponse:
         """
-        GET /dashboard/stats
+        GET {route_prefix}/stats
         Dashboard page showing verdict distribution and statistics.
 
         Returns:

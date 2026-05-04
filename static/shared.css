@@ -331,9 +331,9 @@
     }
   }
 
-  /* Product-aligned analyst shell. Shared.css is injected after page CSS, so
-     these rules keep /analyze, /dashboard, /monitor, and /status visually
-     consistent with the public product page. */
+  /* Product-aligned admin shell. Shared.css is injected after page CSS, so
+     these rules keep legacy owner pages under /admin visually consistent
+     with the public product page. */
   body > nav {
     position: sticky;
     top: 0;

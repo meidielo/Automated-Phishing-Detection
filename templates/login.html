@@ -85,7 +85,7 @@
   <main class="login-panel">
     <h1>Analyst login</h1>
     <p>Internal PhishAnalyze tools require the owner analyst token.</p>
-    <form method="post" action="/login">
+    <form method="post" action="/admin/login">
       <input type="hidden" name="next" value="{{NEXT_PATH}}">
       <label for="token">Analyst token</label>
       <input id="token" name="token" type="password" autocomplete="current-password" autofocus required>
@@ -93,8 +93,8 @@
       <button type="submit">Login</button>
     </form>
     <div class="demo-entry">
-      <a href="/app">Open the user app</a>
-      <span>Use email/password login for the customer-facing payment scam firewall.</span>
+      <a href="/analyze">Open PhishAnalyze</a>
+      <span>Use email/password login for the public product. Owner system tools stay under /admin.</span>
     </div>
     {{DEMO_LINK}}
   </main>

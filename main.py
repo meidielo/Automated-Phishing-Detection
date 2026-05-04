@@ -303,7 +303,10 @@ class PhishingDetectionApp:
         self.report_gen = ReportGenerator(template_dir="./templates")
         self.ioc_exporter = IOCExporter()
         self.sigma_exporter = SigmaExporter()
-        self.dashboard = PhishingDashboard(template_dir="./templates")
+        self.dashboard = PhishingDashboard(
+            template_dir="./templates",
+            route_prefix="/admin/dashboard",
+        )
         self.token_verifier = TokenVerifier(
             getattr(self.config, "analyst_api_token", None)
         )
@@ -370,7 +373,7 @@ class PhishingDetectionApp:
 
             logger.info(
                 "No email accounts configured - monitor inactive. "
-                "Add accounts at /accounts or set IMAP env vars."
+                "Add owner accounts at /admin/accounts or set IMAP env vars."
             )
             return {"started": False, "reason": "no_accounts"}
         except Exception as e:
@@ -531,7 +534,7 @@ class PhishingDetectionApp:
             if request.url.query:
                 target += "?" + request.url.query
             return RedirectResponse(
-                url=f"/login?next={quote(target, safe='/?:=&')}",
+                url=f"/admin/login?next={quote(target, safe='/?:=&')}",
                 status_code=303,
             )
 
@@ -540,15 +543,12 @@ class PhishingDetectionApp:
         class HTMLAuthRedirectMiddleware(BaseHTTPMiddleware):
             async def dispatch(self, request, call_next):
                 path = request.url.path
-                html_path = (
-                    path in {"/analyze", "/status", "/monitor", "/accounts"}
-                    or path == "/dashboard"
-                    or path.startswith("/dashboard/")
-                )
+                html_path = path == "/admin" or path.startswith("/admin/")
                 if (
                     request.method.upper() == "GET"
                     and html_path
-                    and not path.startswith("/dashboard/api/")
+                    and path != "/admin/login"
+                    and not path.startswith("/admin/api/")
                     and not _has_valid_html_session(request)
                 ):
                     return _login_redirect(request)
@@ -584,7 +584,7 @@ class PhishingDetectionApp:
 
         def _login_success_redirect(next_path: str) -> RedirectResponse:
             if not next_path.startswith("/") or next_path.startswith("//"):
-                next_path = "/dashboard"
+                next_path = "/admin/dashboard"
             return RedirectResponse(url=next_path, status_code=303)
 
         def _normalize_analyst_token(raw_token: object) -> str:
@@ -875,6 +875,9 @@ class PhishingDetectionApp:
                 audit_lock=False,
             )
             active_count = len([item for item in accounts if item.status != "disabled"])
+            entitlement_payload = entitlement.to_dict()
+            if entitlement.available and active_count >= plan.mailbox_quota:
+                entitlement_payload = _mailbox_quota_lock(context, active_count)
             return {
                 "account": context.to_dict(),
                 "mailboxes": [item.to_public_dict() for item in accounts],
@@ -883,7 +886,7 @@ class PhishingDetectionApp:
                     "limit": plan.mailbox_quota,
                     "remaining": max(plan.mailbox_quota - active_count, 0),
                 },
-                "entitlement": entitlement.to_dict(),
+                "entitlement": entitlement_payload,
                 "workflow": {
                     "customer_product": "PayShield",
                     "engine": "PhishAnalyze",
@@ -913,7 +916,11 @@ class PhishingDetectionApp:
                 "required_plan_name": required_plan.name,
                 "reason": (
                     f"{context.plan_name} includes {plan.mailbox_quota} mailboxes. "
-                    f"Remove one or upgrade for more mailbox monitoring."
+                    + (
+                        "Remove one to connect another mailbox."
+                        if next_plan_slug is None
+                        else "Remove one or upgrade for more mailbox monitoring."
+                    )
                 ),
                 "quota": plan.mailbox_quota,
                 "used": used,
@@ -1021,18 +1028,33 @@ class PhishingDetectionApp:
             return {"processed": False, "event_type": event_type}
 
         @app.get("/login", response_class=HTMLResponse)
-        async def login_page(request: Request, next: str = "/dashboard"):
+        async def legacy_login_page(next: str = "/admin/dashboard"):
+            """Redirect old analyst-login bookmarks to the admin login."""
+            from urllib.parse import quote
+
+            return RedirectResponse(
+                url=f"/admin/login?next={quote(next, safe='/?:=&')}",
+                status_code=303,
+            )
+
+        @app.post("/login")
+        async def legacy_login_submit():
+            """Keep old form targets from stale browsers from failing silently."""
+            return RedirectResponse(url="/admin/login", status_code=303)
+
+        @app.get("/admin/login", response_class=HTMLResponse)
+        async def login_page(request: Request, next: str = "/admin/dashboard"):
             """Serve the dashboard login page."""
             if _has_valid_html_session(request):
                 return _login_success_redirect(next)
             return _render_login(next)
 
-        @app.post("/login")
+        @app.post("/admin/login")
         async def login_submit(request: Request):
             """Accept the analyst token and set browser session cookies."""
             form = await request.form()
             token = _normalize_analyst_token(form.get("token", ""))
-            next_path = str(form.get("next", "/dashboard"))
+            next_path = str(form.get("next", "/admin/dashboard"))
             expected_token = self.token_verifier.expected_token or ""
             try:
                 _check_auth_failure_budget(
@@ -1817,14 +1839,55 @@ class PhishingDetectionApp:
                 raise HTTPException(status_code=404, detail="Public demo mode is not enabled")
             return plan_payload(current_plan="free")
 
+        def _render_phish_user_page(page: str) -> HTMLResponse:
+            page_title = {
+                "analyze": "Analyze - PhishAnalyze",
+                "dashboard": "Dashboard - PhishAnalyze",
+                "monitor": "Monitor - PhishAnalyze",
+            }.get(page, "PhishAnalyze")
+            page_path = Path("./templates/phish_app.html")
+            html_content = (
+                page_path.read_text(encoding="utf-8")
+                .replace("{{PAGE}}", html.escape(page, quote=True))
+                .replace("{{PAGE_TITLE}}", html.escape(page_title, quote=True))
+            )
+            return HTMLResponse(
+                content=_inject_shared(html_content),
+                headers={"Content-Security-Policy": STATIC_PAGE_CSP},
+            )
+
         @app.get("/", response_class=HTMLResponse)
         async def public_home():
             """Send visitors to the public product page, not the analyst console."""
             return RedirectResponse(url="/product", status_code=303)
 
         @app.get("/analyze", response_class=HTMLResponse)
+        async def public_analyze_page():
+            """Serve the public user-owned PhishAnalyze upload page."""
+            return _render_phish_user_page("analyze")
+
+        @app.get("/dashboard", response_class=HTMLResponse)
+        async def public_dashboard_page():
+            """Serve tenant-scoped public PhishAnalyze scan history."""
+            return _render_phish_user_page("dashboard")
+
+        @app.get("/monitor", response_class=HTMLResponse)
+        async def public_monitor_page():
+            """Serve tenant-scoped public PhishAnalyze mailbox monitoring."""
+            return _render_phish_user_page("monitor")
+
+        @app.get("/admin", response_class=HTMLResponse)
+        async def admin_overview_page():
+            """Serve privacy-preserving owner/admin system overview."""
+            admin_path = Path("./templates/admin.html")
+            return HTMLResponse(
+                content=_inject_shared(admin_path.read_text(encoding="utf-8")),
+                headers={"Content-Security-Policy": STATIC_PAGE_CSP},
+            )
+
+        @app.get("/admin/analyze", response_class=HTMLResponse)
         async def index():
-            """Serve the main upload/analyze page."""
+            """Serve the internal owner upload/analyze page."""
             index_path = Path("./templates/index.html")
             return HTMLResponse(content=_inject_shared(
                 index_path.read_text(encoding="utf-8")
@@ -2054,6 +2117,34 @@ class PhishingDetectionApp:
                 },
             }
 
+        @app.get("/admin/api/overview", dependencies=[Depends(require_token)])
+        async def admin_api_overview():
+            """Return redacted aggregate state for the owner admin console."""
+            store = _get_saas_store()
+            overview = store.admin_overview()
+            try:
+                from src.automation.multi_account_monitor import list_accounts
+
+                configured_account_count = len(list_accounts())
+            except Exception as exc:
+                logger.warning("Could not read owner account count: %s", exc)
+                configured_account_count = 0
+
+            monitor_running = bool(self._monitor is not None and self._monitor._running)
+            monitor_stats_dict = self._monitor.stats if self._monitor is not None else {}
+            overview["owner_console"] = {
+                "monitor_running": monitor_running,
+                "configured_mailbox_accounts": configured_account_count,
+                "active_mailbox_accounts": int(monitor_stats_dict.get("accounts") or 0),
+                "recent_runtime_results": len(self._upload_results),
+            }
+            overview["system"] = {
+                "build_sha": build_sha,
+                "static_asset_version": static_asset_version,
+                "pipeline": "ready",
+            }
+            return overview
+
         @app.get("/api/diagnose", dependencies=[Depends(require_token)])
         async def diagnose_apis():
             """
@@ -2079,6 +2170,11 @@ class PhishingDetectionApp:
             }
 
         @app.get("/status", response_class=HTMLResponse)
+        async def legacy_status_page():
+            """Redirect old API status bookmarks to the admin console."""
+            return RedirectResponse(url="/admin/status", status_code=303)
+
+        @app.get("/admin/status", response_class=HTMLResponse)
         async def status_page():
             """Serve the API/system status page."""
             status_path = Path("./templates/status.html")
@@ -2095,9 +2191,9 @@ class PhishingDetectionApp:
                 "url_detonation_timeout": self.config.url_detonation_timeout,
             }
 
-        @app.get("/monitor", response_class=HTMLResponse)
+        @app.get("/admin/monitor", response_class=HTMLResponse)
         async def monitor_page():
-            """Serve the automation monitor/review page."""
+            """Serve the internal automation monitor/review page."""
             monitor_path = Path("./templates/monitor.html")
             return HTMLResponse(content=_inject_shared(
                 monitor_path.read_text(encoding="utf-8")
@@ -2265,6 +2361,11 @@ class PhishingDetectionApp:
 
         # ── Account management routes ─────────────────────────────
         @app.get("/accounts", response_class=HTMLResponse)
+        async def legacy_accounts_page():
+            """Redirect old mailbox account bookmarks to the admin console."""
+            return RedirectResponse(url="/admin/accounts", status_code=303)
+
+        @app.get("/admin/accounts", response_class=HTMLResponse)
         async def accounts_page():
             """Serve the account management page."""
             accounts_path = Path("./templates/accounts.html")
@@ -2870,7 +2971,7 @@ class PhishingDetectionApp:
             }
 
         # Include dashboard routes. The HTMLAuthRedirectMiddleware turns
-        # unauthenticated browser page loads into /login redirects, while
+        # unauthenticated admin page loads into /admin/login redirects, while
         # the dependency protects JSON endpoints and direct requests.
         app.include_router(self.dashboard.router, dependencies=[Depends(require_token)])
 
@@ -2970,8 +3071,9 @@ class PhishingDetectionApp:
                 self._monitor.stop()
 
         logger.info(f"Starting server on {host}:{port}")
-        logger.info(f"Dashboard: http://{host}:{port}/dashboard")
-        logger.info(f"Monitor:   http://{host}:{port}/monitor")
+        logger.info(f"Public analyze: http://{host}:{port}/analyze")
+        logger.info(f"Admin:          http://{host}:{port}/admin")
+        logger.info(f"Admin monitor:  http://{host}:{port}/admin/monitor")
         logger.info(f"API:       http://{host}:{port}/api")
 
         run(
