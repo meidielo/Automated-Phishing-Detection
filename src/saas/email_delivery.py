@@ -141,30 +141,39 @@ class ZohoPasswordResetMailer:
             raise EmailDeliveryError("Failed to send password reset email through Zoho") from exc
 
     def _access_token(self) -> str:
-        endpoint = f"{self.config.accounts_base.rstrip('/')}/oauth/v2/token"
-        body = urllib.parse.urlencode(
+        params = urllib.parse.urlencode(
             {
                 "refresh_token": self.config.refresh_token,
                 "client_id": self.config.client_id,
                 "client_secret": self.config.client_secret,
                 "grant_type": "refresh_token",
             }
-        ).encode("utf-8")
+        )
+        endpoint = f"{self.config.accounts_base.rstrip('/')}/oauth/v2/token?{params}"
         request = urllib.request.Request(
             endpoint,
-            data=body,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
             method="POST",
         )
         try:
             with urllib.request.urlopen(request, timeout=20) as response:
                 payload = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
-            raise EmailDeliveryError("Zoho OAuth token refresh failed") from exc
+            body = exc.read().decode("utf-8", errors="replace")
+            error = _zoho_error_code(body)
+            raise EmailDeliveryError(f"Zoho OAuth token refresh failed: {error}") from exc
         except Exception as exc:
             raise EmailDeliveryError("Zoho OAuth token refresh failed") from exc
 
         token = str(payload.get("access_token", ""))
         if not token:
-            raise EmailDeliveryError("Zoho OAuth token response did not include access_token")
+            error = str(payload.get("error", "missing_access_token"))
+            raise EmailDeliveryError(f"Zoho OAuth token refresh failed: {error}")
         return token
+
+
+def _zoho_error_code(body: str) -> str:
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        return "http_error"
+    return str(payload.get("error", "http_error"))
