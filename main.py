@@ -28,7 +28,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from uvicorn import run
 
-from src.billing.plans import PLAN_ORDER, plan_payload
+from src.billing.plans import PLAN_ORDER, get_plan, plan_payload
 from src.billing.stripe_client import (
     StripeAPIError,
     StripeBillingClient,
@@ -602,7 +602,7 @@ class PhishingDetectionApp:
                 '<div class="demo-entry">'
                 '<a href="/demo">Open the public demo</a>'
                 '<span>Live mailbox access, paid API checks, feedback learning, '
-                'and account management stay locked behind analyst login.</span>'
+                'and account management stay locked behind customer or analyst auth.</span>'
                 '</div>'
             )
 
@@ -615,10 +615,10 @@ class PhishingDetectionApp:
             if _demo_enabled():
                 return (
                     '<a class="primary-action" href="/agent-demo">Open agent demo</a>'
-                    '<a class="secondary-action" href="/app">Try the app shell</a>'
+                    '<a class="secondary-action" href="/app">Open PayShield</a>'
                 )
             return (
-                '<a class="primary-action" href="/app">Open user app</a>'
+                '<a class="primary-action" href="/app">Open PayShield</a>'
                 '<a class="secondary-action" href="/trust">Trust and privacy</a>'
             )
 
@@ -864,6 +864,62 @@ class PhishingDetectionApp:
             if not isinstance(payload, dict):
                 raise HTTPException(status_code=400, detail="JSON object body required")
             return payload
+
+        def _mailbox_payload(store: SaaSStore, context) -> dict:
+            accounts = store.list_mail_accounts(context.org_id)
+            plan = get_plan(context.plan_slug)
+            entitlement = store.check_entitlement(
+                org_id=context.org_id,
+                user_id=context.user_id,
+                feature_slug="mailbox_monitoring",
+                audit_lock=False,
+            )
+            active_count = len([item for item in accounts if item.status != "disabled"])
+            return {
+                "account": context.to_dict(),
+                "mailboxes": [item.to_public_dict() for item in accounts],
+                "quota": {
+                    "used": active_count,
+                    "limit": plan.mailbox_quota,
+                    "remaining": max(plan.mailbox_quota - active_count, 0),
+                },
+                "entitlement": entitlement.to_dict(),
+                "workflow": {
+                    "customer_product": "PayShield",
+                    "engine": "PhishAnalyze",
+                    "status": "credential_saved_pending_worker",
+                    "message": (
+                        "Mailbox credentials are stored per workspace. Customer "
+                        "mailbox polling is kept separate from the private analyst console."
+                    ),
+                },
+            }
+
+        def _mailbox_quota_lock(context, used: int) -> dict:
+            plan = get_plan(context.plan_slug)
+            next_plan_slug = None
+            current_rank = PLAN_ORDER.index(context.plan_slug) if context.plan_slug in PLAN_ORDER else 0
+            for candidate in PLAN_ORDER[current_rank + 1:]:
+                if used < get_plan(candidate).mailbox_quota:
+                    next_plan_slug = candidate
+                    break
+            required_plan = get_plan(next_plan_slug) if next_plan_slug else plan
+            return {
+                "feature_slug": "mailbox_monitoring",
+                "available": False,
+                "current_plan": context.plan_slug,
+                "current_plan_name": context.plan_name,
+                "required_plan": required_plan.slug,
+                "required_plan_name": required_plan.name,
+                "reason": (
+                    f"{context.plan_name} includes {plan.mailbox_quota} mailboxes. "
+                    f"Remove one or upgrade for more mailbox monitoring."
+                ),
+                "quota": plan.mailbox_quota,
+                "used": used,
+                "remaining": 0,
+                "limit_kind": "quota",
+            }
 
         def _stripe_subscription_price_id(subscription: dict) -> str | None:
             items = subscription.get("items") or {}
@@ -1297,6 +1353,130 @@ class PhishingDetectionApp:
                 "account": updated_context.to_dict(),
             }
 
+        @app.get("/api/saas/mailboxes")
+        async def api_saas_mailboxes(request: Request):
+            """Return tenant-scoped mailbox connection state for the customer app."""
+            context = _current_user_context(request)
+            store = _get_saas_store()
+            return _mailbox_payload(store, context)
+
+        @app.post("/api/saas/mailboxes")
+        async def api_saas_connect_mailbox(request: Request):
+            """Register or reconnect a user-owned mailbox for future monitoring."""
+            context = _current_user_context(request, require_csrf=True)
+            payload = await _json_object_body(request)
+            provider = str(payload.get("provider", "")).strip().lower()
+            if provider not in {"gmail", "outlook", "imap"}:
+                raise HTTPException(status_code=400, detail="Provider must be Gmail, Outlook, or IMAP")
+
+            mailbox_email = str(payload.get("email", "")).strip().lower()
+            if "@" not in mailbox_email or len(mailbox_email) > 254:
+                raise HTTPException(status_code=400, detail="Mailbox email is required")
+            app_password = str(payload.get("app_password", "")).strip()
+            if not app_password:
+                raise HTTPException(status_code=400, detail="App password is required")
+            host = str(payload.get("host", "")).strip().lower()
+            try:
+                port = int(payload.get("port") or 993)
+            except (TypeError, ValueError) as exc:
+                raise HTTPException(status_code=400, detail="IMAP port is invalid") from exc
+            if provider == "imap" and not host:
+                raise HTTPException(status_code=400, detail="IMAP host is required")
+            if port < 1 or port > 65535:
+                raise HTTPException(status_code=400, detail="IMAP port is invalid")
+
+            store = _get_saas_store()
+            entitlement = store.check_entitlement(
+                org_id=context.org_id,
+                user_id=context.user_id,
+                feature_slug="mailbox_monitoring",
+                audit_lock=True,
+            )
+            if not entitlement.available:
+                return JSONResponse(status_code=402, content={"locked": entitlement.to_dict()})
+
+            current_accounts = store.list_mail_accounts(context.org_id)
+            same_account = next(
+                (
+                    item
+                    for item in current_accounts
+                    if item.provider == provider
+                    and (item.external_account_id or "").lower() == mailbox_email
+                ),
+                None,
+            )
+            used = len([item for item in current_accounts if item.status != "disabled"])
+            plan = get_plan(context.plan_slug)
+            if same_account is None and used >= plan.mailbox_quota:
+                return JSONResponse(
+                    status_code=402,
+                    content={"locked": _mailbox_quota_lock(context, used)},
+                )
+
+            encryption_key = os.getenv("ACCOUNTS_ENCRYPTION_KEY", "").strip()
+            if not encryption_key:
+                raise HTTPException(
+                    status_code=503,
+                    detail=(
+                        "Mailbox encryption key is not configured. Set "
+                        "ACCOUNTS_ENCRYPTION_KEY before storing mailbox credentials."
+                    ),
+                )
+            from src.security.credentials import encrypt_password
+
+            credential_bundle = {
+                "provider": provider,
+                "email": mailbox_email,
+                "host": host or None,
+                "port": port,
+                "app_password": app_password,
+            }
+            encrypted_ref = encrypt_password(json.dumps(credential_bundle, separators=(",", ":")))
+            if same_account is not None:
+                store.delete_mail_account(
+                    org_id=context.org_id,
+                    user_id=context.user_id,
+                    mail_account_id=same_account.id,
+                )
+            mailbox = store.register_mail_account(
+                org_id=context.org_id,
+                user_id=context.user_id,
+                provider=provider,
+                external_account_id=mailbox_email,
+                encrypted_token_ref=encrypted_ref,
+                status="pending",
+            )
+            updated_context = store.get_account_context(context.user_id) or context
+            response = _mailbox_payload(store, updated_context)
+            response.update(
+                {
+                    "status": "ok",
+                    "mailbox": mailbox.to_public_dict(),
+                    "message": (
+                        "Mailbox credential saved. Customer polling is queued for "
+                        "the PayShield mailbox worker, separate from the owner analyst console."
+                    ),
+                }
+            )
+            return response
+
+        @app.delete("/api/saas/mailboxes/{mail_account_id}")
+        async def api_saas_delete_mailbox(request: Request, mail_account_id: str):
+            """Delete one tenant-scoped mailbox connection."""
+            context = _current_user_context(request, require_csrf=True)
+            store = _get_saas_store()
+            deleted = store.delete_mail_account(
+                org_id=context.org_id,
+                user_id=context.user_id,
+                mail_account_id=mail_account_id,
+            )
+            if not deleted:
+                raise HTTPException(status_code=404, detail="Mailbox not found")
+            updated_context = store.get_account_context(context.user_id) or context
+            response = _mailbox_payload(store, updated_context)
+            response.update({"status": "ok", "deleted": True, "mail_account_id": mail_account_id})
+            return response
+
         @app.post("/api/saas/billing/checkout")
         async def api_saas_billing_checkout(request: Request):
             """Create a Stripe Checkout Session for a subscription upgrade."""
@@ -1309,7 +1489,6 @@ class PhishingDetectionApp:
             if billing_interval not in {"monthly", "yearly"}:
                 raise HTTPException(status_code=400, detail="Unknown billing interval")
             try:
-                from src.billing.plans import get_plan
                 plan = get_plan(target_plan)
             except KeyError:
                 raise HTTPException(status_code=400, detail="Unknown plan")

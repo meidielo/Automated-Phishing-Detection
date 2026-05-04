@@ -10,7 +10,7 @@ Static demo screenshot generated from `docs/demo_screenshot.html` with realistic
 
 ![Dashboard](docs/demo_screenshot.png)
 
-## Agent-native Payment Scam Firewall Demo
+## PayShield Payment Scam Firewall Demo
 
 This repo now includes a sample-only product slice for invoice and payment
 scams. It exposes `analyze_payment_email` as a CLI and MCP tool so an AI
@@ -58,8 +58,9 @@ Safety boundary: the public demo uses committed samples only. It does not
 connect visitor mailboxes, call paid APIs, release payments, expose full email
 bodies, or write feedback labels.
 
-The public product page, account app, and analyst console share the same
-PhishAnalyze visual shell so demos no longer feel like separate prototypes.
+The public product page and customer account app are branded as PayShield. The
+underlying detection engine and private owner console remain PhishAnalyze, so
+the customer payment-decision workflow is not confused with analyst tooling.
 
 ## Project Arc
 
@@ -280,7 +281,7 @@ The demo page uses fixed sample content and `/api/demo/status` advertises the lo
 
 ### SaaS account mode
 
-`/app` serves a normal user-login shell separate from the analyst dashboard. It uses signed user sessions, same-origin checks on cookie-setting auth routes, CSRF protection on logged-in mutations, and `data/saas.db` for `users`, `organizations`, `memberships`, `subscriptions`, `scan_jobs`, `scan_results`, `usage_events`, `feature_locks`, and `audit_logs`. The customer app now lists analyzer evidence for each scan and lets signed-in users delete stored scan results from workspace history without resetting usage quota. `/trust` is the public trust and privacy page for customer reviewers.
+`/app` serves the PayShield customer product separate from the PhishAnalyze analyst dashboard. It uses signed user sessions, same-origin checks on cookie-setting auth routes, CSRF protection on logged-in mutations, and `data/saas.db` for `users`, `organizations`, `memberships`, `subscriptions`, `mail_accounts`, `scan_jobs`, `scan_results`, `usage_events`, `feature_locks`, and `audit_logs`. The customer app lists analyzer evidence for each scan, lets signed-in users delete stored scan results from workspace history without resetting usage quota, and exposes a first-class mailbox onboarding workflow. `/trust` is the public trust and privacy page for customer reviewers.
 
 Public signup is off by default:
 
@@ -299,14 +300,14 @@ SMTP_PORT=587
 SMTP_USERNAME=alerts@example.com
 SMTP_PASSWORD=zoho-app-specific-password
 SMTP_FROM_EMAIL=alerts@example.com
-SMTP_FROM_NAME=PhishAnalyze
+SMTP_FROM_NAME=PayShield
 SMTP_USE_SSL=false
 SMTP_STARTTLS=true
 ```
 
 Zoho Mail supports `smtp.zoho.com` with SSL on port `465` or TLS/STARTTLS on port `587`. If Zoho two-factor authentication is enabled, use a Zoho application-specific password rather than the mailbox login password. If SMTP is not configured, the API returns a generic success response without sending mail so account existence is not leaked.
 
-When signup is enabled, free accounts get 5 manual scans/month. `/api/saas/analyze/upload` stores user scans in the tenant-scoped SaaS DB instead of the shared analyst `data/results.jsonl` log. Expensive analyzers check plan entitlements before loading clients; locked checks return structured `feature_locked` metadata so the UI can show the required tier instead of burning paid API quota.
+When signup is enabled, free accounts get 5 manual scans/month. `/api/saas/analyze/upload` stores user scans in the tenant-scoped SaaS DB instead of the shared analyst `data/results.jsonl` log. Expensive analyzers check plan entitlements before loading clients; locked checks return structured `feature_locked` metadata so the UI can show the required tier instead of burning paid API quota. `/api/saas/mailboxes` lists, creates, reconnects, and deletes workspace-scoped mailbox records. Mailbox connection is Pro+ gated, quota checked, CSRF protected, and stores submitted app passwords only as encrypted credential bundles; the raw secret is never returned to the browser.
 
 Stripe Billing is wired through hosted Checkout and Customer Portal. Configure `PUBLIC_BASE_URL`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and the monthly Stripe Price IDs in `STRIPE_PRICE_STARTER` / `STRIPE_PRICE_PRO` / `STRIPE_PRICE_BUSINESS`. Yearly checkout uses `STRIPE_PRICE_STARTER_YEARLY` / `STRIPE_PRICE_PRO_YEARLY` / `STRIPE_PRICE_BUSINESS_YEARLY`. The app shows lower yearly-per-month pricing, sends the selected billing interval to Checkout, enables Stripe Adaptive Pricing by default through `STRIPE_ADAPTIVE_PRICING_ENABLED=true`, and mirrors `checkout.session.completed` plus `customer.subscription.*` events into `subscriptions`. If Stripe env is missing or the runtime key is rejected by Stripe, checkout reports a safe billing-unavailable response instead of pretending billing is live.
 
@@ -402,7 +403,7 @@ The static Sigma rule library in [`sigma_rules/`](sigma_rules/) ships hand-writt
 
 ## Testing
 
-The test suite has **1218 tests across 61 test modules** (unit + integration), exercising every analyzer, the decision engine override rules (including the cycle 7 ordering fix that catches pure-text BEC), the cross-analyzer calibration pass (ADR 0001) with explicit cap-ceiling tests, the persistent email_id lookup index (ADR 0002) with cross-restart smoking-gun tests, scoring confidence capping, IOC export, the Sigma exporter, the URL reputation dead-domain confidence downgrade, credential encryption migration, the LLM determinism contract plus OpenAI-compatible provider wiring, the generic phishing ML baseline, the payment-fraud dataset/eval/train/demo workflow, the body_html sanitizer with hostile XSS payloads, generated HTML report autoescaping, retention and per-subject erasure across results, alerts, feedback, SaaS scan rows, and sender profiles, dashboard self-hosted chart assets/fallback rendering under a strict dashboard CSP, public demo mode guardrails, SaaS account/session/quota/password-reset/logout gates, analyst and SaaS login failure throttling, compact analyst Analyze page layout, Stripe Checkout/webhook subscription mirroring, safe Stripe credential failure responses, Adaptive Pricing metadata, link-based SaaS auth navigation, hidden upgrade options, monthly/yearly subscription pricing, plan/feature-lock metadata, static asset cache busting, public-root routing away from admin login, the privacy-safe shared feedback modal, Docker Playwright version pinning, operational backup/health scripts, LLM provider benchmarking, and the web security middleware (bearer auth, browser session auth with CSRF, user session auth with CSRF, Stripe webhook signatures, SSRF guard, URL detonation redirect/subresource SSRF blocking, safe detonation error rendering, security headers). CI runs the full suite plus a Playwright dashboard chart smoke check on every push and PR against a fresh checkout from the hash-pinned lock file. CI-bites verified by deliberate-red sanity check on a throwaway branch.
+The test suite has **1224 tests across 61 test modules** (unit + integration), exercising every analyzer, the decision engine override rules (including the cycle 7 ordering fix that catches pure-text BEC), the cross-analyzer calibration pass (ADR 0001) with explicit cap-ceiling tests, the persistent email_id lookup index (ADR 0002) with cross-restart smoking-gun tests, scoring confidence capping, IOC export, the Sigma exporter, the URL reputation dead-domain confidence downgrade, credential encryption migration, the LLM determinism contract plus OpenAI-compatible provider wiring, the generic phishing ML baseline, the payment-fraud dataset/eval/train/demo workflow, the body_html sanitizer with hostile XSS payloads, generated HTML report autoescaping, retention and per-subject erasure across results, alerts, feedback, SaaS scan rows, SaaS mailbox onboarding, and sender profiles, dashboard self-hosted chart assets/fallback rendering under a strict dashboard CSP, public demo mode guardrails, SaaS account/session/quota/password-reset/logout gates, analyst and SaaS login failure throttling, compact analyst Analyze page layout, Stripe Checkout/webhook subscription mirroring, safe Stripe credential failure responses, Adaptive Pricing metadata, link-based SaaS auth navigation, hidden upgrade options, monthly/yearly subscription pricing, plan/feature-lock metadata, static asset cache busting, public-root routing away from admin login, the privacy-safe shared feedback modal, Docker Playwright version pinning, operational backup/health scripts, LLM provider benchmarking, and the web security middleware (bearer auth, browser session auth with CSRF, user session auth with CSRF, Stripe webhook signatures, SSRF guard, URL detonation redirect/subresource SSRF blocking, safe detonation error rendering, security headers). CI runs the full suite plus a Playwright dashboard chart smoke check on every push and PR against a fresh checkout from the hash-pinned lock file. CI-bites verified by deliberate-red sanity check on a throwaway branch.
 
 ```bash
 # Run all tests
@@ -452,7 +453,7 @@ python -m pytest --cov=src --cov-report=html
 
 9. **No GPU acceleration**: NLP intent classification and image similarity run on CPU only. This is adequate for email-volume workloads but not for bulk retroactive analysis of large archives.
 
-10. **Public demo is sample-only**: `PUBLIC_DEMO_MODE=true` opens `/demo`, but it does not connect visitor mailboxes or let public users run paid API-backed analysis. Per-user mailbox access requires a separate multi-user auth and storage design.
+10. **Public demo is sample-only**: `PUBLIC_DEMO_MODE=true` opens `/demo`, but it does not connect visitor mailboxes or let public users run paid API-backed analysis. Real mailbox access belongs to `/app`, where tenant-scoped accounts can store encrypted mailbox credentials; live customer polling still needs the SaaS mailbox worker before it is treated as production monitoring.
 
 11. **Single-node deployment**: The current architecture runs on a single node. For multi-node deployment, you'd need to add a message queue (Redis/RabbitMQ) between ingestion and the pipeline, which the async generator interface is designed to support but doesn't implement out of the box.
 

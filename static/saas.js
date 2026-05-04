@@ -12,6 +12,13 @@
   const featureGrid = document.getElementById("featureGrid");
   const historyList = document.getElementById("historyList");
   const historyNotice = document.getElementById("historyNotice");
+  const mailboxForm = document.getElementById("mailboxForm");
+  const mailboxList = document.getElementById("mailboxList");
+  const mailboxNotice = document.getElementById("mailboxNotice");
+  const mailboxQuota = document.getElementById("mailboxQuota");
+  const mailboxLockText = document.getElementById("mailboxLockText");
+  const mailboxStatusText = document.getElementById("mailboxStatusText");
+  const mailboxSubmitButton = document.getElementById("mailboxSubmitButton");
   const decisionStack = document.getElementById("decisionStack");
   const emailFileInput = document.getElementById("emailFile");
   const scanDropZone = document.getElementById("scanDropZone");
@@ -115,7 +122,13 @@
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error(payload.detail || payload.reason || `Request failed with ${response.status}`);
+      const error = new Error(payload.detail || payload.reason || `Request failed with ${response.status}`);
+      error.status = response.status;
+      error.payload = payload;
+      if (payload.locked) {
+        error.locked = payload.locked;
+      }
+      throw error;
     }
     return payload;
   }
@@ -159,7 +172,7 @@
     appView.classList.remove("hidden");
     csrfCookieName = session.csrf_cookie || csrfCookieName;
     updateAccount(session.account);
-    await Promise.all([loadPlans(), loadHistory()]);
+    await Promise.all([loadPlans(), loadHistory(), loadMailboxes()]);
   }
 
   function resetTransientWorkspace() {
@@ -213,30 +226,6 @@
     featureCatalog = new Map(payload.features.map((feature) => [feature.slug, feature]));
     renderPricing(payload);
     renderFeatureAccess(payload);
-  }
-
-  function renderPlans(payload) {
-    const currentPlan = payload.current_plan || "free";
-    planGrid.innerHTML = "";
-    payload.plans.forEach((plan) => {
-      const isCurrent = plan.slug === currentPlan;
-      const isFree = plan.slug === "free";
-      const card = document.createElement("article");
-      card.className = `plan-card ${isCurrent ? "current" : ""}`;
-      const price = plan.monthly_price_aud > 0 ? `A$${plan.monthly_price_aud}/mo` : "Free";
-      const buttonText = isCurrent ? "Current plan" : (isFree ? "Included" : `Upgrade to ${plan.name}`);
-      card.innerHTML = `
-        <span class="feature-status">${escapeHtml(plan.best_for)}</span>
-        <h3>${escapeHtml(plan.name)}</h3>
-        <div class="plan-price">${escapeHtml(price)}</div>
-        <p>${escapeHtml(plan.summary)}</p>
-        <p>${plan.scan_quota} scans/month · ${plan.mailbox_quota} mailboxes</p>
-        <button type="button" data-plan="${escapeHtml(plan.slug)}" ${isCurrent || isFree ? "disabled" : ""}>
-          ${escapeHtml(buttonText)}
-        </button>
-      `;
-      planGrid.appendChild(card);
-    });
   }
 
   function renderPricing(payload) {
@@ -356,26 +345,6 @@
     }).join("");
   }
 
-  function planIcon(index) {
-    const branch = index >= 2
-      ? '<path d="M20 41L32 34L44 41" /><circle cx="44" cy="41" r="4" />'
-      : '<path d="M32 34L44 41" /><circle cx="44" cy="41" r="4" />';
-    const extraBranch = index >= 3
-      ? '<path d="M20 41L12 47M44 41L52 47" /><circle cx="12" cy="47" r="3" /><circle cx="52" cy="47" r="3" />'
-      : "";
-    return `
-      <svg viewBox="0 0 64 64" focusable="false" aria-hidden="true">
-        <circle cx="32" cy="14" r="10" />
-        <circle cx="32" cy="14" r="4" />
-        <path d="M32 24V50" />
-        <path d="M32 34L20 41" />
-        <circle cx="20" cy="41" r="4" />
-        ${branch}
-        ${extraBranch}
-      </svg>
-    `;
-  }
-
   function formatCount(value, label) {
     const count = Number(value || 0);
     const plural = label === "mailbox" ? "mailboxes" : `${label}s`;
@@ -473,6 +442,57 @@
         </div>
       `;
       historyList.appendChild(card);
+    });
+  }
+
+  async function loadMailboxes() {
+    const payload = await apiJson("/api/saas/mailboxes");
+    renderMailboxes(payload);
+  }
+
+  function renderMailboxes(payload) {
+    const mailboxes = payload.mailboxes || [];
+    const quota = payload.quota || { used: 0, limit: 0, remaining: 0 };
+    const entitlement = payload.entitlement || {};
+    const locked = !entitlement.available;
+    mailboxQuota.textContent = `${quota.used} / ${quota.limit} mailboxes`;
+    mailboxLockText.textContent = locked
+      ? `${entitlement.reason || "Mailbox monitoring is locked on this plan."} Manual scans still work.`
+      : "Connect the inbox that receives supplier invoices, remittance updates, or bank-detail changes.";
+    mailboxSubmitButton.textContent = locked ? `${entitlement.required_plan_name || "Pro"} required` : "Connect mailbox";
+    mailboxForm.querySelectorAll("input, select, button[type='submit']").forEach((control) => {
+      control.disabled = locked;
+    });
+    mailboxStatusText.textContent = mailboxes.length
+      ? `${mailboxes.length} mailbox${mailboxes.length === 1 ? "" : "es"} saved for this workspace.`
+      : "No mailbox connected yet.";
+    mailboxList.innerHTML = "";
+    if (!mailboxes.length) {
+      const empty = document.createElement("article");
+      empty.className = "mailbox-row";
+      empty.innerHTML = `
+        <div>
+          <strong>No connected mailbox</strong>
+          <span>${escapeHtml(locked ? "Upgrade to Pro to connect mailbox monitoring." : "Connect an inbox to prepare automatic monitoring.")}</span>
+        </div>
+      `;
+      mailboxList.appendChild(empty);
+      return;
+    }
+    mailboxes.forEach((item) => {
+      const row = document.createElement("article");
+      row.className = "mailbox-row";
+      row.innerHTML = `
+        <div>
+          <strong>${escapeHtml(item.external_account_id || "Mailbox")}</strong>
+          <span>${escapeHtml(formatLabel(item.provider))} - ${escapeHtml(item.credential_saved ? "encrypted credential saved" : "credential missing")}</span>
+        </div>
+        <div class="history-card-actions">
+          <span class="mailbox-status ${escapeHtml(item.status || "pending")}">${escapeHtml(formatLabel(item.status || "pending"))}</span>
+          <button class="subtle-button mailbox-delete" type="button" data-delete-mailbox="${escapeHtml(item.id)}">Delete</button>
+        </div>
+      `;
+      mailboxList.appendChild(row);
     });
   }
 
@@ -1012,6 +1032,68 @@
       window.location.href = payload.portal_url;
     } catch (error) {
       showNotice(billingNotice, billingErrorMessage(error));
+    }
+  });
+
+  mailboxForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    hideNotice(mailboxNotice);
+    const form = new FormData(event.currentTarget);
+    const payload = Object.fromEntries(form.entries());
+    mailboxSubmitButton.disabled = true;
+    const originalText = mailboxSubmitButton.textContent;
+    let restoreSubmitButton = true;
+    mailboxSubmitButton.textContent = "Saving";
+    try {
+      const response = await apiJson("/api/saas/mailboxes", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      renderMailboxes(response);
+      event.currentTarget.reset();
+      showNotice(mailboxNotice, response.message || "Mailbox saved for this workspace.");
+    } catch (error) {
+      if (error.status === 402) {
+        showUpgradeNotice(mailboxNotice, `${error.message} Upgrade to connect mailbox monitoring.`);
+        openUpgradePanel();
+        restoreSubmitButton = false;
+        await loadMailboxes();
+      } else {
+        showNotice(mailboxNotice, error.message || "Mailbox could not be saved.");
+      }
+    } finally {
+      if (restoreSubmitButton) {
+        mailboxSubmitButton.disabled = false;
+        mailboxSubmitButton.textContent = originalText;
+      }
+    }
+  });
+
+  mailboxList.addEventListener("click", async (event) => {
+    const button = event.target.closest("button[data-delete-mailbox]");
+    if (!button) {
+      return;
+    }
+    event.preventDefault();
+    const mailboxId = button.getAttribute("data-delete-mailbox") || "";
+    if (!mailboxId || !window.confirm("Delete this mailbox connection?")) {
+      return;
+    }
+    hideNotice(mailboxNotice);
+    const originalText = button.textContent;
+    button.disabled = true;
+    button.textContent = "Deleting";
+    try {
+      const response = await apiJson(`/api/saas/mailboxes/${encodeURIComponent(mailboxId)}`, {
+        method: "DELETE",
+        body: "{}",
+      });
+      renderMailboxes(response);
+      showNotice(mailboxNotice, "Mailbox connection deleted.");
+    } catch (error) {
+      button.disabled = false;
+      button.textContent = originalText;
+      showNotice(mailboxNotice, error.message || "Could not delete this mailbox.");
     }
   });
 

@@ -29,9 +29,23 @@ body {
 }
 
 .brand {
+  display: inline-grid;
+  gap: 1px;
+  color: var(--accent-light);
+  font-weight: 800;
+}
+
+.brand-main {
   color: var(--accent-light);
   font-size: 17px;
+  line-height: 1;
+}
+
+.brand-sub {
+  color: var(--text-muted);
+  font-size: 10px;
   font-weight: 800;
+  line-height: 1;
 }
 
 .product-nav {

@@ -1,7 +1,7 @@
 # SaaS Account, Database, and Billing Architecture
 
 This document defines the product direction for turning the single-operator
-phishing detector into a user-login product. The current public demo is
+phishing detector into PayShield, a user-login payment-risk product. The current public demo is
 sample-only. The repository now includes a SQLite-backed SaaS foundation for
 normal user login, organization-scoped scan storage, plan limits, and locked
 analyzer responses. Public signup remains disabled by default so operators do
@@ -47,6 +47,10 @@ Implemented foundation:
   analyst `data/results.jsonl` log.
 - `/api/saas/scans/{result_id}` deletes one organization-scoped scan result
   from history while keeping usage events for quota and billing integrity.
+- `/api/saas/mailboxes` lists, registers, reconnects, and deletes
+  organization-scoped mailbox records. Connection is Pro+ gated, quota checked,
+  CSRF protected, and stores submitted app passwords only as encrypted credential
+  bundles.
 - `/trust` documents the customer-facing privacy boundary, analyzer visibility,
   deletion controls, and the separation between normal accounts and private
   analyst admin pages.
@@ -74,7 +78,9 @@ Implemented foundation:
 Not implemented yet:
 
 - Production Postgres migrations.
-- Per-user mailbox OAuth or IMAP token storage.
+- Customer mailbox polling worker that reads the SaaS `mail_accounts` table and
+  writes tenant-scoped scan jobs/results.
+- Role-based customer access to dashboard and monitor views.
 
 ## Initial Plans
 
@@ -84,7 +90,7 @@ checks, and Stripe webhook handlers share one catalog.
 | Plan | Price | Monthly scans | Mailboxes | Intended use |
 |---|---:|---:|---:|---|
 | Free | AUD 0 | 5 | 0 | Demo visitors and tiny manual checks |
-| Starter | AUD 9.99 monthly, AUD 7.99/mo yearly | 100 | 1 | Freelancers and very small teams |
+| Starter | AUD 9.99 monthly, AUD 7.99/mo yearly | 100 | 0 | Freelancers and very small teams |
 | Pro | AUD 29.99 monthly, AUD 23.99/mo yearly | 1000 | 3 | SMEs that receive invoices by email |
 | Business | AUD 79.99 monthly, AUD 63.99/mo yearly | 5000 | 10 | Finance teams and agencies |
 
@@ -116,9 +122,10 @@ Tenant isolation rule: every query for user-visible data must include `org_id`
 from the authenticated session. Tests must prove user A cannot read user B's
 mailboxes, scans, feedback labels, usage rows, subscription state, or audit logs.
 
-The current SQLite store follows that rule for SaaS scan history. The analyst
-dashboard and legacy mailbox monitor are still single-operator surfaces guarded
-by `ANALYST_API_TOKEN`.
+The current SQLite store follows that rule for SaaS scan history and mailbox
+metadata. The analyst dashboard and legacy mailbox monitor are still
+single-operator surfaces guarded by `ANALYST_API_TOKEN`. They should remain an
+internal PhishAnalyze security console, not the PayShield customer product.
 
 ## Usage Gate
 
@@ -158,7 +165,10 @@ Safe implementation order:
 5. Add usage tracking and feature gates. **Done for manual scans and analyzers.**
 6. Add Stripe Checkout and webhook subscription sync. **Done for the SaaS path.**
 7. Add customer deletion and trust/privacy controls. **Done for scan history.**
-8. Add per-user mailbox connection.
-9. Add tenant isolation tests before enabling real mailbox access.
+8. Add per-user mailbox connection. **Done for encrypted mailbox metadata and
+   customer onboarding.**
+9. Add the SaaS mailbox polling worker and tenant-isolated monitor views.
+10. Add tenant isolation tests before enabling live customer mailbox polling.
 
-Do not connect visitor mailboxes until steps 1, 2, 4, and 9 are complete.
+Do not enable live customer mailbox polling until steps 1, 2, 4, 8, and 10 are
+complete.

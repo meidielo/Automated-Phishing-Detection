@@ -79,7 +79,9 @@ def test_saas_app_login_shell_uses_link_based_auth_navigation():
 
     assert response.status_code == 200
     assert 'id="authTitle"' in response.text
-    assert 'href="/app" class="active" aria-current="page">User app</a>' in response.text
+    assert 'href="/app" class="active" aria-current="page">Payment app</a>' in response.text
+    assert "PayShield" in response.text
+    assert "by PhishAnalyze" in response.text
     assert 'href="/trust">Trust</a>' in response.text
     assert 'href="/login">Analyst login</a>' not in response.text
     assert 'href="/demo">Demo</a>' not in response.text
@@ -170,6 +172,33 @@ def test_saas_app_manual_upload_uses_drop_zone():
     assert ".loading-spinner" in css
     assert ".scan-drop-zone.is-analyzing" in css
     assert "drag-over" in js
+
+
+def test_saas_app_mailbox_workflow_is_first_class_and_plan_gated():
+    client = TestClient(
+        _build_app_with_token(),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    response = client.get("/app")
+    css = Path("static/saas.css").read_text(encoding="utf-8")
+    js = Path("static/saas.js").read_text(encoding="utf-8")
+
+    assert response.status_code == 200
+    assert 'id="mailboxSection"' in response.text
+    assert "Connect payment inboxes" in response.text
+    assert "Customer monitoring separate from the internal PhishAnalyze analyst console" not in response.text
+    assert "keeps customer monitoring separate from the internal PhishAnalyze analyst console" in response.text
+    assert 'id="mailboxForm"' in response.text
+    assert 'id="mailboxList"' in response.text
+    assert 'id="mailboxNotice" hidden' in response.text
+    assert "/api/saas/mailboxes" in js
+    assert "function loadMailboxes" in js
+    assert "data-delete-mailbox" in js
+    assert "Mailbox monitoring unlocks on Pro" in response.text
+    assert ".mailbox-grid" in css
+    assert ".mailbox-row" in css
 
 
 def test_analyze_page_redirects_to_login_without_session():
@@ -347,7 +376,7 @@ def test_user_app_shell_opens_without_analyst_session():
     assert response.status_code == 200
     assert "/static/saas.css" in response.text
     assert "/static/saas.js" in response.text
-    assert "PhishAnalyze workspace" in response.text
+    assert "PayShield workspace" in response.text
 
 
 def test_user_app_fetches_preserve_same_origin_referrer_for_csrf():
@@ -393,12 +422,12 @@ def test_product_shell_opens_without_analyst_session():
     response = client.get("/product")
 
     assert response.status_code == 200
-    assert "PhishAnalyze payment-risk firewall" in response.text
+    assert "PayShield for invoice-heavy SMEs" in response.text
     assert 'href="/agent-demo"' not in response.text
     assert 'href="/demo"' not in response.text
     assert 'href="/login">Analyst login</a>' not in response.text
     assert 'href="/trust">Trust</a>' in response.text
-    assert 'href="/app">Open user app</a>' in response.text
+    assert 'href="/app">Open PayShield</a>' in response.text
     assert 'href="/trust">Trust and privacy</a>' in response.text
     assert "/static/product.css" in response.text
     assert "/static/product-dashboard.png" in response.text
@@ -421,6 +450,7 @@ def test_trust_page_opens_without_analyst_session():
     assert "Trust and privacy" in response.text
     assert "Uploads are for analysis, not model training" in response.text
     assert "Analyst pages remain private owner tools" in response.text
+    assert "PayShield is the customer payment-risk app" in response.text
     assert 'href="/login">Analyst login</a>' not in response.text
     assert "/static/product.css" in response.text
     csp = response.headers["Content-Security-Policy"]

@@ -65,6 +65,16 @@ class MailAccountRecord:
     def to_dict(self) -> dict:
         return asdict(self)
 
+    def to_public_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "provider": self.provider,
+            "external_account_id": self.external_account_id,
+            "status": self.status,
+            "created_at": self.created_at,
+            "credential_saved": bool(self.encrypted_token_ref),
+        }
+
 
 class SaaSStore:
     """Small production-shaped account store for local SQLite deployments."""
@@ -641,6 +651,45 @@ class SaaSStore:
                 now=now,
             )
             conn.commit()
+
+    def delete_mail_account(
+        self,
+        *,
+        org_id: str,
+        user_id: str,
+        mail_account_id: str,
+    ) -> bool:
+        now = utc_now_iso()
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT id, provider, external_account_id
+                FROM mail_accounts
+                WHERE id = ? AND org_id = ?
+                """,
+                (mail_account_id, org_id),
+            ).fetchone()
+            if row is None:
+                return False
+            conn.execute(
+                "DELETE FROM mail_accounts WHERE id = ? AND org_id = ?",
+                (mail_account_id, org_id),
+            )
+            self._write_audit(
+                conn,
+                org_id=org_id,
+                actor_user_id=user_id,
+                action="mail_account.deleted",
+                target_type="mail_account",
+                target_id=mail_account_id,
+                metadata={
+                    "provider": row["provider"],
+                    "external_account_id": row["external_account_id"],
+                },
+                now=now,
+            )
+            conn.commit()
+            return True
 
     def complete_scan_job(self, scan_job_id: str, status: str = "completed") -> None:
         with self._connect() as conn:

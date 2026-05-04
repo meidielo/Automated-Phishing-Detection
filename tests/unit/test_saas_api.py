@@ -283,6 +283,99 @@ def test_saas_scan_history_delete_is_org_scoped_and_keeps_usage(tmp_path):
     assert session.json()["account"]["monthly_scan_used"] == 1
 
 
+def test_saas_mailbox_connection_is_plan_gated_and_csrf_protected(tmp_path, monkeypatch):
+    monkeypatch.setenv("ACCOUNTS_ENCRYPTION_KEY", "test-mailbox-encryption-key-for-unit-tests")
+    client = TestClient(
+        _build_saas_app(tmp_path, signup_enabled=True),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    assert _signup(client).status_code == 200
+    listing = client.get("/api/saas/mailboxes")
+    missing_csrf = client.post(
+        "/api/saas/mailboxes",
+        json={
+            "provider": "gmail",
+            "email": "owner@example.com",
+            "app_password": "app-specific-password",
+        },
+    )
+    locked = _post_json_with_csrf(
+        client,
+        "/api/saas/mailboxes",
+        {
+            "provider": "gmail",
+            "email": "owner@example.com",
+            "app_password": "app-specific-password",
+        },
+    )
+    invalid_port = _post_json_with_csrf(
+        client,
+        "/api/saas/mailboxes",
+        {
+            "provider": "imap",
+            "email": "owner@example.com",
+            "host": "imap.example.com",
+            "port": "not-a-port",
+            "app_password": "app-specific-password",
+        },
+    )
+
+    assert listing.status_code == 200
+    assert listing.json()["mailboxes"] == []
+    assert listing.json()["quota"] == {"used": 0, "limit": 0, "remaining": 0}
+    assert listing.json()["entitlement"]["required_plan_name"] == "Pro"
+    assert missing_csrf.status_code == 403
+    assert invalid_port.status_code == 400
+    assert invalid_port.json()["detail"] == "IMAP port is invalid"
+    assert locked.status_code == 402
+    assert locked.json()["locked"]["feature_slug"] == "mailbox_monitoring"
+    assert "app-specific-password" not in json.dumps(locked.json())
+
+
+def test_saas_mailbox_connection_encrypts_and_lists_masked_metadata(tmp_path, monkeypatch):
+    monkeypatch.setenv("ACCOUNTS_ENCRYPTION_KEY", "test-mailbox-encryption-key-for-unit-tests")
+    client = TestClient(
+        _build_saas_app(tmp_path, signup_enabled=True),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    signup = _signup(client)
+    context = signup.json()["account"]
+    store = SaaSStore(tmp_path / "saas.db")
+    store.set_subscription(org_id=context["org_id"], plan_slug="pro")
+    connect = _post_json_with_csrf(
+        client,
+        "/api/saas/mailboxes",
+        {
+            "provider": "imap",
+            "email": "owner@example.com",
+            "host": "imap.example.com",
+            "app_password": "secret app password",
+        },
+    )
+    listing = client.get("/api/saas/mailboxes")
+    stored = store.list_mail_accounts(context["org_id"])[0]
+    delete = _delete_with_csrf(client, f"/api/saas/mailboxes/{stored.id}")
+    after_delete = client.get("/api/saas/mailboxes")
+
+    assert connect.status_code == 200
+    assert connect.json()["mailbox"]["external_account_id"] == "owner@example.com"
+    assert connect.json()["mailbox"]["credential_saved"] is True
+    assert connect.json()["mailbox"]["status"] == "pending"
+    assert listing.json()["quota"] == {"used": 1, "limit": 3, "remaining": 2}
+    assert listing.json()["mailboxes"][0]["credential_saved"] is True
+    assert "encrypted_token_ref" not in json.dumps(listing.json())
+    assert "secret app password" not in json.dumps(listing.json())
+    assert stored.encrypted_token_ref.startswith("enc:v2:")
+    assert "secret app password" not in stored.encrypted_token_ref
+    assert delete.status_code == 200
+    assert delete.json()["deleted"] is True
+    assert after_delete.json()["mailboxes"] == []
+
+
 def test_saas_upload_rejects_oversized_email_before_parsing(tmp_path, monkeypatch):
     monkeypatch.setenv("MAX_EMAIL_UPLOAD_BYTES", "12")
     client = TestClient(
@@ -756,8 +849,21 @@ def test_saas_store_mail_account_metadata_is_org_scoped(tmp_path):
 
     owner_accounts = store.list_mail_accounts(owner.org_id)
     other_accounts = store.list_mail_accounts(other.org_id)
+    deleted_other = store.delete_mail_account(
+        org_id=other.org_id,
+        user_id=other.user_id,
+        mail_account_id=account.id,
+    )
+    deleted_owner = store.delete_mail_account(
+        org_id=owner.org_id,
+        user_id=owner.user_id,
+        mail_account_id=account.id,
+    )
 
     assert len(owner_accounts) == 1
     assert owner_accounts[0].id == account.id
     assert owner_accounts[0].status == "active"
     assert other_accounts == []
+    assert deleted_other is False
+    assert deleted_owner is True
+    assert store.list_mail_accounts(owner.org_id) == []

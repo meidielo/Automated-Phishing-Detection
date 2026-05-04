@@ -27,8 +27,10 @@ def test_plan_catalog_has_monthly_and_yearly_pricing():
 
     assert starter.monthly_price_aud == 9.99
     assert starter.yearly_monthly_price_aud == 7.99
+    assert starter.mailbox_quota == 0
     assert pro.monthly_price_aud == 29.99
     assert pro.yearly_monthly_price_aud == 23.99
+    assert pro.mailbox_quota == 3
     assert business.monthly_price_aud == 79.99
     assert business.yearly_monthly_price_aud == 63.99
     assert starter_payload["yearly_price_aud"] == 95.88

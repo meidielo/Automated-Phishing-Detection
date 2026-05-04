@@ -3,16 +3,19 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PhishAnalyze App</title>
+  <title>PayShield App</title>
   <link rel="stylesheet" href="/static/saas.css">
 </head>
 <body>
   <main class="saas-shell">
     <header class="saas-topbar">
-      <a class="saas-brand" href="/product">PhishAnalyze</a>
+      <a class="saas-brand" href="/product">
+        <span class="brand-main">PayShield</span>
+        <span class="brand-sub">by PhishAnalyze</span>
+      </a>
       <nav class="saas-nav" aria-label="App navigation">
         <a href="/product">Product</a>
-        <a href="/app" class="active" aria-current="page">User app</a>
+        <a href="/app" class="active" aria-current="page">Payment app</a>
         <a href="/trust">Trust</a>
       </nav>
     </header>
@@ -21,7 +24,7 @@
       <div class="auth-panel">
         <div class="auth-panel-heading">
           <h2 id="authTitle">Sign in to your workspace</h2>
-          <p id="authSubtext">Use your PhishAnalyze workspace to scan emails and review private history.</p>
+          <p id="authSubtext">Use your PayShield workspace to scan payment emails and review private history.</p>
         </div>
 
         <form id="loginForm" class="auth-form">
@@ -63,8 +66,8 @@
       <header class="app-header">
         <div>
           <span class="eyebrow" id="orgLabel">Workspace</span>
-          <h1>PhishAnalyze workspace</h1>
-          <p>Scan invoices, supplier updates, and bank-detail changes with account-scoped history and plan-aware checks.</p>
+          <h1>PayShield workspace</h1>
+          <p>Connect mailbox monitoring, scan invoices, and keep SAFE, VERIFY, and DO_NOT_PAY decisions in one account-scoped product.</p>
         </div>
         <button type="button" id="logoutButton">Logout</button>
       </header>
@@ -90,6 +93,45 @@
         </div>
       </section>
       <div class="notice" id="billingNotice" hidden></div>
+
+      <section class="mailbox-section" id="mailboxSection" aria-label="Mailbox monitoring">
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">Mailbox workflow</span>
+            <h2>Connect payment inboxes</h2>
+            <p>PayShield stores mailbox credentials per workspace and keeps customer monitoring separate from the internal PhishAnalyze analyst console.</p>
+          </div>
+          <div class="mailbox-quota" id="mailboxQuota">0 / 0 mailboxes</div>
+        </div>
+
+        <div class="mailbox-grid">
+          <article class="mailbox-card">
+            <h3>Mailbox connection</h3>
+            <p id="mailboxLockText">Mailbox monitoring unlocks on Pro.</p>
+            <form class="mailbox-form" id="mailboxForm">
+              <label>Provider
+                <select name="provider" id="mailboxProvider">
+                  <option value="gmail">Gmail</option>
+                  <option value="outlook">Outlook</option>
+                  <option value="imap">IMAP</option>
+                </select>
+              </label>
+              <label>Email address <input name="email" type="email" autocomplete="email" required></label>
+              <label>IMAP host <input name="host" type="text" autocomplete="off" placeholder="imap.gmail.com"></label>
+              <label>App password <input name="app_password" type="password" autocomplete="new-password" required></label>
+              <button id="mailboxSubmitButton" type="submit">Connect mailbox</button>
+            </form>
+            <p class="mailbox-help">Use an app-specific password. The raw password is encrypted before storage and is never returned to the browser.</p>
+          </article>
+
+          <article class="mailbox-card">
+            <h3>Connected mailboxes</h3>
+            <p id="mailboxStatusText">No mailbox connected yet.</p>
+            <div class="mailbox-list" id="mailboxList"></div>
+          </article>
+        </div>
+        <div class="notice" id="mailboxNotice" hidden></div>
+      </section>
 
       <section class="pricing-section hidden" id="pricingSection" aria-label="Plan options">
         <div class="section-heading pricing-heading">
