@@ -1510,6 +1510,7 @@ class PhishingDetectionApp:
                 result = await self.pipeline.analyze(email, feature_gate=feature_gate)
                 timestamp = datetime.now(timezone.utc).isoformat()
                 response_payload = _api_payload_from_pipeline(email, result, timestamp)
+                response_payload["upload_filename"] = file.filename or email.email_id
                 payment = response_payload.get("payment_protection") or {}
                 store.record_usage_event(
                     org_id=context.org_id,

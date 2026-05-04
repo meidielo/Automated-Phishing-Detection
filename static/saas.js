@@ -144,6 +144,7 @@
   }
 
   function renderAuth(session) {
+    resetTransientWorkspace();
     authView.classList.remove("hidden");
     appView.classList.add("hidden");
     csrfCookieName = session.csrf_cookie || csrfCookieName;
@@ -152,11 +153,19 @@
   }
 
   async function renderApp(session) {
+    resetTransientWorkspace();
     authView.classList.add("hidden");
     appView.classList.remove("hidden");
     csrfCookieName = session.csrf_cookie || csrfCookieName;
     updateAccount(session.account);
     await Promise.all([loadPlans(), loadHistory()]);
+  }
+
+  function resetTransientWorkspace() {
+    clearScanFile({ resetResult: true });
+    hideNotice(scanNotice);
+    hideNotice(billingNotice);
+    renderEmptyResult();
   }
 
   function updateAccount(account) {
@@ -410,19 +419,29 @@
     scanDropTitle.textContent = file.name;
     scanDropHint.textContent = `${formatBytes(file.size)} selected`;
     scanDropZone.classList.add("has-file");
+    scanDropZone.classList.remove("is-analyzing");
     scanSubmitButton.disabled = false;
+    scanSubmitButton.textContent = "Analyze email";
+    scanClearButton.disabled = false;
     scanClearButton.hidden = false;
     hideNotice(scanNotice);
+    renderSelectedFile(file);
   }
 
-  function clearScanFile() {
+  function clearScanFile(options = {}) {
+    const resetResult = options.resetResult !== false;
     selectedScanFile = null;
     emailFileInput.value = "";
     scanDropTitle.textContent = defaultScanDropTitle;
     scanDropHint.textContent = defaultScanDropHint;
-    scanDropZone.classList.remove("has-file", "drag-over");
+    scanDropZone.classList.remove("has-file", "drag-over", "is-analyzing");
     scanSubmitButton.disabled = true;
+    scanSubmitButton.textContent = "Analyze email";
+    scanClearButton.disabled = false;
     scanClearButton.hidden = true;
+    if (resetResult) {
+      renderEmptyResult();
+    }
   }
 
   async function loadHistory() {
@@ -452,19 +471,75 @@
     });
   }
 
+  function setResultPanel(title, note, bodyHtml) {
+    document.getElementById("resultTitle").textContent = title;
+    const panelNote = document.querySelector("#resultPanel .panel-note");
+    if (panelNote) {
+      panelNote.textContent = note;
+    }
+    decisionStack.innerHTML = bodyHtml || "";
+  }
+
+  function renderEmptyResult() {
+    setResultPanel(
+      "No scan selected",
+      "Choose an .eml file to start a fresh analysis.",
+      `
+        <section class="result-empty">
+          <h3>Ready for a new email</h3>
+          <p>Previous previews are cleared when you switch accounts, clear a file, or choose a new file.</p>
+        </section>
+      `,
+    );
+  }
+
+  function renderSelectedFile(file) {
+    setResultPanel(
+      "Ready to analyze",
+      "The previous result is hidden so the next decision is clearly tied to this file.",
+      `
+        <section class="result-empty selected">
+          <span class="result-kicker">Selected file</span>
+          <h3>${escapeHtml(file.name)}</h3>
+          <p>${escapeHtml(formatBytes(file.size))} selected. Click Analyze email to run a fresh scan.</p>
+        </section>
+      `,
+    );
+  }
+
+  function renderAnalyzingResult(file) {
+    setResultPanel(
+      "Analyzing email",
+      "Running payment-risk, phishing, and plan-aware checks for the selected file.",
+      `
+        <section class="result-loading" aria-live="polite">
+          <span class="loading-spinner" aria-hidden="true"></span>
+          <div>
+            <h3>${escapeHtml(file.name)}</h3>
+            <p>Analyzing this email now. The result below will update only after this scan finishes.</p>
+          </div>
+        </section>
+      `,
+    );
+  }
+
   function renderResult(payload) {
+    const sourceName = payload.upload_filename || payload.email_id || "uploaded email";
     document.getElementById("resultTitle").textContent = "Latest analysis";
     const panelNote = document.querySelector("#resultPanel .panel-note");
     if (panelNote) {
-      panelNote.textContent = "Review the decision, risk score, and any paid checks skipped by the current plan.";
+      panelNote.textContent = `Fresh result for ${sourceName}. Review the decision, risk score, and any skipped checks.`;
     }
-    decisionStack.innerHTML = "";
     const payment = payload.payment_protection || {};
     const decision = payment.decision || "Not payment-specific";
     const lockedChecks = payload.feature_locks || [];
     const score = normalizedScore(payload.overall_score);
     const decisionClass = decisionStyle(decision);
     decisionStack.innerHTML = `
+      <section class="result-source" aria-label="Analyzed file">
+        <span>Analyzed file</span>
+        <strong>${escapeHtml(sourceName)}</strong>
+      </section>
       <section class="result-verdict ${decisionClass}" aria-label="Payment decision">
         <div>
           <span class="result-kicker">Payment decision</span>
@@ -865,16 +940,27 @@
     }
     const form = new FormData();
     form.append("file", file);
+    renderAnalyzingResult(file);
+    scanDropZone.classList.add("is-analyzing");
+    scanSubmitButton.disabled = true;
+    scanSubmitButton.textContent = "Analyzing";
+    scanClearButton.disabled = true;
     try {
       const payload = await apiForm("/api/saas/analyze/upload", form);
       renderResult(payload);
       await Promise.all([loadPlans(), loadHistory()]);
     } catch (error) {
+      renderSelectedFile(file);
       if (error.status === 402) {
         showUpgradeNotice(scanNotice, `${error.message} Upgrade to keep scanning.`);
       } else {
         showNotice(scanNotice, error.message);
       }
+    } finally {
+      scanDropZone.classList.remove("is-analyzing");
+      scanSubmitButton.disabled = false;
+      scanSubmitButton.textContent = "Analyze email";
+      scanClearButton.disabled = false;
     }
   });
 

@@ -244,6 +244,7 @@ def test_saas_signup_session_plans_upload_and_history(tmp_path):
     assert session.json()["authenticated"] is True
     assert plans.json()["account"]["plan_slug"] == "free"
     assert upload.status_code == 200
+    assert upload.json()["upload_filename"] == "sample.eml"
     assert upload.json()["account"]["monthly_scan_used"] == 1
     assert upload.json()["feature_locks"][0]["details"]["required_plan_name"] == "Starter"
     assert history.json()["results"][0]["payment_decision"] == "VERIFY"

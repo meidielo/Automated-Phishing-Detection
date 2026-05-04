@@ -1380,6 +1380,99 @@ input[type="file"] {
   gap: 16px;
 }
 
+.result-empty,
+.result-loading,
+.result-source {
+  border: 1px solid var(--saas-border-soft);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--saas-surface-strong) 68%, transparent);
+  padding: 22px;
+}
+
+.result-empty.selected {
+  border-color: color-mix(in srgb, var(--accent-light) 52%, var(--saas-border));
+  background: color-mix(in srgb, var(--accent-light) 8%, var(--saas-surface));
+}
+
+.result-empty h3,
+.result-loading h3 {
+  margin: 0;
+  color: var(--saas-text);
+  font-size: 22px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.result-empty p,
+.result-loading p {
+  margin: 10px 0 0;
+  color: var(--saas-muted);
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.scan-drop-zone.is-analyzing {
+  border-color: color-mix(in srgb, var(--accent-light) 58%, var(--saas-border));
+  background: color-mix(in srgb, var(--accent-light) 8%, var(--saas-surface));
+}
+
+.scan-drop-zone.is-analyzing svg {
+  opacity: 0.8;
+}
+
+.result-loading {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  border-color: color-mix(in srgb, var(--accent-light) 58%, var(--saas-border));
+}
+
+.loading-spinner {
+  display: inline-block;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border: 3px solid color-mix(in srgb, var(--accent-light) 22%, var(--saas-border));
+  border-top-color: var(--accent-light);
+  border-radius: 999px;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading-spinner {
+    animation: none;
+  }
+}
+
+.result-source {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 14px 16px;
+}
+
+.result-source span {
+  color: var(--saas-dim);
+  font-size: 12px;
+  font-weight: 820;
+}
+
+.result-source strong {
+  min-width: 0;
+  color: var(--saas-text);
+  font-size: 15px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
 .result-verdict {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(180px, 0.34fr);

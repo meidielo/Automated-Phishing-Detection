@@ -153,6 +153,15 @@ def test_saas_app_manual_upload_uses_drop_zone():
     assert 'id="scanSubmitButton" type="submit" disabled' in response.text
     assert ".scan-drop-zone" in css
     assert "function setScanFile" in js
+    assert "function renderSelectedFile" in js
+    assert "function renderAnalyzingResult" in js
+    assert "function resetTransientWorkspace" in js
+    assert "Previous previews are cleared" in js
+    assert "Fresh result for" in js
+    assert "is-analyzing" in js
+    assert ".result-loading" in css
+    assert ".loading-spinner" in css
+    assert ".scan-drop-zone.is-analyzing" in css
     assert "drag-over" in js
 
 
