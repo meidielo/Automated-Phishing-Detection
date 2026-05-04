@@ -66,6 +66,18 @@ class SMTPConfig:
 
 
 @dataclass
+class ZohoMailConfig:
+    client_id: str = ""
+    client_secret: str = ""
+    refresh_token: str = ""
+    accounts_base: str = "https://accounts.zoho.com"
+    account_id: str = ""
+    from_email: str = ""
+    api_base: str = "https://mail.zoho.com"
+    enable_direct_send: bool = False
+
+
+@dataclass
 class ScoringConfig:
     weights: dict[str, float] = field(default_factory=lambda: {
         "header_analysis": 0.10,
@@ -91,6 +103,7 @@ class PipelineConfig:
     api: APIConfig = field(default_factory=APIConfig)
     imap: IMAPConfig = field(default_factory=IMAPConfig)
     smtp: SMTPConfig = field(default_factory=SMTPConfig)
+    zoho_mail: ZohoMailConfig = field(default_factory=ZohoMailConfig)
     scoring: ScoringConfig = field(default_factory=ScoringConfig)
     max_concurrent_analyzers: int = 10
     url_detonation_timeout: int = 30
@@ -169,10 +182,24 @@ class PipelineConfig:
             use_ssl=_coerce_bool(os.getenv("SMTP_USE_SSL"), False),
             starttls=_coerce_bool(os.getenv("SMTP_STARTTLS"), True),
         )
+        direct_send_env = os.getenv("ZOHO_ENABLE_DIRECT_SEND")
+        if direct_send_env is None:
+            direct_send_env = os.getenv("ENABLE_DIRECT_SEND")
+        zoho_mail = ZohoMailConfig(
+            client_id=os.getenv("ZOHO_CLIENT_ID", ""),
+            client_secret=os.getenv("ZOHO_CLIENT_SECRET", ""),
+            refresh_token=os.getenv("ZOHO_REFRESH_TOKEN", ""),
+            accounts_base=os.getenv("ZOHO_ACCOUNTS_BASE", "https://accounts.zoho.com"),
+            account_id=os.getenv("ZOHO_ACCOUNT_ID", ""),
+            from_email=os.getenv("ZOHO_FROM", ""),
+            api_base=os.getenv("ZOHO_API_BASE", "https://mail.zoho.com"),
+            enable_direct_send=_coerce_bool(direct_send_env, False),
+        )
         return cls(
             api=api,
             imap=imap,
             smtp=smtp,
+            zoho_mail=zoho_mail,
             max_concurrent_analyzers=int(os.getenv("MAX_CONCURRENT_ANALYZERS", "10")),
             url_detonation_timeout=int(os.getenv("URL_DETONATION_TIMEOUT_SECONDS", "30")),
             pipeline_timeout=int(os.getenv("ANALYSIS_PIPELINE_TIMEOUT_SECONDS", "120")),
@@ -267,6 +294,30 @@ class PipelineConfig:
             use_ssl=_coerce_bool(_get(smtp_data, "use_ssl", "SMTP_USE_SSL", False)),
             starttls=_coerce_bool(_get(smtp_data, "starttls", "SMTP_STARTTLS", True)),
         )
+        zoho_data = data.get("zoho_mail", {})
+        direct_send_env = os.getenv("ZOHO_ENABLE_DIRECT_SEND")
+        if direct_send_env is None:
+            direct_send_env = os.getenv("ENABLE_DIRECT_SEND")
+        zoho_direct_send = (
+            direct_send_env
+            if direct_send_env is not None
+            else zoho_data.get("enable_direct_send", False)
+        )
+        zoho_mail = ZohoMailConfig(
+            client_id=_get(zoho_data, "client_id", "ZOHO_CLIENT_ID", ""),
+            client_secret=_get(zoho_data, "client_secret", "ZOHO_CLIENT_SECRET", ""),
+            refresh_token=_get(zoho_data, "refresh_token", "ZOHO_REFRESH_TOKEN", ""),
+            accounts_base=_get(
+                zoho_data,
+                "accounts_base",
+                "ZOHO_ACCOUNTS_BASE",
+                "https://accounts.zoho.com",
+            ),
+            account_id=_get(zoho_data, "account_id", "ZOHO_ACCOUNT_ID", ""),
+            from_email=_get(zoho_data, "from_email", "ZOHO_FROM", ""),
+            api_base=_get(zoho_data, "api_base", "ZOHO_API_BASE", "https://mail.zoho.com"),
+            enable_direct_send=_coerce_bool(zoho_direct_send, False),
+        )
 
         scoring_data = data.get("scoring", {})
         scoring_cfg = ScoringConfig()
@@ -282,6 +333,7 @@ class PipelineConfig:
             api=api,
             imap=imap,
             smtp=smtp,
+            zoho_mail=zoho_mail,
             scoring=scoring_cfg,
             max_concurrent_analyzers=int(_get(pipeline_data, "max_concurrent_analyzers", "MAX_CONCURRENT_ANALYZERS", 10)),
             url_detonation_timeout=int(_get(pipeline_data, "url_detonation_timeout", "URL_DETONATION_TIMEOUT_SECONDS", 30)),

@@ -49,6 +49,16 @@ smtp:
   use_ssl: false              # env: SMTP_USE_SSL
   starttls: true              # env: SMTP_STARTTLS
 
+zoho_mail:
+  client_id: ""                         # env: ZOHO_CLIENT_ID
+  client_secret: ""                     # env: ZOHO_CLIENT_SECRET
+  refresh_token: ""                     # env: ZOHO_REFRESH_TOKEN
+  accounts_base: "https://accounts.zoho.com.au"  # env: ZOHO_ACCOUNTS_BASE
+  account_id: ""                        # env: ZOHO_ACCOUNT_ID
+  from_email: ""                        # env: ZOHO_FROM
+  api_base: "https://mail.zoho.com.au"  # env: ZOHO_API_BASE
+  enable_direct_send: false             # env: ZOHO_ENABLE_DIRECT_SEND
+
 # ── Scoring & Verdict Configuration ───────────────────────────────
 scoring:
   # Analyzer weights. Intended to sum to 1.0 but the decision engine

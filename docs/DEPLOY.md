@@ -59,7 +59,12 @@ At minimum, fill in:
 Optional public preview:
 - Set `PUBLIC_DEMO_MODE=true` only if you want `/demo` to be reachable without login. It is sample-only: it does not expose owner live upload analysis, global mailbox monitoring, paid API-backed owner checks, feedback learning, admin dashboard data, or owner account management.
 - `/api/demo/plans` is also public in demo mode. It exposes non-secret plan and lock metadata only, so visitors can see which analyzers require Starter, Pro, or Business.
-- Leave `SAAS_PUBLIC_SIGNUP_ENABLED=false` until the deployment is ready to accept visitor email uploads. `/analyze`, `/dashboard`, `/monitor`, `/app`, and `/api/saas/*` support normal user accounts, tenant-scoped scan storage, and free-tier quota gates, but public signup is an explicit deployment decision.
+- Set `SAAS_PUBLIC_SIGNUP_ENABLED=true` only on deployments ready to accept visitor email uploads. `/analyze`, `/dashboard`, `/monitor`, `/app`, and `/api/saas/*` support normal user accounts, tenant-scoped scan storage, and free-tier quota gates, but public signup is still an explicit deployment decision.
+
+Transactional email setup:
+- Prefer Zoho Mail API direct send for password reset email: set `ZOHO_CLIENT_ID`, `ZOHO_CLIENT_SECRET`, `ZOHO_REFRESH_TOKEN`, `ZOHO_ACCOUNT_ID`, `ZOHO_FROM`, `ZOHO_ACCOUNTS_BASE`, `ZOHO_API_BASE`, and `ZOHO_ENABLE_DIRECT_SEND=true`.
+- SMTP is a fallback only when Zoho direct send is not configured. Keep `SMTP_*` empty on deployments where SMTP has already failed.
+- Reset links are host-aware: PhishAnalyze users return to `/analyze`, while PayShield users return to `/app`.
 
 Stripe subscription setup:
 - Set `PHISHANALYZE_PUBLIC_URL=https://phishanalyze.mdpstudio.com.au`.

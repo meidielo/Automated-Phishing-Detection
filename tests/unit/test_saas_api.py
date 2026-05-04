@@ -74,10 +74,10 @@ async def _fake_analyze(email, feature_gate=None):
     )
 
 
-def _signup(client: TestClient):
+def _signup(client: TestClient, *, origin: str = "https://testserver"):
     return client.post(
         "/api/saas/auth/signup",
-        headers=_same_origin_headers(),
+        headers=_same_origin_headers(origin),
         json={
             "email": "owner@example.com",
             "password": "correct horse battery",
@@ -86,17 +86,17 @@ def _signup(client: TestClient):
     )
 
 
-def _same_origin_headers() -> dict[str, str]:
-    return {"origin": "https://testserver"}
+def _same_origin_headers(origin: str = "https://testserver") -> dict[str, str]:
+    return {"origin": origin}
 
 
-def _upload(client: TestClient):
+def _upload(client: TestClient, *, origin: str = "https://testserver"):
     csrf = client.cookies.get(USER_CSRF_COOKIE_NAME)
     return client.post(
         "/api/saas/analyze/upload",
         headers={
             "x-csrf-token": csrf,
-            "origin": "https://testserver",
+            "origin": origin,
         },
         files={
             "file": (
@@ -108,9 +108,15 @@ def _upload(client: TestClient):
     )
 
 
-def _post_json_with_csrf(client: TestClient, path: str, payload: dict):
+def _post_json_with_csrf(
+    client: TestClient,
+    path: str,
+    payload: dict,
+    *,
+    origin: str = "https://testserver",
+):
     csrf = client.cookies.get(USER_CSRF_COOKIE_NAME)
-    headers = _same_origin_headers()
+    headers = _same_origin_headers(origin)
     headers["x-csrf-token"] = csrf
     return client.post(
         path,
@@ -119,9 +125,14 @@ def _post_json_with_csrf(client: TestClient, path: str, payload: dict):
     )
 
 
-def _delete_with_csrf(client: TestClient, path: str):
+def _delete_with_csrf(
+    client: TestClient,
+    path: str,
+    *,
+    origin: str = "https://testserver",
+):
     csrf = client.cookies.get(USER_CSRF_COOKIE_NAME)
-    headers = _same_origin_headers()
+    headers = _same_origin_headers(origin)
     headers["x-csrf-token"] = csrf
     return client.delete(path, headers=headers)
 
@@ -582,6 +593,7 @@ def test_saas_login_is_rate_limited_after_failed_attempts(tmp_path):
 
 def test_saas_password_reset_request_and_confirm(tmp_path, monkeypatch):
     monkeypatch.setattr(app_main, "SMTPPasswordResetMailer", FakePasswordResetMailer)
+    monkeypatch.setenv("PHISHANALYZE_PUBLIC_URL", "https://phishanalyze.example.test")
     FakePasswordResetMailer.enabled = True
     FakePasswordResetMailer.fail = False
     FakePasswordResetMailer.sent = []
@@ -621,6 +633,9 @@ def test_saas_password_reset_request_and_confirm(tmp_path, monkeypatch):
 
     assert request.status_code == 200
     assert request.json()["email_delivery_configured"] is True
+    assert FakePasswordResetMailer.sent[0].reset_url.startswith(
+        "https://phishanalyze.example.test/analyze?"
+    )
     assert FakePasswordResetMailer.sent[0].to_email == "owner@example.com"
     assert confirm.status_code == 200
     assert confirm.json()["account"]["email"] == "owner@example.com"
@@ -767,7 +782,7 @@ def test_saas_checkout_and_portal_create_stripe_sessions(tmp_path, monkeypatch):
     monkeypatch.setenv("STRIPE_SECRET_KEY", "stripe_secret_for_tests")
     monkeypatch.setenv("STRIPE_PRICE_STARTER", "price_starter")
     monkeypatch.setenv("STRIPE_PRICE_STARTER_YEARLY", "price_starter_yearly")
-    monkeypatch.setenv("PUBLIC_BASE_URL", "https://detect.example.test")
+    monkeypatch.setenv("PHISHANALYZE_PUBLIC_URL", "https://phishanalyze.example.test")
     monkeypatch.setenv("PAYSHIELD_PUBLIC_URL", "https://payshield.example.test")
     monkeypatch.setattr(app_main, "StripeBillingClient", FakeStripeBillingClient)
     FakeStripeBillingClient.created_customers = []
@@ -775,13 +790,23 @@ def test_saas_checkout_and_portal_create_stripe_sessions(tmp_path, monkeypatch):
     FakeStripeBillingClient.portal_sessions = []
     client = TestClient(
         _build_saas_app(tmp_path, signup_enabled=True),
-        base_url="https://testserver",
+        base_url="https://payshield.example.test",
         follow_redirects=False,
     )
 
-    assert _signup(client).status_code == 200
-    checkout = _post_json_with_csrf(client, "/api/saas/billing/checkout", {"plan": "starter"})
-    portal = _post_json_with_csrf(client, "/api/saas/billing/portal", {})
+    assert _signup(client, origin="https://payshield.example.test").status_code == 200
+    checkout = _post_json_with_csrf(
+        client,
+        "/api/saas/billing/checkout",
+        {"plan": "starter"},
+        origin="https://payshield.example.test",
+    )
+    portal = _post_json_with_csrf(
+        client,
+        "/api/saas/billing/portal",
+        {},
+        origin="https://payshield.example.test",
+    )
     session = client.get("/api/saas/session")
 
     assert checkout.status_code == 200

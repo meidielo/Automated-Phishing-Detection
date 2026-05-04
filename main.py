@@ -72,6 +72,7 @@ from src.saas.email_delivery import (
     EmailDeliveryError,
     PasswordResetEmail,
     SMTPPasswordResetMailer,
+    ZohoPasswordResetMailer,
 )
 
 
@@ -773,8 +774,14 @@ class PhishingDetectionApp:
                 self._saas_store = SaaSStore(db_path)
             return self._saas_store
 
-        def _password_reset_mailer() -> SMTPPasswordResetMailer:
-            return SMTPPasswordResetMailer(getattr(self.config, "smtp", None))
+        def _password_reset_mailer():
+            zoho_mailer = ZohoPasswordResetMailer(getattr(self.config, "zoho_mail", None))
+            if zoho_mailer.enabled:
+                return zoho_mailer
+            smtp_mailer = SMTPPasswordResetMailer(getattr(self.config, "smtp", None))
+            if smtp_mailer.enabled:
+                return smtp_mailer
+            return zoho_mailer
 
         password_reset_attempts: dict[str, deque[float]] = {}
         auth_failure_attempts: dict[str, deque[float]] = {}
@@ -934,6 +941,22 @@ class PhishingDetectionApp:
             if base_url:
                 return f"{base_url}{path}"
             return _external_url(request, path)
+
+        def _phishanalyze_external_url(request: Request, path: str) -> str:
+            base_url = _public_base("PHISHANALYZE_PUBLIC_URL")
+            if base_url:
+                return f"{base_url}{path}"
+            return _external_url(request, path)
+
+        def _account_app_external_url(
+            request: Request,
+            *,
+            phish_path: str,
+            payshield_path: str,
+        ) -> str:
+            if _is_payshield_host(request):
+                return _payshield_external_url(request, payshield_path)
+            return _phishanalyze_external_url(request, phish_path)
 
         async def _json_object_body(request: Request) -> dict:
             try:
@@ -1362,7 +1385,11 @@ class PhishingDetectionApp:
                 if token:
                     from urllib.parse import quote
                     ttl_minutes = getattr(self.config, "password_reset_token_ttl_minutes", 30)
-                    reset_url = _external_url(request, f"/app?reset_token={quote(token)}")
+                    reset_url = _account_app_external_url(
+                        request,
+                        phish_path=f"/analyze?reset_token={quote(token)}",
+                        payshield_path=f"/app?reset_token={quote(token)}",
+                    )
                     try:
                         mailer.send_password_reset(
                             PasswordResetEmail(
@@ -1674,11 +1701,16 @@ class PhishingDetectionApp:
                         os.getenv("STRIPE_ADAPTIVE_PRICING_ENABLED"),
                         True,
                     ),
-                    success_url=_payshield_external_url(
+                    success_url=_account_app_external_url(
                         request,
-                        "/app?billing=success&session_id={CHECKOUT_SESSION_ID}",
+                        phish_path="/dashboard?billing=success&session_id={CHECKOUT_SESSION_ID}",
+                        payshield_path="/app?billing=success&session_id={CHECKOUT_SESSION_ID}",
                     ),
-                    cancel_url=_payshield_external_url(request, "/app?billing=cancelled"),
+                    cancel_url=_account_app_external_url(
+                        request,
+                        phish_path="/dashboard?billing=cancelled",
+                        payshield_path="/app?billing=cancelled",
+                    ),
                 )
                 if not session.get("id") or not session.get("url"):
                     raise StripeAPIError("Stripe did not return a Checkout Session URL")
@@ -1731,7 +1763,11 @@ class PhishingDetectionApp:
                 stripe_client = StripeBillingClient(stripe_config.secret_key)
                 portal = stripe_client.create_portal_session(
                     customer_id=context.stripe_customer_id,
-                    return_url=_payshield_external_url(request, "/app?billing=portal"),
+                    return_url=_account_app_external_url(
+                        request,
+                        phish_path="/dashboard?billing=portal",
+                        payshield_path="/app?billing=portal",
+                    ),
                 )
                 if not portal.get("url"):
                     raise StripeAPIError("Stripe did not return a Customer Portal URL")

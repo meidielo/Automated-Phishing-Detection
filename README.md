@@ -284,7 +284,7 @@ The demo page uses fixed sample content and `/api/demo/status` advertises the lo
 
 `/analyze`, `/dashboard`, and `/monitor` serve the public PhishAnalyze user app. `/app` serves the PayShield payment-risk product on the same SaaS account foundation. In production, set `PHISHANALYZE_PUBLIC_URL=https://phishanalyze.mdpstudio.com.au` and `PAYSHIELD_PUBLIC_URL=https://payshield.mdpstudio.com.au` so the PhishAnalyze root lands on `/analyze`, PayShield root serves the product page, and cross-brand paths redirect to the right hostname. Both apps use signed user sessions, same-origin checks on cookie-setting auth routes, CSRF protection on logged-in mutations, and `data/saas.db` for `users`, `organizations`, `memberships`, `subscriptions`, `mail_accounts`, `scan_jobs`, `scan_results`, `usage_events`, `feature_locks`, and `audit_logs`. The customer app lists analyzer evidence for each scan, lets signed-in users delete stored scan results from workspace history without resetting usage quota, and exposes a first-class mailbox onboarding workflow. `/admin` is the owner console with token auth and privacy-preserving aggregate monitoring. `/trust` is the public trust and privacy page for customer reviewers.
 
-Public signup is off by default:
+Public signup is off by default in the example config. Set `SAAS_PUBLIC_SIGNUP_ENABLED=true` on the production host when you are ready to accept accounts:
 
 ```bash
 SAAS_SESSION_SECRET=change-me-to-a-long-random-secret
@@ -293,7 +293,20 @@ SAAS_PUBLIC_SIGNUP_ENABLED=false
 PASSWORD_RESET_TOKEN_TTL_MINUTES=30
 ```
 
-Password reset is supported through `/api/saas/auth/password-reset/request` and `/api/saas/auth/password-reset/confirm`. Reset tokens are stored hashed, expire after `PASSWORD_RESET_TOKEN_TTL_MINUTES`, and are one-time use. Requests are rate-limited per client/email pair to reduce reset-link spam. Configure SMTP to send reset links through Zoho Mail or another transactional SMTP provider:
+Password reset is supported through `/api/saas/auth/password-reset/request` and `/api/saas/auth/password-reset/confirm`. Reset tokens are stored hashed, expire after `PASSWORD_RESET_TOKEN_TTL_MINUTES`, and are one-time use. Requests are rate-limited per client/email pair to reduce reset-link spam. Configure the Zoho Mail API as the preferred reset-link sender:
+
+```bash
+ZOHO_CLIENT_ID=your-client-id
+ZOHO_CLIENT_SECRET=your-client-secret
+ZOHO_REFRESH_TOKEN=your-refresh-token
+ZOHO_ACCOUNTS_BASE=https://accounts.zoho.com.au
+ZOHO_ACCOUNT_ID=your-zoho-mail-account-id
+ZOHO_FROM=alerts@example.com
+ZOHO_API_BASE=https://mail.zoho.com.au
+ZOHO_ENABLE_DIRECT_SEND=true
+```
+
+SMTP remains available only as a fallback when Zoho direct send is not configured:
 
 ```bash
 SMTP_HOST=smtp.zoho.com
@@ -306,7 +319,7 @@ SMTP_USE_SSL=false
 SMTP_STARTTLS=true
 ```
 
-Zoho Mail supports `smtp.zoho.com` with SSL on port `465` or TLS/STARTTLS on port `587`. If Zoho two-factor authentication is enabled, use a Zoho application-specific password rather than the mailbox login password. If SMTP is not configured, the API returns a generic success response without sending mail so account existence is not leaked.
+Zoho Mail supports `smtp.zoho.com` with SSL on port `465` or TLS/STARTTLS on port `587`. If Zoho two-factor authentication is enabled, use a Zoho application-specific password rather than the mailbox login password. If no mail sender is configured, the API returns a generic success response without sending mail so account existence is not leaked. When both Zoho API and SMTP are configured, the Zoho API sender is used.
 
 When signup is enabled, free accounts get 5 manual scans/month. `/api/saas/analyze/upload` stores user scans in the tenant-scoped SaaS DB instead of the shared analyst `data/results.jsonl` log. Expensive analyzers check plan entitlements before loading clients; locked checks return structured `feature_locked` metadata so the UI can show the required tier instead of burning paid API quota. `/api/saas/mailboxes` lists, creates, reconnects, and deletes workspace-scoped mailbox records. Mailbox connection is Pro+ gated, quota checked, CSRF protected, and stores submitted app passwords only as encrypted credential bundles; the raw secret is never returned to the browser.
 

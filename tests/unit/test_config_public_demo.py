@@ -84,6 +84,60 @@ def test_smtp_password_reset_config_reads_yaml_with_env_override(tmp_path, monke
     assert config.password_reset_token_ttl_minutes == 35
 
 
+def test_zoho_password_reset_config_reads_env(monkeypatch):
+    monkeypatch.setenv("ZOHO_CLIENT_ID", "client-id")
+    monkeypatch.setenv("ZOHO_CLIENT_SECRET", "client-secret")
+    monkeypatch.setenv("ZOHO_REFRESH_TOKEN", "refresh-token")
+    monkeypatch.setenv("ZOHO_ACCOUNTS_BASE", "https://accounts.zoho.com.au")
+    monkeypatch.setenv("ZOHO_ACCOUNT_ID", "123456789")
+    monkeypatch.setenv("ZOHO_FROM", "alerts@example.com")
+    monkeypatch.setenv("ZOHO_API_BASE", "https://mail.zoho.com.au")
+    monkeypatch.setenv("ZOHO_ENABLE_DIRECT_SEND", "true")
+
+    config = PipelineConfig._from_env_only()
+
+    assert config.zoho_mail.client_id == "client-id"
+    assert config.zoho_mail.client_secret == "client-secret"
+    assert config.zoho_mail.refresh_token == "refresh-token"
+    assert config.zoho_mail.accounts_base == "https://accounts.zoho.com.au"
+    assert config.zoho_mail.account_id == "123456789"
+    assert config.zoho_mail.from_email == "alerts@example.com"
+    assert config.zoho_mail.api_base == "https://mail.zoho.com.au"
+    assert config.zoho_mail.enable_direct_send is True
+
+
+def test_zoho_password_reset_config_reads_yaml_with_legacy_env_override(tmp_path, monkeypatch):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "zoho_mail:\n"
+        "  client_id: yaml-client\n"
+        "  client_secret: yaml-secret\n"
+        "  refresh_token: yaml-refresh\n"
+        "  accounts_base: https://accounts.zoho.com.au\n"
+        "  account_id: 700123\n"
+        "  from_email: yaml@example.com\n"
+        "  api_base: https://mail.zoho.com.au\n"
+        "  enable_direct_send: false\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ZOHO_CLIENT_ID", "env-client")
+    monkeypatch.delenv("ZOHO_CLIENT_SECRET", raising=False)
+    monkeypatch.delenv("ZOHO_REFRESH_TOKEN", raising=False)
+    monkeypatch.delenv("ZOHO_ACCOUNTS_BASE", raising=False)
+    monkeypatch.delenv("ZOHO_ACCOUNT_ID", raising=False)
+    monkeypatch.delenv("ZOHO_FROM", raising=False)
+    monkeypatch.delenv("ZOHO_API_BASE", raising=False)
+    monkeypatch.delenv("ZOHO_ENABLE_DIRECT_SEND", raising=False)
+    monkeypatch.setenv("ENABLE_DIRECT_SEND", "yes")
+
+    config = PipelineConfig.from_yaml(str(config_path))
+
+    assert config.zoho_mail.client_id == "env-client"
+    assert config.zoho_mail.client_secret == "yaml-secret"
+    assert config.zoho_mail.from_email == "yaml@example.com"
+    assert config.zoho_mail.enable_direct_send is True
+
+
 def test_gemini_api_key_reads_env(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "gemini-env-key")
 

@@ -1,13 +1,17 @@
-"""SMTP delivery for SaaS account emails."""
+"""Transactional delivery for SaaS account emails."""
 
 from __future__ import annotations
 
+import json
 import smtplib
+import urllib.error
+import urllib.parse
+import urllib.request
 from dataclasses import dataclass
 from email.message import EmailMessage
 from email.utils import formataddr
 
-from src.config import SMTPConfig
+from src.config import SMTPConfig, ZohoMailConfig
 
 
 class EmailDeliveryError(RuntimeError):
@@ -73,3 +77,94 @@ class SMTPPasswordResetMailer:
     def _send(self, smtp, message: EmailMessage) -> None:
         smtp.login(self.config.username, self.config.password)
         smtp.send_message(message)
+
+
+class ZohoPasswordResetMailer:
+    """Send password reset emails through the Zoho Mail REST API."""
+
+    def __init__(self, config: ZohoMailConfig | None) -> None:
+        self.config = config or ZohoMailConfig()
+
+    @property
+    def enabled(self) -> bool:
+        return bool(
+            self.config.enable_direct_send
+            and self.config.client_id
+            and self.config.client_secret
+            and self.config.refresh_token
+            and self.config.account_id
+            and self.config.from_email
+        )
+
+    def send_password_reset(self, email: PasswordResetEmail) -> None:
+        if not self.enabled:
+            raise EmailDeliveryError("Zoho password reset delivery is not configured")
+
+        token = self._access_token()
+        endpoint = (
+            f"{self.config.api_base.rstrip('/')}/api/accounts/"
+            f"{urllib.parse.quote(str(self.config.account_id), safe='')}/messages"
+        )
+        content = "\n".join(
+            [
+                "A password reset was requested for your PhishAnalyze account.",
+                "",
+                f"Reset your password here: {email.reset_url}",
+                "",
+                f"This link expires in {email.ttl_minutes} minutes.",
+                "If you did not request this, you can ignore this email.",
+            ]
+        )
+        payload = {
+            "fromAddress": self.config.from_email,
+            "toAddress": email.to_email,
+            "subject": "Reset your PhishAnalyze password",
+            "content": content,
+            "mailFormat": "plaintext",
+        }
+        request = urllib.request.Request(
+            endpoint,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Authorization": f"Zoho-oauthtoken {token}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=20) as response:
+                if response.status >= 400:
+                    raise EmailDeliveryError("Zoho Mail rejected the reset email")
+        except EmailDeliveryError:
+            raise
+        except Exception as exc:
+            raise EmailDeliveryError("Failed to send password reset email through Zoho") from exc
+
+    def _access_token(self) -> str:
+        endpoint = f"{self.config.accounts_base.rstrip('/')}/oauth/v2/token"
+        body = urllib.parse.urlencode(
+            {
+                "refresh_token": self.config.refresh_token,
+                "client_id": self.config.client_id,
+                "client_secret": self.config.client_secret,
+                "grant_type": "refresh_token",
+            }
+        ).encode("utf-8")
+        request = urllib.request.Request(
+            endpoint,
+            data=body,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=20) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            raise EmailDeliveryError("Zoho OAuth token refresh failed") from exc
+        except Exception as exc:
+            raise EmailDeliveryError("Zoho OAuth token refresh failed") from exc
+
+        token = str(payload.get("access_token", ""))
+        if not token:
+            raise EmailDeliveryError("Zoho OAuth token response did not include access_token")
+        return token

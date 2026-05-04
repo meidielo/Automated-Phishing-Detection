@@ -72,8 +72,9 @@ current test/browser/dependency gates.
   candidates until a larger real-redacted eval justifies the extra cost.
 - Keep `ACCOUNTS_ENCRYPTION_KEY` stable. If the monitor says reconnect, re-enter
   the mailbox app password once with the stable key set.
-- Keep `SAAS_PUBLIC_SIGNUP_ENABLED=false` until privacy, abuse handling, and
-  support workflows are ready for public users.
+- Keep public signup gated by deployment readiness. If
+  `SAAS_PUBLIC_SIGNUP_ENABLED=true`, confirm privacy, abuse handling,
+  transactional reset email, and support workflows are live.
 - Move the older analyst templates (`/monitor`, `/status`, `/analyze`,
   `/accounts`) fully out of inline JS/CSS before dropping fallback
   `unsafe-inline` from the global CSP. Public `/product`, `/app`, and the main
