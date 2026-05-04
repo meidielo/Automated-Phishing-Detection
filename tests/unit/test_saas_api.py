@@ -116,6 +116,13 @@ def _post_json_with_csrf(client: TestClient, path: str, payload: dict):
     )
 
 
+def _delete_with_csrf(client: TestClient, path: str):
+    csrf = client.cookies.get(USER_CSRF_COOKIE_NAME)
+    headers = _same_origin_headers()
+    headers["x-csrf-token"] = csrf
+    return client.delete(path, headers=headers)
+
+
 def _stripe_signature(payload: bytes, secret: str, timestamp: int) -> str:
     signed = f"{timestamp}.{payload.decode('utf-8')}".encode("utf-8")
     digest = hmac.new(secret.encode("utf-8"), signed, hashlib.sha256).hexdigest()
@@ -248,6 +255,32 @@ def test_saas_signup_session_plans_upload_and_history(tmp_path):
     assert upload.json()["account"]["monthly_scan_used"] == 1
     assert upload.json()["feature_locks"][0]["details"]["required_plan_name"] == "Starter"
     assert history.json()["results"][0]["payment_decision"] == "VERIFY"
+
+
+def test_saas_scan_history_delete_is_org_scoped_and_keeps_usage(tmp_path):
+    client = TestClient(
+        _build_saas_app(tmp_path, signup_enabled=True),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    assert _signup(client).status_code == 200
+    assert _upload(client).status_code == 200
+    first_history = client.get("/api/saas/scans")
+    result_id = first_history.json()["results"][0]["id"]
+
+    missing_csrf = client.delete(f"/api/saas/scans/{result_id}")
+    delete = _delete_with_csrf(client, f"/api/saas/scans/{result_id}")
+    second_delete = _delete_with_csrf(client, f"/api/saas/scans/{result_id}")
+    history = client.get("/api/saas/scans")
+    session = client.get("/api/saas/session")
+
+    assert missing_csrf.status_code == 403
+    assert delete.status_code == 200
+    assert delete.json()["deleted"] is True
+    assert second_delete.status_code == 404
+    assert history.json()["results"] == []
+    assert session.json()["account"]["monthly_scan_used"] == 1
 
 
 def test_saas_upload_rejects_oversized_email_before_parsing(tmp_path, monkeypatch):

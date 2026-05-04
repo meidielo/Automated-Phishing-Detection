@@ -708,6 +708,51 @@ class SaaSStore:
                 for row in rows
             ]
 
+    def delete_scan_result(self, *, org_id: str, user_id: str, result_id: str) -> bool:
+        """Delete one stored scan result scoped to an organization.
+
+        Usage rows are intentionally kept so deleting history cannot reset quota.
+        """
+        now = utc_now_iso()
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT id, scan_job_id, email_id
+                FROM scan_results
+                WHERE id = ? AND org_id = ?
+                """,
+                (result_id, org_id),
+            ).fetchone()
+            if row is None:
+                return False
+
+            conn.execute(
+                "DELETE FROM scan_results WHERE id = ? AND org_id = ?",
+                (result_id, org_id),
+            )
+            conn.execute(
+                """
+                DELETE FROM scan_jobs
+                WHERE id = ? AND org_id = ?
+                  AND NOT EXISTS (
+                    SELECT 1 FROM scan_results WHERE scan_job_id = scan_jobs.id
+                  )
+                """,
+                (row["scan_job_id"], org_id),
+            )
+            self._write_audit(
+                conn,
+                org_id=org_id,
+                actor_user_id=user_id,
+                action="scan_result.deleted",
+                target_type="scan_result",
+                target_id=result_id,
+                metadata={"email_id": row["email_id"]},
+                now=now,
+            )
+            conn.commit()
+            return True
+
     def feature_lock_count(self, org_id: str) -> int:
         with self._connect() as conn:
             row = conn.execute(

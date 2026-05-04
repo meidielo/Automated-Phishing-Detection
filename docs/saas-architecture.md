@@ -45,6 +45,11 @@ Implemented foundation:
   `scan_results`, `usage_events`, `feature_locks`, and `audit_logs`.
 - `/api/saas/analyze/upload` stores results in `scan_results`, not the shared
   analyst `data/results.jsonl` log.
+- `/api/saas/scans/{result_id}` deletes one organization-scoped scan result
+  from history while keeping usage events for quota and billing integrity.
+- `/trust` documents the customer-facing privacy boundary, analyzer visibility,
+  deletion controls, and the separation between normal accounts and private
+  analyst admin pages.
 - The pipeline accepts a per-request `feature_gate`; locked analyzers return
   `feature_locked` metadata with the required tier before paid API clients are
   loaded.
@@ -152,7 +157,8 @@ Safe implementation order:
    `scan_results`. **Done for `/api/saas/analyze/upload`.**
 5. Add usage tracking and feature gates. **Done for manual scans and analyzers.**
 6. Add Stripe Checkout and webhook subscription sync. **Done for the SaaS path.**
-7. Add per-user mailbox connection.
-8. Add tenant isolation tests before enabling real mailbox access.
+7. Add customer deletion and trust/privacy controls. **Done for scan history.**
+8. Add per-user mailbox connection.
+9. Add tenant isolation tests before enabling real mailbox access.
 
-Do not connect visitor mailboxes until steps 1, 2, 4, and 8 are complete.
+Do not connect visitor mailboxes until steps 1, 2, 4, and 9 are complete.

@@ -280,7 +280,7 @@ The demo page uses fixed sample content and `/api/demo/status` advertises the lo
 
 ### SaaS account mode
 
-`/app` serves a normal user-login shell separate from the analyst dashboard. It uses signed user sessions, same-origin checks on cookie-setting auth routes, CSRF protection on logged-in mutations, and `data/saas.db` for `users`, `organizations`, `memberships`, `subscriptions`, `scan_jobs`, `scan_results`, `usage_events`, `feature_locks`, and `audit_logs`.
+`/app` serves a normal user-login shell separate from the analyst dashboard. It uses signed user sessions, same-origin checks on cookie-setting auth routes, CSRF protection on logged-in mutations, and `data/saas.db` for `users`, `organizations`, `memberships`, `subscriptions`, `scan_jobs`, `scan_results`, `usage_events`, `feature_locks`, and `audit_logs`. The customer app now lists analyzer evidence for each scan and lets signed-in users delete stored scan results from workspace history without resetting usage quota. `/trust` is the public trust and privacy page for customer reviewers.
 
 Public signup is off by default:
 

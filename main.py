@@ -619,7 +619,7 @@ class PhishingDetectionApp:
                 )
             return (
                 '<a class="primary-action" href="/app">Open user app</a>'
-                '<a class="secondary-action" href="/login">Analyst login</a>'
+                '<a class="secondary-action" href="/trust">Trust and privacy</a>'
             )
 
         def _render_login(
@@ -1086,6 +1086,15 @@ class PhishingDetectionApp:
                 headers={"Content-Security-Policy": STATIC_PAGE_CSP},
             )
 
+        @app.get("/trust", response_class=HTMLResponse)
+        async def trust_page():
+            """Serve public trust and privacy controls for customer reviewers."""
+            trust_path = Path("./templates/trust.html")
+            return HTMLResponse(
+                content=_inject_shared(trust_path.read_text(encoding="utf-8")),
+                headers={"Content-Security-Policy": STATIC_PAGE_CSP},
+            )
+
         @app.get("/api/saas/session")
         async def api_saas_session(request: Request):
             """Return normal-user session, plan, and signup state."""
@@ -1267,6 +1276,25 @@ class PhishingDetectionApp:
             return {
                 "account": context.to_dict(),
                 "results": _get_saas_store().list_scan_results(context.org_id, limit=limit),
+            }
+
+        @app.delete("/api/saas/scans/{result_id}")
+        async def api_saas_delete_scan(request: Request, result_id: str):
+            """Delete one tenant-scoped scan result from workspace history."""
+            context = _current_user_context(request, require_csrf=True)
+            deleted = _get_saas_store().delete_scan_result(
+                org_id=context.org_id,
+                user_id=context.user_id,
+                result_id=result_id,
+            )
+            if not deleted:
+                raise HTTPException(status_code=404, detail="Scan result not found")
+            updated_context = _get_saas_store().get_account_context(context.user_id) or context
+            return {
+                "status": "ok",
+                "deleted": True,
+                "result_id": result_id,
+                "account": updated_context.to_dict(),
             }
 
         @app.post("/api/saas/billing/checkout")

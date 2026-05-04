@@ -11,6 +11,7 @@
   const planGrid = document.getElementById("planGrid");
   const featureGrid = document.getElementById("featureGrid");
   const historyList = document.getElementById("historyList");
+  const historyNotice = document.getElementById("historyNotice");
   const decisionStack = document.getElementById("decisionStack");
   const emailFileInput = document.getElementById("emailFile");
   const scanDropZone = document.getElementById("scanDropZone");
@@ -447,6 +448,7 @@
   async function loadHistory() {
     const payload = await apiJson("/api/saas/scans?limit=8");
     historyList.innerHTML = "";
+    hideNotice(historyNotice);
     if (!payload.results.length) {
       const empty = document.createElement("article");
       empty.className = "history-card";
@@ -465,7 +467,10 @@
           <h3>${escapeHtml(subject)}</h3>
           <p>${escapeHtml(item.created_at)}</p>
         </div>
-        <span class="badge">${escapeHtml(item.verdict)}</span>
+        <div class="history-card-actions">
+          <span class="badge">${escapeHtml(formatLabel(item.verdict))}</span>
+          <button class="subtle-button history-delete" type="button" data-delete-scan="${escapeHtml(item.id)}">Delete</button>
+        </div>
       `;
       historyList.appendChild(card);
     });
@@ -533,6 +538,7 @@
     const payment = payload.payment_protection || {};
     const decision = payment.decision || "Not payment-specific";
     const lockedChecks = payload.feature_locks || [];
+    const analyzerResults = payload.analyzer_results || {};
     const score = normalizedScore(payload.overall_score);
     const decisionClass = decisionStyle(decision);
     decisionStack.innerHTML = `
@@ -559,13 +565,14 @@
         </article>
         <article>
           <span>Checks available now</span>
-          <strong>${escapeHtml(String(Math.max(Object.keys(payload.analyzer_results || {}).length - lockedChecks.length, 0)))}</strong>
+          <strong>${escapeHtml(String(Math.max(Object.keys(analyzerResults).length - lockedChecks.length, 0)))}</strong>
         </article>
         <article>
           <span>Plan-gated checks</span>
           <strong>${escapeHtml(String(lockedChecks.length))}</strong>
         </article>
       </section>
+      ${renderAnalyzerEvidence(analyzerResults)}
       ${renderLockedChecks(lockedChecks)}
     `;
     const scoreFill = decisionStack.querySelector(".result-score-meter span");
@@ -575,6 +582,123 @@
     if (payload.account) {
       updateAccount(payload.account);
     }
+  }
+
+  function renderAnalyzerEvidence(analyzerResults) {
+    const entries = Object.entries(analyzerResults || {});
+    if (!entries.length) {
+      return `
+        <section class="analyzer-evidence">
+          <div class="result-locks-heading">
+            <div>
+              <h3>Analyzer evidence</h3>
+              <p>No analyzer details were returned for this scan.</p>
+            </div>
+          </div>
+        </section>
+      `;
+    }
+    const rows = entries.map(([name, result]) => {
+      const status = analyzerStatus(result);
+      return `
+        <article class="analyzer-row ${escapeHtml(status.className)}">
+          <div class="analyzer-main">
+            <div class="analyzer-title-row">
+              <strong>${escapeHtml(analyzerLabel(name))}</strong>
+              <span class="analyzer-status ${escapeHtml(status.className)}">${escapeHtml(status.label)}</span>
+            </div>
+            <p>${escapeHtml(analyzerSummary(name, result, status))}</p>
+          </div>
+          <div class="analyzer-metrics">
+            <span>Risk ${escapeHtml(formatPercent(normalizedScore(result.risk_score)))}</span>
+            <span>Confidence ${escapeHtml(formatPercent(normalizedScore(result.confidence)))}</span>
+          </div>
+        </article>
+      `;
+    }).join("");
+    return `
+      <section class="analyzer-evidence" aria-label="Analyzer evidence">
+        <div class="result-locks-heading">
+          <div>
+            <h3>Analyzer evidence</h3>
+            <p>Every returned analyzer is listed here so skipped, failed, and completed checks are visible.</p>
+          </div>
+        </div>
+        <div class="analyzer-list">${rows}</div>
+      </section>
+    `;
+  }
+
+  function analyzerLabel(name) {
+    const labels = {
+      attachment_analysis: "Attachment analysis",
+      brand_impersonation: "Brand impersonation",
+      domain_intelligence: "Domain intelligence",
+      header_analysis: "Header authentication",
+      nlp_intent: "Intent analysis",
+      payment_fraud: "Payment scam rules",
+      sender_profiling: "Sender profiling",
+      url_detonation: "Browser URL detonation",
+      url_reputation: "URL reputation",
+    };
+    const feature = featureCatalog.get(name);
+    return (feature && feature.name) || labels[name] || formatLabel(name);
+  }
+
+  function analyzerStatus(result) {
+    const item = result || {};
+    const details = item.details || {};
+    const errors = Array.isArray(item.errors)
+      ? item.errors.filter(Boolean)
+      : (item.errors ? [item.errors] : []);
+    if (details.message === "feature_locked") {
+      return { label: "Locked", className: "locked" };
+    }
+    if (errors.length || details.error || details.status === "error") {
+      return { label: "Needs attention", className: "error" };
+    }
+    if (normalizedScore(item.confidence) === 0 && normalizedScore(item.risk_score) === 0) {
+      return { label: "No signal", className: "quiet" };
+    }
+    return { label: "Completed", className: "done" };
+  }
+
+  function analyzerSummary(name, result, status) {
+    const item = result || {};
+    const details = item.details || {};
+    if (status.className === "locked") {
+      const slug = details.feature_slug || name;
+      const feature = featureCatalog.get(slug) || {};
+      const requiredPlan = details.required_plan_name || feature.required_plan_name || "a higher plan";
+      return `${feature.description || "This analyzer did not run."} Required plan: ${requiredPlan}.`;
+    }
+    if (status.className === "error") {
+      return "This analyzer did not return a usable result. Check API status or retry the scan.";
+    }
+    if (details.decision) {
+      return `Payment decision signal: ${formatDecision(details.decision)}.`;
+    }
+    if (details.summary) {
+      return truncate(details.summary, 150);
+    }
+    if (details.reason) {
+      return truncate(details.reason, 150);
+    }
+    if (details.message && details.message !== "feature_locked") {
+      return truncate(details.message, 150);
+    }
+    if (name === "url_detonation") {
+      return "Sandboxed browser detonation returned a plan-visible result for extracted URLs.";
+    }
+    return "Analyzer returned a result for this scan.";
+  }
+
+  function truncate(value, maxLength) {
+    const text = String(value || "").replace(/\s+/g, " ").trim();
+    if (text.length <= maxLength) {
+      return text;
+    }
+    return `${text.slice(0, Math.max(maxLength - 1, 0)).trim()}...`;
   }
 
   function renderLockedChecks(locks) {
@@ -888,6 +1012,35 @@
       window.location.href = payload.portal_url;
     } catch (error) {
       showNotice(billingNotice, billingErrorMessage(error));
+    }
+  });
+
+  historyList.addEventListener("click", async (event) => {
+    const button = event.target.closest("button[data-delete-scan]");
+    if (!button) {
+      return;
+    }
+    event.preventDefault();
+    const resultId = button.getAttribute("data-delete-scan") || "";
+    if (!resultId || !window.confirm("Delete this scan result from workspace history?")) {
+      return;
+    }
+    hideNotice(historyNotice);
+    const originalText = button.textContent;
+    button.disabled = true;
+    button.textContent = "Deleting";
+    try {
+      await apiJson(`/api/saas/scans/${encodeURIComponent(resultId)}`, {
+        method: "DELETE",
+        body: "{}",
+      });
+      renderEmptyResult();
+      await loadHistory();
+      showNotice(historyNotice, "Scan result deleted from workspace history.");
+    } catch (error) {
+      button.disabled = false;
+      button.textContent = originalText;
+      showNotice(historyNotice, error.message || "Could not delete this scan result.");
     }
   });
 

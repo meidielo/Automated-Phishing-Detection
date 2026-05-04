@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trust - PhishAnalyze</title>
+  <link rel="stylesheet" href="/static/product.css">
+</head>
+<body>
+  <header class="product-topbar">
+    <a class="brand" href="/product">PhishAnalyze</a>
+    <nav class="product-nav" aria-label="Trust navigation">
+      <a href="/product">Product</a>
+      <a href="/app">User app</a>
+    </nav>
+  </header>
+
+  <main class="trust-page">
+    <section class="trust-hero">
+      <span>Trust and privacy</span>
+      <h1>Payment-risk scans should be explainable, private, and easy to erase.</h1>
+      <p>
+        PhishAnalyze is built for finance teams handling sensitive supplier emails.
+        The product keeps customer uploads scoped to the signed-in workspace, shows
+        which analyzers ran, and gives users a direct way to delete stored scan
+        history.
+      </p>
+    </section>
+
+    <section class="trust-grid" aria-label="Trust controls">
+      <article>
+        <span>Data use</span>
+        <h2>Uploads are for analysis, not model training</h2>
+        <p>
+          Uploaded emails are used to produce the requested risk result and workspace
+          history. They are not added to training datasets or public demos.
+        </p>
+      </article>
+      <article>
+        <span>Retention</span>
+        <h2>Stored results have deletion and purge controls</h2>
+        <p>
+          Workspace scan history can be deleted from the app. Production retention
+          tooling also supports purging older SaaS scan, lock, usage, and audit rows.
+        </p>
+      </article>
+      <article>
+        <span>Third parties</span>
+        <h2>Plan-gated checks are visible</h2>
+        <p>
+          Paid checks such as URL reputation, domain intelligence, attachment
+          sandboxing, browser detonation, and LLM reasoning are only run when the
+          workspace plan allows them.
+        </p>
+      </article>
+      <article>
+        <span>Authentication</span>
+        <h2>User accounts are separate from analyst admin</h2>
+        <p>
+          Customer workspaces use email and password login with CSRF-protected
+          actions. Analyst pages remain private owner tools and are not linked from
+          the public product flow.
+        </p>
+      </article>
+      <article>
+        <span>Mailboxes</span>
+        <h2>Mailbox monitoring requires explicit connection</h2>
+        <p>
+          The app does not read a mailbox just because a user signs in. Monitoring
+          requires a connected account, encrypted credentials, and plan permission.
+        </p>
+      </article>
+      <article>
+        <span>Security</span>
+        <h2>Sensitive capabilities stay gated</h2>
+        <p>
+          Live analysis, billing, stored history, feedback learning, and mailbox
+          monitoring stay behind normal user authentication or private analyst
+          authentication, depending on the surface.
+        </p>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

@@ -2485,3 +2485,136 @@ input[type="file"] {
     grid-template-columns: 1fr;
   }
 }
+
+/* Customer-facing scan evidence and deletion controls. */
+.history-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.history-delete {
+  margin-top: 0;
+}
+
+.analyzer-evidence {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  padding: 18px;
+}
+
+.analyzer-evidence h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.analyzer-evidence p {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.analyzer-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.analyzer-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-tertiary);
+  padding: 14px;
+}
+
+.analyzer-row.done {
+  border-color: color-mix(in srgb, var(--v-clean) 40%, var(--border));
+}
+
+.analyzer-row.locked {
+  border-color: color-mix(in srgb, var(--v-suspicious) 52%, var(--border));
+}
+
+.analyzer-row.error {
+  border-color: color-mix(in srgb, var(--v-confirmed) 54%, var(--border));
+}
+
+.analyzer-title-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.analyzer-title-row strong {
+  color: var(--text-primary);
+  font-size: 15px;
+  line-height: 1.25;
+}
+
+.analyzer-status {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.analyzer-status.done {
+  border-color: color-mix(in srgb, var(--v-clean) 48%, var(--border));
+  color: var(--v-clean);
+}
+
+.analyzer-status.locked {
+  border-color: color-mix(in srgb, var(--v-suspicious) 56%, var(--border));
+  color: var(--v-suspicious);
+}
+
+.analyzer-status.error {
+  border-color: color-mix(in srgb, var(--v-confirmed) 58%, var(--border));
+  color: var(--v-confirmed);
+}
+
+.analyzer-status.quiet {
+  color: var(--text-muted);
+}
+
+.analyzer-metrics {
+  display: grid;
+  gap: 5px;
+  min-width: 134px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: right;
+}
+
+@media (max-width: 720px) {
+  .history-card-actions,
+  .analyzer-title-row {
+    align-items: flex-start;
+    justify-content: flex-start;
+  }
+
+  .history-card-actions,
+  .analyzer-row {
+    grid-template-columns: 1fr;
+  }
+
+  .analyzer-metrics {
+    min-width: 0;
+    text-align: left;
+  }
+}

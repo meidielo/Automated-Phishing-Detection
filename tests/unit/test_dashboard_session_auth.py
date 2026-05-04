@@ -80,6 +80,8 @@ def test_saas_app_login_shell_uses_link_based_auth_navigation():
     assert response.status_code == 200
     assert 'id="authTitle"' in response.text
     assert 'href="/app" class="active" aria-current="page">User app</a>' in response.text
+    assert 'href="/trust">Trust</a>' in response.text
+    assert 'href="/login">Analyst login</a>' not in response.text
     assert 'href="/demo">Demo</a>' not in response.text
     assert "Don't have an account yet?" in response.text
     assert ">Create account</button>" in response.text
@@ -151,10 +153,15 @@ def test_saas_app_manual_upload_uses_drop_zone():
     assert 'id="emailFile" class="scan-file-input" name="file" type="file" accept=".eml,message/rfc822">' in response.text
     assert "Drop your .eml file here, or click to browse" in response.text
     assert 'id="scanSubmitButton" type="submit" disabled' in response.text
+    assert 'id="historyNotice" hidden' in response.text
     assert ".scan-drop-zone" in css
     assert "function setScanFile" in js
     assert "function renderSelectedFile" in js
     assert "function renderAnalyzingResult" in js
+    assert "function renderAnalyzerEvidence" in js
+    assert "Analyzer evidence" in js
+    assert "data-delete-scan" in js
+    assert "DELETE" in js
     assert "function resetTransientWorkspace" in js
     assert "Previous previews are cleared" in js
     assert "Fresh result for" in js
@@ -362,6 +369,7 @@ def test_html_static_asset_urls_are_versioned(monkeypatch):
     )
 
     response = client.get("/app")
+    trust = client.get("/trust")
     health = client.get("/api/health")
 
     assert response.status_code == 200
@@ -369,6 +377,8 @@ def test_html_static_asset_urls_are_versioned(monkeypatch):
     assert '/static/saas.js?v=testbuild123' in response.text
     assert '/static/shared.css?v=testbuild123' in response.text
     assert '/static/shared.js?v=testbuild123' in response.text
+    assert '/static/product.css?v=testbuild123' in trust.text
+    assert '/static/shared.css?v=testbuild123' in trust.text
     assert health.json()["build_sha"] == "testbuild123"
     assert health.json()["static_asset_version"] == "testbuild123"
 
@@ -386,9 +396,33 @@ def test_product_shell_opens_without_analyst_session():
     assert "PhishAnalyze payment-risk firewall" in response.text
     assert 'href="/agent-demo"' not in response.text
     assert 'href="/demo"' not in response.text
+    assert 'href="/login">Analyst login</a>' not in response.text
+    assert 'href="/trust">Trust</a>' in response.text
     assert 'href="/app">Open user app</a>' in response.text
+    assert 'href="/trust">Trust and privacy</a>' in response.text
     assert "/static/product.css" in response.text
     assert "/static/product-dashboard.png" in response.text
+    csp = response.headers["Content-Security-Policy"]
+    assert "script-src 'self'" in csp
+    assert "style-src 'self'" in csp
+    assert "'unsafe-inline'" not in csp
+
+
+def test_trust_page_opens_without_analyst_session():
+    client = TestClient(
+        _build_app_with_token(),
+        base_url="https://testserver",
+        follow_redirects=False,
+    )
+
+    response = client.get("/trust")
+
+    assert response.status_code == 200
+    assert "Trust and privacy" in response.text
+    assert "Uploads are for analysis, not model training" in response.text
+    assert "Analyst pages remain private owner tools" in response.text
+    assert 'href="/login">Analyst login</a>' not in response.text
+    assert "/static/product.css" in response.text
     csp = response.headers["Content-Security-Policy"]
     assert "script-src 'self'" in csp
     assert "style-src 'self'" in csp
